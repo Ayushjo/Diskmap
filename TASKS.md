@@ -297,8 +297,9 @@ prefixes were not changed.
     warm follow-up **8.500 / 9.855 / 10.190** s.
     Raw: `docs/perf-results/cold-home-post-restart.txt`,
     `warm-home-post-restart.txt`. Details in `docs/PERF.md`.
-  - Still deferred: UTF-8 blob name table, publisher sharding,
-    faster duplicates hash, UI first-paint Instruments.
+  - **Phase 1–4 done** (2026-09-13): packed UTF-8 name blob; publisher
+    sharding no-go (`sample`, no Xcode); MD5 partial + streaming SHA256;
+    `--layout` first-paint stand-in 91 ms (no UI fix). See `docs/PERF.md`.
 
 
 

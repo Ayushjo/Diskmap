@@ -310,3 +310,7 @@ the walk, free correctness-wise).
 
 **Status:** implemented (TASK-025).
 
+### Name storage (2026-09-13)
+
+Unique names live in a packed UTF-8 `nameBlob` with `nameOffset`/`nameLength` tables. Open-addressed intern compares raw UTF-8; `String` materialization is for UI and Snapshot encode only.
+

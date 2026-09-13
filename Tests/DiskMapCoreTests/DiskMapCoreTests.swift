@@ -91,9 +91,10 @@ struct FileTreeTests {
         _ = tree.addNode(name: "node_modules", parent: root, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
         _ = tree.addNode(name: "node_modules", parent: root, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
 
-        // Both nodes should point at the SAME interned string entry,
-        // proving we didn't allocate "node_modules" twice.
-        #expect(tree.nameTable.filter { $0 == "node_modules" }.count == 1)
+        // Both nodes share one interned name id; packed blob stores it once.
+        #expect(tree.nameIndex[1] == tree.nameIndex[2])
+        #expect(tree.uniqueNameCount == 2) // root + node_modules
+        #expect(tree.name(of: 1) == "node_modules")
     }
 
     @Test func ancestorChainIsRootFirstAndStopsAtRoot() {

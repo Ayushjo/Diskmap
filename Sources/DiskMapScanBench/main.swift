@@ -1,10 +1,11 @@
+import CoreGraphics
 import DiskMapCore
 import Foundation
 
 /// Stable release bench for DiskMap scans.
 ///
 /// Usage:
-///   DiskMapScanBench [--repeat N] [--rollup] [--json] [--label NAME] [path]
+///   DiskMapScanBench [--repeat N] [--rollup] [--layout] [--json] [--label NAME] [path]
 ///
 /// Prints one line per run plus a summary (min / median / max). Record
 /// cold vs warm disk context in docs/PERF.md alongside these numbers.
@@ -12,6 +13,7 @@ struct Args {
     var path = NSHomeDirectory()
     var repeats = 1
     var rollup = false
+    var layout = false
     var json = false
     var label = "scan"
 }
@@ -27,13 +29,15 @@ func parseArgs() -> Args {
             if !rest.isEmpty { rest.removeFirst() }
         case "--rollup":
             args.rollup = true
+        case "--layout":
+            args.layout = true
         case "--json":
             args.json = true
         case "--label":
             args.label = rest.first ?? args.label
             if !rest.isEmpty { rest.removeFirst() }
         case "--help", "-h":
-            print("DiskMapScanBench [--repeat N] [--rollup] [--json] [--label NAME] [path]")
+            print("DiskMapScanBench [--repeat N] [--rollup] [--layout] [--json] [--label NAME] [path]")
             exit(0)
         default:
             if token.hasPrefix("-") {
@@ -55,6 +59,7 @@ struct RunRow: Codable {
     var notDownloaded: Int
     var scanSeconds: Double
     var rollupSeconds: Double?
+    var layoutSeconds: Double?
     var walkPeakRSS: UInt64
     var afterScanRSS: UInt64?
     var uniqueNames: Int
@@ -82,6 +87,11 @@ func median(_ values: [Double]) -> Double {
     return sorted[mid]
 }
 
+func durationSeconds(from start: ContinuousClock.Instant) -> Double {
+    let parts = start.duration(to: .now).components
+    return Double(parts.seconds) + Double(parts.attoseconds) / 1e18
+}
+
 let args = parseArgs()
 let root = URL(fileURLWithPath: args.path, isDirectory: true)
 var rows: [RunRow] = []
@@ -91,13 +101,30 @@ for run in 1...args.repeats {
     let result = await engine.scan(root: root)
     let foot = result.tree.storageFootprint()
     var rollupSeconds: Double?
-    if args.rollup {
+    var layoutSeconds: Double?
+    var totals: (logical: [Int64], allocated: [Int64])?
+
+    if args.rollup || args.layout {
         let started = ContinuousClock.now
-        _ = result.tree.rollUpBoth()
-        let elapsed = started.duration(to: .now)
-        let parts = elapsed.components
-        rollupSeconds = Double(parts.seconds) + Double(parts.attoseconds) / 1e18
+        totals = result.tree.rollUpBoth()
+        let seconds = durationSeconds(from: started)
+        if args.rollup { rollupSeconds = seconds }
     }
+
+    if args.layout, let totals {
+        let started = ContinuousClock.now
+        let tree = result.tree
+        let allocated = totals.allocated
+        _ = ChartLayout.slices(of: 0, in: tree, totals: allocated)
+        let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        let children = tree.children(of: 0, totals: allocated)
+        _ = SquarifiedTreemap.layout(items: children, in: bounds)
+        _ = TopSizes.ranked(totals: allocated, limit: 50)
+        _ = AgeMap.bucketSizes(in: tree, totals: allocated, today: AgeMap.today())
+        _ = AgeMap.untouched(in: tree, totals: allocated, today: AgeMap.today(), limit: 100)
+        layoutSeconds = durationSeconds(from: started)
+    }
+
     let row = RunRow(
         label: args.label,
         path: root.path,
@@ -107,6 +134,7 @@ for run in 1...args.repeats {
         notDownloaded: result.notDownloadedCount,
         scanSeconds: result.elapsedSeconds,
         rollupSeconds: rollupSeconds,
+        layoutSeconds: layoutSeconds,
         walkPeakRSS: result.peakResidentBytesDuringWalk,
         afterScanRSS: result.residentBytesAfterEnumeratorRelease,
         uniqueNames: foot.uniqueNameCount,
@@ -117,8 +145,9 @@ for run in 1...args.repeats {
     rows.append(row)
     if !args.json {
         let rollup = row.rollupSeconds.map { String(format: " rollup=%.3fs", $0) } ?? ""
+        let layout = row.layoutSeconds.map { String(format: " layout=%.3fs", $0) } ?? ""
         print(
-            "run=\(run)/\(args.repeats) label=\(args.label) items=\(row.items) nodes=\(row.nodes) scan=\(String(format: "%.3f", row.scanSeconds))s\(rollup) walk_rss=\(row.walkPeakRSS) after_rss=\(row.afterScanRSS.map(String.init) ?? "n/a") names=\(row.uniqueNames) name_utf8=\(row.nameUTF8Bytes)"
+            "run=\(run)/\(args.repeats) label=\(args.label) items=\(row.items) nodes=\(row.nodes) scan=\(String(format: "%.3f", row.scanSeconds))s\(rollup)\(layout) walk_rss=\(row.walkPeakRSS) after_rss=\(row.afterScanRSS.map(String.init) ?? "n/a") names=\(row.uniqueNames) name_utf8=\(row.nameUTF8Bytes)"
         )
     }
 }

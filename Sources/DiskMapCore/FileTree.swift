@@ -17,14 +17,29 @@ import Foundation
 public struct FileTree: Sendable {
 
     // MARK: Name interning
+    //
+    // Unique names live in one packed UTF-8 blob with parallel offset/length
+    // tables. That drops ~MemoryLayout<String> × uniqueNames of separate
+    // String headers (~685k on a home scan) while keeping scan-hot intern
+    // hits as raw UTF-8 compares with no String allocation.
 
-    public private(set) var nameTable: [String] = []
-    private var nameLookup: [String: Int32] = [:]
+    private var nameBlob: [UInt8] = []
+    private var nameOffset: [Int32] = []
+    private var nameLength: [UInt16] = []
     /// Open-addressed intern table for the scan hot path. A hit compares
     /// raw UTF-8 and does not allocate a `String`. Empty slots use `-1`.
     private var internSlotHash: [UInt64] = []
     private var internSlotIndex: [Int32] = []
     private var internCount = 0
+
+    /// Count of unique interned names.
+    public var uniqueNameCount: Int { nameOffset.count }
+
+    /// Materialized String table for Snapshot encode and tests. Prefer
+    /// `nameString(at:)` / `name(of:)` on hot paths.
+    public var nameTable: [String] {
+        (0..<uniqueNameCount).map { nameString(at: Int32($0)) }
+    }
 
     // MARK: Struct-of-arrays node storage, indexed by node id (Int32)
 
@@ -53,8 +68,10 @@ public struct FileTree: Sendable {
         isDirectory.reserveCapacity(capacity)
         flags.reserveCapacity(capacity)
         if uniqueNames > 0 {
-            nameTable.reserveCapacity(uniqueNames)
-            nameLookup.reserveCapacity(uniqueNames)
+            nameOffset.reserveCapacity(uniqueNames)
+            nameLength.reserveCapacity(uniqueNames)
+            // Typical short filename; blob grows as needed.
+            nameBlob.reserveCapacity(uniqueNames * 16)
             // Power-of-two open-address table sized for <50% load.
             var slots = 1024
             while slots < uniqueNames * 2 { slots *= 2 }
@@ -87,9 +104,10 @@ public struct FileTree: Sendable {
         public var packedNodeBytesExact: Int
         /// `MemoryLayout` × each array's current capacity. What is reserved now.
         public var packedNodeBytesReserved: Int
-        /// `MemoryLayout<String>` × unique names. The string headers, not the characters.
+        /// Offset + length table bytes for the packed name intern (`Int32` + `UInt16` per name).
+        /// Formerly `MemoryLayout<String>` × unique names when names were `[String]`.
         public var nameTableHeaderBytes: Int
-        /// Sum of UTF-8 byte counts of interned names. Measured, not a layout formula.
+        /// Sum of UTF-8 byte counts of interned names (size of `nameBlob` content).
         public var nameUTF8Bytes: Int
     }
 
@@ -103,14 +121,13 @@ public struct FileTree: Sendable {
             + allocatedSize.capacity * MemoryLayout<Int64>.stride
             + isDirectory.capacity * MemoryLayout<Bool>.stride
             + flags.capacity * MemoryLayout<UInt8>.stride
-        let utf8 = nameTable.reduce(0) { $0 + $1.utf8.count }
         return StorageFootprint(
             nodeCount: count,
-            uniqueNameCount: nameTable.count,
+            uniqueNameCount: uniqueNameCount,
             packedNodeBytesExact: Self.packedNodeBytesExact(nodeCount: count),
             packedNodeBytesReserved: reserved,
-            nameTableHeaderBytes: nameTable.count * MemoryLayout<String>.stride,
-            nameUTF8Bytes: utf8
+            nameTableHeaderBytes: uniqueNameCount * (MemoryLayout<Int32>.stride + MemoryLayout<UInt16>.stride),
+            nameUTF8Bytes: nameBlob.count
         )
     }
 
@@ -130,7 +147,9 @@ public struct FileTree: Sendable {
         modifiedDay = Self.exactCopy(modifiedDay)
         isDirectory = Self.exactCopy(isDirectory)
         flags = Self.exactCopy(flags)
-        nameTable = Self.exactCopy(nameTable)
+        nameBlob = Self.exactCopy(nameBlob)
+        nameOffset = Self.exactCopy(nameOffset)
+        nameLength = Self.exactCopy(nameLength)
     }
 
     private static func exactCopy<T>(_ source: [T]) -> [T] {
@@ -226,11 +245,13 @@ public struct FileTree: Sendable {
         if (internCount + 1) * 2 >= internSlotHash.count {
             growIntern(to: max(internSlotHash.count * 2, 1024))
         }
-        // Open-addressing already missed — allocate the String once for storage.
-        let name = String(decoding: bytes, as: UTF8.self)
-        let id = Int32(nameTable.count)
-        nameTable.append(name)
-        nameLookup[name] = id
+        // Miss: append raw UTF-8 into the blob — no String allocation.
+        precondition(bytes.count <= Int(UInt16.max), "file name longer than UInt16.max")
+        let id = Int32(nameOffset.count)
+        let start = Int32(nameBlob.count)
+        nameBlob.append(contentsOf: bytes)
+        nameOffset.append(start)
+        nameLength.append(UInt16(bytes.count))
         insertIntern(hash: hash, id: id)
         return id
     }
@@ -241,13 +262,27 @@ public struct FileTree: Sendable {
         var slot = Int(truncatingIfNeeded: hash) & mask
         var probes = 0
         while internSlotIndex[slot] != -1, probes < internSlotHash.count {
-            if internSlotHash[slot] == hash, nameTable[Int(internSlotIndex[slot])].utf8.elementsEqual(bytes) {
-                return internSlotIndex[slot]
+            let id = internSlotIndex[slot]
+            if internSlotHash[slot] == hash, nameBytesEqual(id, bytes) {
+                return id
             }
             slot = (slot + 1) & mask
             probes += 1
         }
         return nil
+    }
+
+    private func nameBytesEqual(_ id: Int32, _ bytes: UnsafeBufferPointer<UInt8>) -> Bool {
+        let index = Int(id)
+        let length = Int(nameLength[index])
+        guard length == bytes.count else { return false }
+        let start = Int(nameOffset[index])
+        return nameBlob.withUnsafeBufferPointer { blob in
+            guard let base = blob.baseAddress, let other = bytes.baseAddress else {
+                return length == 0
+            }
+            return memcmp(base.advanced(by: start), other, length) == 0
+        }
     }
 
     private mutating func insertIntern(hash: UInt64, id: Int32) {
@@ -266,9 +301,14 @@ public struct FileTree: Sendable {
         internSlotHash = Array(repeating: 0, count: size)
         internSlotIndex = Array(repeating: -1, count: size)
         internCount = 0
-        for (offset, name) in nameTable.enumerated() {
-            let hash = name.utf8.withContiguousStorageIfAvailable { fnv1a($0) } ?? fnv1a(Array(name.utf8))
-            insertIntern(hash: hash, id: Int32(offset))
+        nameBlob.withUnsafeBufferPointer { blob in
+            guard let base = blob.baseAddress else { return }
+            for id in 0..<nameOffset.count {
+                let start = Int(nameOffset[id])
+                let length = Int(nameLength[id])
+                let slice = UnsafeBufferPointer(start: base.advanced(by: start), count: length)
+                insertIntern(hash: fnv1a(slice), id: Int32(id))
+            }
         }
     }
 
@@ -286,15 +326,22 @@ public struct FileTree: Sendable {
     }
 
     private mutating func internName(_ name: String) -> Int32 {
-        if let existing = nameLookup[name] { return existing }
-        let idx = Int32(nameTable.count)
-        nameTable.append(name)
-        nameLookup[name] = idx
-        return idx
+        if let id = name.utf8.withContiguousStorageIfAvailable({ internUTF8($0) }) {
+            return id
+        }
+        let bytes = Array(name.utf8)
+        return bytes.withUnsafeBufferPointer { internUTF8($0) }
+    }
+
+    public func nameString(at nameID: Int32) -> String {
+        let index = Int(nameID)
+        let start = Int(nameOffset[index])
+        let length = Int(nameLength[index])
+        return String(decoding: nameBlob[start..<(start + length)], as: UTF8.self)
     }
 
     public func name(of id: Int32) -> String {
-        nameTable[Int(nameIndex[Int(id)])]
+        nameString(at: nameIndex[Int(id)])
     }
 
     public func flags(of id: Int32) -> UInt8 {
@@ -439,13 +486,23 @@ public struct FileTree: Sendable {
               logicalSize.count == n, allocatedSize.count == n, modifiedDay.count == n,
               isDirectory.count == n, flags.count == n else { return false }
         for index in nameIndex where index < 0 || index >= nameTable.count { return false }
-        self.nameTable = nameTable
-        var lookup: [String: Int32] = [:]
-        lookup.reserveCapacity(nameTable.count)
-        for (offset, name) in nameTable.enumerated() {
-            if lookup[name] == nil { lookup[name] = Int32(offset) }
+        // Snapshot still ships length-prefixed Strings; rebuild the packed blob once.
+        var blob: [UInt8] = []
+        var offsets: [Int32] = []
+        var lengths: [UInt16] = []
+        offsets.reserveCapacity(nameTable.count)
+        lengths.reserveCapacity(nameTable.count)
+        blob.reserveCapacity(nameTable.reduce(0) { $0 + $1.utf8.count })
+        for name in nameTable {
+            let utf8 = Array(name.utf8)
+            precondition(utf8.count <= Int(UInt16.max), "file name longer than UInt16.max")
+            offsets.append(Int32(blob.count))
+            lengths.append(UInt16(utf8.count))
+            blob.append(contentsOf: utf8)
         }
-        nameLookup = lookup
+        nameBlob = blob
+        nameOffset = offsets
+        nameLength = lengths
         internSlotHash = []
         internSlotIndex = []
         internCount = 0

@@ -13,7 +13,7 @@ swift run -c release DiskMapScanBench --repeat 3 --json --label warm-home ~ \
   | tail -1 > docs/perf-results/warm-home.json
 ```
 
-Flags: `--repeat N`, `--rollup` (times `rollUpBoth` after the scan), `--json`, `--label NAME`, optional path (default `$HOME`).
+Flags: `--repeat N`, `--rollup` (times `rollUpBoth` after the scan), `--layout` (ChartLayout/treemap/TopSizes/AgeMap after rollup), `--json`, `--label NAME`, optional path (default `$HOME`).
 
 Optional env overrides (A/B only):
 
@@ -119,15 +119,51 @@ Back-to-back originals spanned ~6.4–9.9 s. Best documented baseline before thi
 - **`openat` fd handoff for children** — wall time ~10 s flat; reverted. Path UTF-8 buffers are the lighter approach.
 - **Default max 12 workers** — A/B shows 12 is slower than 8 on this machine.
 
+### Packed UTF-8 name blob (Phase 1, 2026-09-13)
+
+`FileTree` stores unique names in `nameBlob` + `nameOffset`/`nameLength` instead of `[String]`.
+Scan-hot intern hits still compare raw UTF-8 (via `memcmp`); `String` is built only for UI/`name(of:)`.
+
+Warm home `--repeat 5 --rollup --label warm-home-utf8blob` (~1.77M items):
+
+| | scan s | rollup s | walk-peak RSS (median) |
+|---|---|---|---|
+| min | 5.874 | 0.022 | — |
+| median | **9.859** | 0.038 | ~321 MB |
+| max | 10.770 | 0.039 | — |
+
+Footprint: `nameTableHeaderBytes` is now offset+length table (~**4.1 MB** for ~684k names) vs former `MemoryLayout<String>` × N (~**10.9 MB**). `name_utf8` stays ~26.3 MB.
+Raw: `docs/perf-results/warm-home-utf8blob.txt`. Snapshot encode still emits length-prefixed strings (v1 format unchanged).
+
+### Publisher sharding gate (Phase 2)
+
+Full Xcode / `xctrace` is **not** installed (only Command Line Tools). Used `/usr/bin/sample` for 8s during a release home scan (`docs/perf-results/publisher-sample.txt`).
+
+**Decision: no publisher sharding.** Sample captured no evidence of a pegged publisher with idle workers; call graph was effectively empty (I/O-bound / wait). Keep single publisher at workers=8.
+
+### Faster duplicates hash (Phase 3)
+
+- Partial (64 KB) filter: `Insecure.MD5` (collisions still rechecked).
+- Full content: streaming `SHA256` in 1 MB `FileHandle` chunks (nil-at-EOF is success).
+- Dup tests green (42 suite). Peak-memory win on large files; wall time is I/O bound for typical cache-sized files.
+
+### UI first-paint stand-in (Phase 4)
+
+No Instruments (no Xcode). Added `DiskMapScanBench --layout`: after rollup, times `ChartLayout.slices` + `SquarifiedTreemap.layout` + `TopSizes.ranked` + `AgeMap.bucketSizes`/`untouched` on the home tree.
+
+`warm-home-layout`: layout=**0.091 s** (91 ms) — under the ~100 ms hitch bar, so **no code fix**. Raw: `docs/perf-results/warm-home-layout.txt`. Re-run with Instruments Time Profiler when Xcode is installed for true SwiftUI first-paint.
+
 ## Still open (ordered)
 
-1. **UTF-8 blob name table** — ~685k `String` headers + ~26 MB UTF-8; a blob+offset intern would cut allocs. Needs Snapshot format care (or keep String only at serialize time).
-2. **Publisher sharding** — only if Instruments shows the publisher pegged while workers idle at workers=8.
-3. **Duplicates hash** — SHA256 after clone-skip; deferred faster hash (see Milestone 2 notes in `TASKS.md`).
-4. **First-paint Instruments** — Map / Top Sizes / Duplicates on a loaded home scan (UI, not walk).
-5. **Headless `diskmap scan --json`** — PRD differentiator; `DiskMapScanBench` is the measurement wedge, not the product CLI.
+1. **Headless `diskmap scan --json`** — PRD differentiator; `DiskMapScanBench` is the measurement wedge, not the product CLI.
+2. **True SwiftUI Instruments first-paint** — install full Xcode and re-check Map / Duplicates / Age Map; layout stand-in is already <100 ms.
 
-~~Cold-disk matrix~~ — done 2026-09-13 post-reboot; see section above.
+~~Cold-disk matrix~~ — done 2026-09-13 post-reboot.
+~~UTF-8 blob name table~~ — done (packed blob + offsets).
+~~Publisher sharding~~ — no-go without pegged publisher evidence (`sample`).
+~~Duplicates hash~~ — MD5 partial + streaming SHA256.
+~~First-paint layout stand-in~~ — 91 ms; no fix.
+
 
 ## Checklist for a performance PR
 

@@ -32,7 +32,7 @@ enum SnapshotCodec {
         writer.string(snapshot.rootPath)
         let tree = snapshot.tree
         writer.i32(Int32(tree.count))
-        writer.i32(Int32(tree.nameTable.count))
+        writer.i32(Int32(tree.uniqueNameCount))
         writer.i32s(tree.nameIndex)
         writer.i32s(tree.parent)
         writer.i32s(tree.firstChild)
