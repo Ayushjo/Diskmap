@@ -79,6 +79,30 @@ Label `confirm-defaults-v2`, 3 warm repeats:
 
 Raw: `docs/perf-results/confirm-defaults-v2.txt`.
 
+### Cold vs warm after reboot (2026-09-13 evening)
+
+Machine restarted, then immediate `--repeat 5 --rollup` home scans (~1.75M items, ~1.72M nodes, ~681.5k unique names, ~26.3 MB name UTF-8).
+
+**Cold** (`cold-home-post-restart`, raw `docs/perf-results/cold-home-post-restart.txt`):
+
+| | scan s | rollup s | walk-peak RSS (median) |
+|---|---|---|---|
+| min | 5.878 | 0.021 | — |
+| median | **10.506** | 0.030 | ~365 MB |
+| max | 11.866 | 0.032 | — |
+
+Run order: 11.866 → 11.116 → 9.612 → 10.506 → 5.878 (last run already warming).
+
+**Warm** (`warm-home-post-restart`, raw `docs/perf-results/warm-home-post-restart.txt`):
+
+| | scan s | rollup s | walk-peak RSS (median) |
+|---|---|---|---|
+| min | 8.500 | 0.029 | — |
+| median | **9.855** | 0.031 | ~346 MB |
+| max | 10.190 | 0.033 | — |
+
+**Notes:** Cold first-hit is ~12 s; once the page cache is hot, wall time lands in the same noisy band as other warm matrices. This warm median (9.9 s) is slower than `confirm-defaults-v2` (median 5.94 s) — treat that gap as session noise (thermal / FS churn / other load), not a regression ticket. Always report min/median/max for a given session.
+
 ### Earlier control (pre–UTF-8-path, publisher + 2M reserve)
 
 Back-to-back originals spanned ~6.4–9.9 s. Best documented baseline before this pass: 7.312 s (2026-09-14 getattrlistbulk note in `TASKS.md`). Best after capacity prep: 6.035 s. Best after worker=8 A/B: **5.949 s**.
@@ -97,17 +121,18 @@ Back-to-back originals spanned ~6.4–9.9 s. Best documented baseline before thi
 
 ## Still open (ordered)
 
-1. **Cold-disk matrix** — same `--repeat 5` after `sudo purge` or reboot; paste into `docs/perf-results/`.
-2. **UTF-8 blob name table** — ~685k `String` headers + ~26 MB UTF-8; a blob+offset intern would cut allocs. Needs Snapshot format care (or keep String only at serialize time).
-3. **Publisher sharding** — only if Instruments shows the publisher pegged while workers idle at workers=8.
-4. **Duplicates hash** — SHA256 after clone-skip; deferred faster hash (see Milestone 2 notes in `TASKS.md`).
-5. **First-paint Instruments** — Map / Top Sizes / Duplicates on a loaded home scan (UI, not walk).
-6. **Headless `diskmap scan --json`** — PRD differentiator; `DiskMapScanBench` is the measurement wedge, not the product CLI.
+1. **UTF-8 blob name table** — ~685k `String` headers + ~26 MB UTF-8; a blob+offset intern would cut allocs. Needs Snapshot format care (or keep String only at serialize time).
+2. **Publisher sharding** — only if Instruments shows the publisher pegged while workers idle at workers=8.
+3. **Duplicates hash** — SHA256 after clone-skip; deferred faster hash (see Milestone 2 notes in `TASKS.md`).
+4. **First-paint Instruments** — Map / Top Sizes / Duplicates on a loaded home scan (UI, not walk).
+5. **Headless `diskmap scan --json`** — PRD differentiator; `DiskMapScanBench` is the measurement wedge, not the product CLI.
+
+~~Cold-disk matrix~~ — done 2026-09-13 post-reboot; see section above.
 
 ## Checklist for a performance PR
 
 - [ ] `swift test` green
 - [ ] `DiskMapScanBench --repeat 5 --rollup --label … ~` attached or checked into `docs/perf-results/`
-- [ ] Cold vs warm called out
+- [x] Cold vs warm called out (2026-09-13 post-reboot matrix)
 - [ ] `TASKS.md` ticket updated with min/median/max
 - [ ] No network code; CleanupQueue excluded-paths untouched unless called out

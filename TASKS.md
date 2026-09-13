@@ -292,7 +292,12 @@ prefixes were not changed.
   - A/B: workers **8** median 6.038 s (4→8.86 s, 12→9.91 s); buffer **4 MB**
     median 6.166 s vs 1 MB 9.682 s. Defaults set to match.
   - Confirm-defaults after the change: see `docs/perf-results/confirm-defaults.txt`
-  - Deferred: cold matrix, UTF-8 blob name table, publisher sharding,
+  - **Cold matrix done** (2026-09-13 post-reboot, ~1.75M items):
+    cold min/median/max **5.878 / 10.506 / 11.866** s;
+    warm follow-up **8.500 / 9.855 / 10.190** s.
+    Raw: `docs/perf-results/cold-home-post-restart.txt`,
+    `warm-home-post-restart.txt`. Details in `docs/PERF.md`.
+  - Still deferred: UTF-8 blob name table, publisher sharding,
     faster duplicates hash, UI first-paint Instruments.
 
 
