@@ -1,0 +1,27 @@
+---
+description: Rules for anything touching CleanupQueue, deletion, or the excluded-paths list
+globs: ["Sources/DiskMapCore/CleanupQueue.swift", "Sources/DiskMapCore/AppLeftoverFinder.swift"]
+alwaysApply: false
+---
+
+This code decides what a user's data cleanup tool is allowed to touch. Bugs
+here have real, irreversible-feeling consequences even though everything
+technically goes through the Trash.
+
+- Staging (adding to `CleanupQueue`) must never be the same action as
+  committing (moving to Trash). Keep that two-step boundary explicit in any
+  new feature — a "scan and clean" one-click action is a product decision
+  for a human to make deliberately, not something to default into while
+  implementing something else.
+- Any new source of staged items (a new scan type, a new heuristic) must go
+  through `CleanupQueue.stage()`, which already enforces the excluded-paths
+  check. Don't write a parallel path that skips it.
+- `AppLeftoverFinder`'s matching is heuristic by design (no Apple API gives
+  you "everything this app touched"). When improving matching accuracy,
+  bias toward fewer false positives over fewer false negatives — a leftover
+  DiskMap misses costs the user a few KB; a real file it wrongly flags
+  costs the user's trust the first time they lose something that mattered.
+- If you add a new "Quick Wins" style regenerable-directory pattern (e.g.
+  matching `node_modules`, `.venv`), it should be data (a JSON list, per
+  `docs/PRD.md`'s "beyond DiskBuddy" section) rather than hardcoded, so
+  users and contributors can extend it without a code change.

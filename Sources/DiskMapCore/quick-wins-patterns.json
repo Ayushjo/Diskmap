@@ -1,0 +1,10 @@
+{
+  "directoryNames": ["node_modules", ".venv", "target", ".next", "dist", "build", "DerivedData"],
+  "pathSuffixes": [
+    "~/Library/Caches",
+    "~/Library/Logs",
+    "~/Library/Developer/Xcode/DerivedData",
+    "~/Library/Developer/Xcode/iOS DeviceSupport",
+    "~/Library/Developer/CoreSimulator/Caches"
+  ]
+}

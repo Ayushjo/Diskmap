@@ -1,0 +1,16 @@
+{
+  "capturedOn" : "2026-09-13",
+  "downloadRequested" : false,
+  "downloadingStatus" : "NSURLUbiquitousItemDownloadingStatusNotDownloaded",
+  "fileAllocatedSize" : 0,
+  "fileSize" : 135699,
+  "isDirectory" : false,
+  "isDownloading" : false,
+  "isSymbolicLink" : false,
+  "isUbiquitousItem" : true,
+  "note" : "Resource values and lstat flags from one real evicted ubiquitous file. Path and filename are not stored.",
+  "sfDataless" : true,
+  "stBlocks" : 0,
+  "stSize" : 135699,
+  "totalFileAllocatedSize" : 0
+}

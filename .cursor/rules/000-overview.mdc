@@ -1,0 +1,18 @@
+---
+description: Project overview and non-negotiable rules, always in context
+alwaysApply: true
+---
+
+This is DiskMap, an open-source native macOS disk-space analyzer aimed at
+matching/beating DiskBuddy. Full context lives in `AGENTS.md` at the repo
+root — read it before making changes if you haven't already this session.
+
+Hard rules, repeated here because they matter most:
+- Never delete files directly. Everything routes through
+  `CleanupQueue.commit()` (moves to Trash via `FileManager.trashItem`).
+- No networking, anywhere. This app is offline-only by design.
+- Run `swift test` after every change. Don't report a task as done with
+  failing or unrun tests.
+- `CloneDetector.swift` is verified (TASK-005). `SquarifiedTreemap.swift`
+  is verified (TASK-001). Don't build on a file that still says
+  `UNVERIFIED` in its header.

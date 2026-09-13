@@ -1,0 +1,39 @@
+---
+description: Rules for the unverified low-level files (clone detection, treemap layout)
+globs: ["Sources/DiskMapCore/CloneDetector.swift", "Sources/DiskMapCore/SquarifiedTreemap.swift"]
+alwaysApply: false
+---
+
+Both files were originally written without a macOS toolchain to compile
+against. `SquarifiedTreemap.swift` was verified in TASK-001 (paper
+section 3.1 layout, plus a tiling test). `CloneDetector.swift` was
+verified in TASK-005 against `<sys/fcntl.h>` and a real `cp -c` pair —
+the header comment records the packed layout and why `F_LOG2PHYS_EXT`
+is required. The checks below are the procedure, not an open warning.
+
+For `CloneDetector.swift` specifically:
+- Confirm the `log2phys` struct's field names, types, and order against the
+  actual `<sys/fcntl.h>` in the active SDK
+  (`xcrun --show-sdk-path`, then look under `usr/include/sys/fcntl.h`), not
+  against the comment in this file.
+- Confirm the `F_LOG2PHYS` constant value the same way.
+- Test against a real, known clone pair before considering this done:
+  `cp -c original.bin clone.bin` on an APFS volume, then confirm
+  `CloneDetector.areLikelyClones` returns true for that pair and false for
+  two unrelated files of the same size.
+- Consider whether `F_LOG2PHYS_EXT` (multi-extent) is needed instead of the
+  single-extent `F_LOG2PHYS` for files above a few KB — see the file's own
+  comment for why this matters.
+
+For `SquarifiedTreemap.swift` specifically:
+- Run `swift test --filter SquarifiedTreemapTests` first. If anything
+  fails, debug against the reference example in the original paper (Bruls,
+  Huizing, van Wijk, "Squarified Treemaps", 2000) — sizes [6,6,4,3,2,2,1] in
+  a 6x4 rectangle, Figure 6 — rather than guessing at the row-building
+  logic from scratch.
+- Any fix here should keep or extend the "full area, no gaps/overlaps" test
+  — don't weaken that assertion to make it pass.
+
+Once you've verified either file against a real build and real tests,
+update its header comment to remove the UNVERIFIED warning and note what
+you confirmed and how.
