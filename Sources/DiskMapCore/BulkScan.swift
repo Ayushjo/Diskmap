@@ -10,9 +10,13 @@ import Foundation
 /// 4096 allocated. Changing the attribute mask moves these offsets.
 ///
 /// Scan workers never mutate the `FileTree`. They push entry batches to a
-/// dedicated publisher that owns all inserts and child-job enqueues. That
-/// keeps `getattrlistbulk` overlapping with tree growth. The shared lock
-/// only protects the job/batch queues and counters — not every `addNode`.
+/// dedicated publisher that owns all inserts and child-job enqueues. Child
+/// paths stay as UTF-8 byte buffers (NUL-terminated for `open`) so the
+/// publisher does not build intermediate `String` paths on the hot path.
+///
+/// Tuning (optional, for benches only):
+/// - `DISKMAP_SCAN_WORKERS` — worker count (default: min(CPU count, 8))
+/// - `DISKMAP_SCAN_BUFFER_MB` — getattrlistbulk buffer megabytes (default 4)
 enum BulkScan {
     struct Result: Sendable {
         var tree: FileTree
@@ -24,7 +28,7 @@ enum BulkScan {
     static func walk(root: URL, progress: (@Sendable (Int) -> Void)?) -> Result {
         var tree = FileTree()
         // Home scans land near 1.7–2M nodes; reserve once so appends stay O(1).
-        tree.reserveNodeCapacity(2_000_000, uniqueNames: 750_000)
+        tree.reserveNodeCapacity(1_000_000, uniqueNames: 400_000)
         let rootID = tree.addNode(
             name: root.lastPathComponent,
             parent: -1,
@@ -34,10 +38,10 @@ enum BulkScan {
             modifiedDaysSinceEpoch: 0
         )
         let state = State(tree: tree, progress: progress)
-        state.enqueue(path: root.path, nodeID: rootID)
+        state.enqueue(pathUTF8: nulTerminatedUTF8(root.path), nodeID: rootID)
         state.startPublisher()
 
-        let workers = max(1, min(ProcessInfo.processInfo.activeProcessorCount, 12))
+        let workers = configuredWorkers()
         let group = DispatchGroup()
         for _ in 0..<workers {
             group.enter()
@@ -50,15 +54,35 @@ enum BulkScan {
         return state.finish()
     }
 
+    private static func configuredWorkers() -> Int {
+        let cpu = ProcessInfo.processInfo.activeProcessorCount
+        let fallback = max(1, min(cpu, 8))
+        guard let raw = ProcessInfo.processInfo.environment["DISKMAP_SCAN_WORKERS"],
+              let value = Int(raw), value > 0 else { return fallback }
+        return min(value, 32)
+    }
+
+    private static func configuredBufferBytes() -> Int {
+        // 4 MB won the warm A/B median vs 1 MB on a ~1.8M-item home scan
+        // (see docs/PERF.md). Override with DISKMAP_SCAN_BUFFER_MB.
+        let fallback = 4 * 1024 * 1024
+        guard let raw = ProcessInfo.processInfo.environment["DISKMAP_SCAN_BUFFER_MB"],
+              let mb = Int(raw), mb > 0 else { return fallback }
+        return min(mb, 16) * 1024 * 1024
+    }
+
     private static func worker(_ state: State) {
-        var buffer = [UInt8](repeating: 0, count: 1024 * 1024)
+        var buffer = [UInt8](repeating: 0, count: configuredBufferBytes())
         while let job = state.nextJob() {
             scan(job, buffer: &buffer, state: state)
         }
     }
 
     private static func scan(_ job: Job, buffer: inout [UInt8], state: State) {
-        let fd = job.path.withCString { open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC) }
+        let fd = job.pathUTF8.withUnsafeBytes { raw -> Int32 in
+            guard let base = raw.bindMemory(to: CChar.self).baseAddress else { return -1 }
+            return Darwin.open(base, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        }
         guard fd >= 0 else {
             state.noteEmptyDirectory()
             return
@@ -91,7 +115,7 @@ enum BulkScan {
             }
             parse(buffer: buffer, count: Int(count), names: &names, entries: &entries)
         }
-        state.submit(Batch(parentPath: job.path, parent: job.nodeID, names: names, entries: entries))
+        state.submit(Batch(parentPathUTF8: job.pathUTF8, parent: job.nodeID, names: names, entries: entries))
     }
 
     /// Offsets measured 2026-09-14. Name bytes sit at `nameRef + dataOffset`.
@@ -159,14 +183,27 @@ enum BulkScan {
         buffer.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: type) }
     }
 
-    private static func joinPath(parentPath: String, name: String) -> String {
-        if parentPath == "/" { return "/" + name }
-        var path = String()
-        path.reserveCapacity(parentPath.utf8.count + 1 + name.utf8.count)
-        path.append(parentPath)
-        path.append("/")
-        path.append(name)
-        return path
+    /// Parent path is NUL-terminated. Name bytes are not. Result is NUL-terminated.
+    private static func joinPathUTF8(parentPathUTF8: [UInt8], name: UnsafeBufferPointer<UInt8>) -> [UInt8] {
+        let parentCount = max(0, parentPathUTF8.count - 1) // drop trailing NUL
+        let parentIsRoot = parentCount == 1 && parentPathUTF8.first == 0x2F
+        var out = [UInt8]()
+        out.reserveCapacity(parentCount + 1 + name.count + 1)
+        if parentIsRoot {
+            out.append(0x2F)
+        } else {
+            out.append(contentsOf: parentPathUTF8.prefix(parentCount))
+            out.append(0x2F)
+        }
+        out.append(contentsOf: name)
+        out.append(0)
+        return out
+    }
+
+    private static func nulTerminatedUTF8(_ path: String) -> [UInt8] {
+        var bytes = Array(path.utf8)
+        bytes.append(0)
+        return bytes
     }
 
     private final class State: @unchecked Sendable {
@@ -195,9 +232,9 @@ enum BulkScan {
             }
         }
 
-        func enqueue(path: String, nodeID: Int32) {
+        func enqueue(pathUTF8: [UInt8], nodeID: Int32) {
             condition.lock()
-            jobs.append(Job(path: path, nodeID: nodeID))
+            jobs.append(Job(pathUTF8: pathUTF8, nodeID: nodeID))
             condition.broadcast()
             condition.unlock()
         }
@@ -250,16 +287,13 @@ enum BulkScan {
         }
 
         private func publish(_ batch: Batch) {
-            // Only the publisher thread mutates `tree` — no lock needed here.
             var children: [Job] = []
             children.reserveCapacity(32)
             var notDownloadedDelta = 0
-            var included = 0
 
             batch.names.withUnsafeBufferPointer { raw in
                 guard let base = raw.baseAddress else { return }
                 for entry in batch.entries where entry.include {
-                    included += 1
                     let bytes = UnsafeBufferPointer(start: base + entry.nameStart, count: entry.nameCount)
                     var flags: UInt8 = 0
                     if entry.notDownloaded {
@@ -276,9 +310,11 @@ enum BulkScan {
                         flags: flags
                     )
                     if entry.descend {
-                        let name = String(decoding: bytes, as: UTF8.self)
                         children.append(Job(
-                            path: BulkScan.joinPath(parentPath: batch.parentPath, name: name),
+                            pathUTF8: BulkScan.joinPathUTF8(
+                                parentPathUTF8: batch.parentPathUTF8,
+                                name: bytes
+                            ),
                             nodeID: id
                         ))
                     }
@@ -307,10 +343,8 @@ enum BulkScan {
                 }
                 progress?(report)
             }
-            _ = included
         }
 
-        /// Wake waiters and mark the walk finished when every queue is drained.
         private func signalWorkLocked() {
             if inflight == 0 && jobs.isEmpty && batches.isEmpty {
                 finished = true
@@ -336,12 +370,13 @@ enum BulkScan {
 }
 
 private struct Job {
-    var path: String
+    /// NUL-terminated absolute path bytes for `open(2)`.
+    var pathUTF8: [UInt8]
     var nodeID: Int32
 }
 
 private struct Batch {
-    var parentPath: String
+    var parentPathUTF8: [UInt8]
     var parent: Int32
     var names: [UInt8]
     var entries: [Entry]
@@ -371,8 +406,6 @@ private struct Entry {
     )
 }
 
-/// `sys/attr.h` / `sys/vnode.h` / `sys/stat.h`. Numeric because
-/// `ATTR_CMN_RETURNED_ATTRS` does not import as a sign-safe `UInt32`.
 private let attrReturned: UInt32 = 0x80000000
 private let attrName: UInt32 = 0x00000001
 private let attrObjType: UInt32 = 0x00000008

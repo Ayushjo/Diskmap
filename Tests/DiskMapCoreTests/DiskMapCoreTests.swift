@@ -20,6 +20,27 @@ struct FileTreeTests {
         #expect(totals[Int(root)] == 350)  // a.txt + sub's subtree
     }
 
+    @Test func rollUpBothMatchesSeparateRollups() {
+        var tree = FileTree()
+        let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        let sub = tree.addNode(name: "sub", parent: root, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "a.txt", parent: root, isDirectory: false, logicalSize: 100, allocatedSize: 4096, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "b.txt", parent: sub, isDirectory: false, logicalSize: 200, allocatedSize: 8192, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(
+            name: "cloud",
+            parent: sub,
+            isDirectory: false,
+            logicalSize: 50,
+            allocatedSize: 0,
+            modifiedDaysSinceEpoch: 0,
+            flags: NodeFlags.notDownloaded
+        )
+
+        let both = tree.rollUpBoth()
+        #expect(both.logical == tree.rollUpSizes(basis: .logical))
+        #expect(both.allocated == tree.rollUpSizes(basis: .allocated))
+    }
+
     @Test func logicalRollupKeepsCloudSizeWhenAllocatedIsZero() {
         var tree = FileTree()
         let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)

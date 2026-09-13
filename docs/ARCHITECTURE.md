@@ -285,3 +285,28 @@ Offline. No networking.
 When you make a non-obvious architectural choice, add an entry here:
 what was chosen, what the alternative was, why, and current status. Keeps
 this file the source of truth instead of scattered PR descriptions.
+
+### Scan workers default to eight; paths stay UTF-8 bytes
+
+A dedicated publisher thread owns `FileTree` mutation while N workers run
+`getattrlistbulk`. Warm A/B on a ~1.8M-item home folder (2026-09-14):
+8 workers median 6.038 s, 4 workers 8.861 s, 12 workers 9.911 s. Default
+is therefore `min(CPU, 8)`, overridable with `DISKMAP_SCAN_WORKERS`.
+
+Child directory jobs carry NUL-terminated UTF-8 path bytes for `open(2)`
+instead of `String` joins on the publisher hot path. An `openat` fd-handoff
+design was measured and rejected (flat ~10 s). Per-worker attribute buffers
+default to 4 MB (`DISKMAP_SCAN_BUFFER_MB`). Measurement playbook:
+`docs/PERF.md`.
+
+**Status:** implemented (TASK-024, TASK-025).
+
+### Post-scan rollup is one walk for both size bases
+
+Logical and allocated totals are filled together by `FileTree.rollUpBoth()`.
+ContentView already caches both arrays for the size toggle; this only
+removes a second full tree walk (~30 ms saved on a home scan — small vs
+the walk, free correctness-wise).
+
+**Status:** implemented (TASK-025).
+

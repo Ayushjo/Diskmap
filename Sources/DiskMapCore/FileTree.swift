@@ -374,6 +374,43 @@ public struct FileTree: Sendable {
         return totals
     }
 
+
+    /// One post-order walk filling logical and allocated totals. Prefer this
+    /// over two `rollUpSizes` calls after a scan — same arithmetic, half the
+    /// pointer chasing.
+    public func rollUpBoth() -> (logical: [Int64], allocated: [Int64]) {
+        var logical = [Int64](repeating: 0, count: count)
+        var allocated = [Int64](repeating: 0, count: count)
+        guard count > 0 else { return (logical, allocated) }
+
+        var stack: [(id: Int32, expanded: Bool)] = [(0, false)]
+        stack.reserveCapacity(64)
+        while let frame = stack.popLast() {
+            if !frame.expanded {
+                stack.append((frame.id, true))
+                var child = firstChild[Int(frame.id)]
+                while child != -1 {
+                    stack.append((child, false))
+                    child = nextSibling[Int(child)]
+                }
+                continue
+            }
+            let index = Int(frame.id)
+            var logicalTotal = ownSize(frame.id, basis: .logical)
+            var allocatedTotal = ownSize(frame.id, basis: .allocated)
+            var child = firstChild[index]
+            while child != -1 {
+                let childIndex = Int(child)
+                logicalTotal += logical[childIndex]
+                allocatedTotal += allocated[childIndex]
+                child = nextSibling[childIndex]
+            }
+            logical[index] = logicalTotal
+            allocated[index] = allocatedTotal
+        }
+        return (logical, allocated)
+    }
+
     private func ownSize(_ id: Int32, basis: SizeBasis) -> Int64 {
         let index = Int(id)
         let selected = basis == .logical ? logicalSize[index] : allocatedSize[index]

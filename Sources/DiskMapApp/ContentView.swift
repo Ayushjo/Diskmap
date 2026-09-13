@@ -81,8 +81,9 @@ final class ScanModel: ObservableObject {
         fflush(stdout)
         log(summary)
 
-        let allocated = result.tree.rollUpSizes(basis: .allocated)
-        let logical = result.tree.rollUpSizes(basis: .logical)
+        let both = result.tree.rollUpBoth()
+        let allocated = both.allocated
+        let logical = both.logical
         logNotDownloadedContrast(tree: result.tree, logical: logical, allocated: allocated)
         tree = result.tree
         allocatedTotals = allocated

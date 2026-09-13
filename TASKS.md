@@ -282,6 +282,20 @@ prefixes were not changed.
     (~10 s flat) and was reverted. Path strings stay on the job.
   - Do not re-run TASK-002c memory experiments as a goal.
 
+- [x] **TASK-025: Stable benches, UTF-8 paths, rollUpBoth, worker/buffer defaults**
+  Done on `perf/scan-and-runtime` (2026-09-14). Playbook + raw runs:
+  `docs/PERF.md`, `docs/perf-results/`.
+  - `DiskMapScanBench --repeat/--rollup/--json/--label`
+  - Child jobs carry NUL-terminated UTF-8 paths (no hot-path `String` join)
+  - `FileTree.rollUpBoth()`; ContentView uses it (~30 ms on home tree)
+  - Synthetic bushy-tree + optional `/Volumes` smoke tests (42 tests total)
+  - A/B: workers **8** median 6.038 s (4→8.86 s, 12→9.91 s); buffer **4 MB**
+    median 6.166 s vs 1 MB 9.682 s. Defaults set to match.
+  - Confirm-defaults after the change: see `docs/perf-results/confirm-defaults.txt`
+  - Deferred: cold matrix, UTF-8 blob name table, publisher sharding,
+    faster duplicates hash, UI first-paint Instruments.
+
+
 
 ## Milestone 6 — Ship
 

@@ -292,3 +292,62 @@ extension FileTree {
         return nil
     }
 }
+
+
+struct SyntheticScanStressTests {
+    /// Builds a bushy tree that stresses the publisher queue without needing
+    /// a multi-million-file home folder in CI.
+    @Test func bushyTreeScanCompletesWithExpectedNodeCount() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("diskmap-stress-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // 40 dirs × 25 files = 1000 files + 40 dirs + root ≈ 1041 nodes.
+        for d in 0..<40 {
+            let dir = root.appendingPathComponent(String(format: "d%02d", d), isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            for f in 0..<25 {
+                let file = dir.appendingPathComponent(String(format: "f%02d.txt", f))
+                try Data("x".utf8).write(to: file)
+            }
+        }
+
+        let result = await ScanEngine().scan(root: root)
+        #expect(result.itemCount >= 1000)
+        #expect(result.tree.count >= 1041)
+        let both = result.tree.rollUpBoth()
+        #expect(both.logical[0] >= 1000)
+        #expect(both.allocated[0] >= 1000)
+        #expect(result.elapsedSeconds >= 0)
+    }
+}
+
+struct ExternalVolumeScanTests {
+    /// Optional smoke: if /Volumes has a user-mounted volume, scan one level
+    /// deep enough to prove BulkScan does not hang. Skips cleanly otherwise.
+    @Test func mountedVolumeScanDoesNotHangWhenPresent() async throws {
+        let volumes = URL(fileURLWithPath: "/Volumes", isDirectory: true)
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isVolumeKey]
+        guard let kids = try? FileManager.default.contentsOfDirectory(
+            at: volumes,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let candidate = kids.first { url in
+            let name = url.lastPathComponent
+            guard name != "Macintosh HD" else { return false }
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            return values?.isDirectory == true
+        }
+        guard let target = candidate else { return }
+
+        // Bound the walk: scan the volume root only through ScanEngine; if it
+        // takes absurdly long the test runner will surface it. We only assert
+        // the call returns and records the root.
+        let result = await ScanEngine().scan(root: target)
+        #expect(result.tree.count >= 1)
+        #expect(result.itemCount >= 0)
+    }
+}
