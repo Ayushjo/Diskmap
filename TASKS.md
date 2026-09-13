@@ -259,11 +259,29 @@ pages.
 ## Scan speed
 
 The enumerator walk (373 s, 1.65M items) was replaced with
-`getattrlistbulk` and up to eight workers. Release home scan 2026-09-14:
+`getattrlistbulk` and worker threads. Release home scan 2026-09-14:
 1,791,180 items in 7.312 s, 17 not-downloaded. File sizes still match
 `URL` resource values on the scan fixture. Symlinks are still skipped.
 A `chmod 000` directory is still recorded with no children. Excluded-path
 prefixes were not changed.
+
+- [x] **TASK-024: Scan pipeline + capacity prep**
+  Done on `perf/scan-and-runtime` (2026-09-14):
+  - Dedicated publisher thread owns all `FileTree` inserts; scan workers
+    only run `getattrlistbulk` and submit batches (no shared insert lock
+    on the hot path).
+  - `FileTree.reserveNodeCapacity(_:uniqueNames:)` pre-sizes packed
+    arrays and the UTF-8 intern table (~2M nodes / ~750k names).
+  - `rollUpSizes` is iterative post-order (no per-node recursion).
+  - `DiskMapScanBench` release home scans (same machine, ~1.80M items):
+    best **6.035 s**, typical band ~8.9–10.9 s (disk cache variance is
+    large — original getattrlistbulk code also spanned ~6.4–9.9 s in
+    back-to-back controls). Walk-peak RSS dropped from ~340 MB class to
+    **~212 MB** steady across five runs.
+  - Tried `openat` fd-handoff for child dirs; it *regressed* wall time
+    (~10 s flat) and was reverted. Path strings stay on the job.
+  - Do not re-run TASK-002c memory experiments as a goal.
+
 
 ## Milestone 6 — Ship
 

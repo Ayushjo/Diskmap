@@ -40,6 +40,29 @@ public struct FileTree: Sendable {
 
     public var count: Int { nameIndex.count }
 
+    /// Avoid amortized realloc traffic during a multi-million-node scan.
+    public mutating func reserveNodeCapacity(_ capacity: Int, uniqueNames: Int = 0) {
+        guard capacity > 0 else { return }
+        nameIndex.reserveCapacity(capacity)
+        parent.reserveCapacity(capacity)
+        firstChild.reserveCapacity(capacity)
+        nextSibling.reserveCapacity(capacity)
+        logicalSize.reserveCapacity(capacity)
+        allocatedSize.reserveCapacity(capacity)
+        modifiedDay.reserveCapacity(capacity)
+        isDirectory.reserveCapacity(capacity)
+        flags.reserveCapacity(capacity)
+        if uniqueNames > 0 {
+            nameTable.reserveCapacity(uniqueNames)
+            nameLookup.reserveCapacity(uniqueNames)
+            // Power-of-two open-address table sized for <50% load.
+            var slots = 1024
+            while slots < uniqueNames * 2 { slots *= 2 }
+            if internSlotHash.count < slots { growIntern(to: slots) }
+        }
+    }
+
+
     /// Bytes per node of the packed arrays only: index, parent links,
     /// sizes, day, directory bit, flags. No spare capacity, no interned
     /// string heap. Built from `MemoryLayout` so the number tracks the
@@ -201,10 +224,10 @@ public struct FileTree: Sendable {
         let hash = fnv1a(bytes)
         if let existing = findIntern(hash: hash, bytes: bytes) { return existing }
         if (internCount + 1) * 2 >= internSlotHash.count {
-            growIntern(to: internSlotHash.count * 2)
+            growIntern(to: max(internSlotHash.count * 2, 1024))
         }
+        // Open-addressing already missed — allocate the String once for storage.
         let name = String(decoding: bytes, as: UTF8.self)
-        if let existing = nameLookup[name] { return existing }
         let id = Int32(nameTable.count)
         nameTable.append(name)
         nameLookup[name] = id
@@ -326,17 +349,28 @@ public struct FileTree: Sendable {
         var totals = [Int64](repeating: 0, count: count)
         guard count > 0 else { return totals }
 
-        func sum(_ id: Int32) -> Int64 {
-            var total = ownSize(id, basis: basis)
-            var child = firstChild[Int(id)]
+        // Iterative post-order: same totals as the old recursive walk, but
+        // no per-node call frame (deep trees and multi-million node scans).
+        var stack: [(id: Int32, expanded: Bool)] = [(0, false)]
+        stack.reserveCapacity(64)
+        while let frame = stack.popLast() {
+            if !frame.expanded {
+                stack.append((frame.id, true))
+                var child = firstChild[Int(frame.id)]
+                while child != -1 {
+                    stack.append((child, false))
+                    child = nextSibling[Int(child)]
+                }
+                continue
+            }
+            var total = ownSize(frame.id, basis: basis)
+            var child = firstChild[Int(frame.id)]
             while child != -1 {
-                total += sum(child)
+                total += totals[Int(child)]
                 child = nextSibling[Int(child)]
             }
-            totals[Int(id)] = total
-            return total
+            totals[Int(frame.id)] = total
         }
-        _ = sum(0)
         return totals
     }
 

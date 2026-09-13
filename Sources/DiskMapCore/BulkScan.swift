@@ -8,6 +8,11 @@ import Foundation
 /// (`ATTR_CMN_RETURNED_ATTRS` immediately after the length, `ATTR_CMN_ERROR`
 /// next per the man page) and a real file whose URL size was 4 logical /
 /// 4096 allocated. Changing the attribute mask moves these offsets.
+///
+/// Scan workers never mutate the `FileTree`. They push entry batches to a
+/// dedicated publisher that owns all inserts and child-job enqueues. That
+/// keeps `getattrlistbulk` overlapping with tree growth. The shared lock
+/// only protects the job/batch queues and counters — not every `addNode`.
 enum BulkScan {
     struct Result: Sendable {
         var tree: FileTree
@@ -18,6 +23,8 @@ enum BulkScan {
 
     static func walk(root: URL, progress: (@Sendable (Int) -> Void)?) -> Result {
         var tree = FileTree()
+        // Home scans land near 1.7–2M nodes; reserve once so appends stay O(1).
+        tree.reserveNodeCapacity(2_000_000, uniqueNames: 750_000)
         let rootID = tree.addNode(
             name: root.lastPathComponent,
             parent: -1,
@@ -26,9 +33,11 @@ enum BulkScan {
             allocatedSize: 0,
             modifiedDaysSinceEpoch: 0
         )
-        let state = State(tree: tree, rootID: rootID, progress: progress)
+        let state = State(tree: tree, progress: progress)
         state.enqueue(path: root.path, nodeID: rootID)
-        let workers = max(1, min(8, ProcessInfo.processInfo.activeProcessorCount))
+        state.startPublisher()
+
+        let workers = max(1, min(ProcessInfo.processInfo.activeProcessorCount, 12))
         let group = DispatchGroup()
         for _ in 0..<workers {
             group.enter()
@@ -82,7 +91,7 @@ enum BulkScan {
             }
             parse(buffer: buffer, count: Int(count), names: &names, entries: &entries)
         }
-        state.publish(parent: job.nodeID, names: names, entries: entries)
+        state.submit(Batch(parentPath: job.path, parent: job.nodeID, names: names, entries: entries))
     }
 
     /// Offsets measured 2026-09-14. Name bytes sit at `nameRef + dataOffset`.
@@ -150,11 +159,23 @@ enum BulkScan {
         buffer.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: type) }
     }
 
+    private static func joinPath(parentPath: String, name: String) -> String {
+        if parentPath == "/" { return "/" + name }
+        var path = String()
+        path.reserveCapacity(parentPath.utf8.count + 1 + name.utf8.count)
+        path.append(parentPath)
+        path.append("/")
+        path.append(name)
+        return path
+    }
+
     private final class State: @unchecked Sendable {
         private let condition = NSCondition()
         private var jobs: [Job] = []
+        private var batches: [Batch] = []
         private var inflight = 0
         private var finished = false
+        private var publisherExited = false
         private var tree: FileTree
         private var itemCount = 0
         private var notDownloadedCount = 0
@@ -162,16 +183,20 @@ enum BulkScan {
         private let progress: (@Sendable (Int) -> Void)?
         private var lastReported = 0
 
-        init(tree: FileTree, rootID: Int32, progress: (@Sendable (Int) -> Void)?) {
+        init(tree: FileTree, progress: (@Sendable (Int) -> Void)?) {
             self.tree = tree
             self.progress = progress
             self.peak = ProcessMemory.current()?.residentBytes ?? 0
-            _ = rootID
+        }
+
+        func startPublisher() {
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                self.publishLoop()
+            }
         }
 
         func enqueue(path: String, nodeID: Int32) {
             condition.lock()
-            pathByNode[nodeID] = path
             jobs.append(Job(path: path, nodeID: nodeID))
             condition.broadcast()
             condition.unlock()
@@ -191,35 +216,59 @@ enum BulkScan {
         func noteEmptyDirectory() {
             condition.lock()
             inflight -= 1
-            if jobs.isEmpty && inflight == 0 {
-                finished = true
-                condition.broadcast()
-            }
+            signalWorkLocked()
             condition.unlock()
         }
 
-        func publish(parent: Int32, names: [UInt8], entries: [Entry]) {
-            var children: [(path: String, nodeID: Int32)] = []
-            var report: Int?
+        func submit(_ batch: Batch) {
             condition.lock()
-            let parentPath = pathByNode[parent] ?? ""
-            itemCount += entries.count
-            if itemCount - lastReported >= 4000 {
-                lastReported = itemCount
-                report = itemCount
+            batches.append(batch)
+            inflight -= 1
+            signalWorkLocked()
+            condition.unlock()
+        }
+
+        private func publishLoop() {
+            while true {
+                let batch: Batch?
+                condition.lock()
+                while batches.isEmpty && !finished {
+                    condition.wait()
+                }
+                if batches.isEmpty && finished {
+                    publisherExited = true
+                    condition.broadcast()
+                    condition.unlock()
+                    return
+                }
+                batch = batches.isEmpty ? nil : batches.removeLast()
+                condition.unlock()
+                if let batch {
+                    publish(batch)
+                }
             }
-            names.withUnsafeBufferPointer { raw in
+        }
+
+        private func publish(_ batch: Batch) {
+            // Only the publisher thread mutates `tree` — no lock needed here.
+            var children: [Job] = []
+            children.reserveCapacity(32)
+            var notDownloadedDelta = 0
+            var included = 0
+
+            batch.names.withUnsafeBufferPointer { raw in
                 guard let base = raw.baseAddress else { return }
-                for entry in entries where entry.include {
+                for entry in batch.entries where entry.include {
+                    included += 1
                     let bytes = UnsafeBufferPointer(start: base + entry.nameStart, count: entry.nameCount)
                     var flags: UInt8 = 0
                     if entry.notDownloaded {
                         flags |= NodeFlags.notDownloaded
-                        notDownloadedCount += 1
+                        notDownloadedDelta += 1
                     }
                     let id = tree.addNode(
                         utf8: bytes,
-                        parent: parent,
+                        parent: batch.parent,
                         isDirectory: entry.isDirectory,
                         logicalSize: entry.logical,
                         allocatedSize: entry.allocated,
@@ -228,20 +277,28 @@ enum BulkScan {
                     )
                     if entry.descend {
                         let name = String(decoding: bytes, as: UTF8.self)
-                        let path = parentPath == "/" ? "/" + name : parentPath + "/" + name
-                        pathByNode[id] = path
-                        children.append((path, id))
+                        children.append(Job(
+                            path: BulkScan.joinPath(parentPath: batch.parentPath, name: name),
+                            nodeID: id
+                        ))
                     }
                 }
             }
-            jobs.append(contentsOf: children.map { Job(path: $0.path, nodeID: $0.nodeID) })
-            inflight -= 1
-            if !children.isEmpty { condition.broadcast() }
-            if jobs.isEmpty && inflight == 0 {
-                finished = true
-                condition.broadcast()
+
+            var report: Int?
+            condition.lock()
+            itemCount += batch.entries.count
+            notDownloadedCount += notDownloadedDelta
+            if itemCount - lastReported >= 4000 {
+                lastReported = itemCount
+                report = itemCount
             }
+            if !children.isEmpty {
+                jobs.append(contentsOf: children)
+            }
+            signalWorkLocked()
             condition.unlock()
+
             if let report {
                 if let rss = ProcessMemory.current()?.residentBytes {
                     condition.lock()
@@ -250,12 +307,22 @@ enum BulkScan {
                 }
                 progress?(report)
             }
+            _ = included
         }
 
-        private var pathByNode: [Int32: String] = [:]
+        /// Wake waiters and mark the walk finished when every queue is drained.
+        private func signalWorkLocked() {
+            if inflight == 0 && jobs.isEmpty && batches.isEmpty {
+                finished = true
+            }
+            condition.broadcast()
+        }
 
         func finish() -> Result {
             condition.lock()
+            while !publisherExited {
+                condition.wait()
+            }
             let result = Result(
                 tree: tree,
                 itemCount: itemCount,
@@ -271,6 +338,13 @@ enum BulkScan {
 private struct Job {
     var path: String
     var nodeID: Int32
+}
+
+private struct Batch {
+    var parentPath: String
+    var parent: Int32
+    var names: [UInt8]
+    var entries: [Entry]
 }
 
 private struct Entry {
