@@ -61,15 +61,18 @@ struct SafeToReviewView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
             listControls
-            Divider().overlay(DiskMapTheme.cardStroke)
-            if model.isScanning {
-                ProgressView("Analyzing cleanup opportunities…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if visible.isEmpty {
-                emptyState
-            } else {
-                list
+            VStack(alignment: .leading, spacing: 0) {
+                Divider().overlay(DiskMapTheme.cardStroke)
+                if model.isScanning {
+                    ProgressView("Analyzing cleanup opportunities…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if visible.isEmpty {
+                    emptyState
+                } else {
+                    list
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             selectionBar
         }
     }
@@ -101,16 +104,19 @@ struct SafeToReviewView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
 
-            GeometryReader { geo in
-                let total = max(1, summary.totalBytes)
-                HStack(spacing: 2) {
-                    seg(summary.cacheBytes, total, geo.size.width, DiskMapTheme.safe)
-                    seg(summary.buildBytes, total, geo.size.width, DiskMapTheme.review)
-                    seg(summary.packageBytes, total, geo.size.width, Color(red: 0.35, green: 0.55, blue: 0.90))
-                    seg(summary.otherBytes, total, geo.size.width, DiskMapTheme.mutedLabel.opacity(0.5))
+            Color.clear
+                .frame(height: 10)
+                .overlay {
+                    GeometryReader { geo in
+                        let total = max(1, summary.totalBytes)
+                        HStack(spacing: 2) {
+                            seg(summary.cacheBytes, total, geo.size.width, DiskMapTheme.safe)
+                            seg(summary.buildBytes, total, geo.size.width, DiskMapTheme.review)
+                            seg(summary.packageBytes, total, geo.size.width, Color(red: 0.35, green: 0.55, blue: 0.90))
+                            seg(summary.otherBytes, total, geo.size.width, DiskMapTheme.mutedLabel.opacity(0.5))
+                        }
+                    }
                 }
-            }
-            .frame(height: 10)
 
             HStack(spacing: 14) {
                 legend("Caches", summary.cacheBytes, DiskMapTheme.safe)
@@ -248,6 +254,7 @@ struct SafeToReviewView: View {
             }
             .padding(.horizontal, 12)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func row(_ t: ReviewableTarget) -> some View {

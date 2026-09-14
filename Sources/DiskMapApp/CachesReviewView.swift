@@ -96,13 +96,18 @@ struct CachesReviewView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
             controls
-            listHeader
-            Divider().overlay(DiskMapTheme.cardStroke)
-            if visible.isEmpty {
-                emptyState
-            } else {
-                list
+            // Absorb leftover height so the column header stays under filters
+            // (unstretched VStack + tall inspector was floating the header in a gap).
+            VStack(alignment: .leading, spacing: 0) {
+                listHeader
+                Divider().overlay(DiskMapTheme.cardStroke)
+                if visible.isEmpty {
+                    emptyState
+                } else {
+                    list
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             selectionBar
         }
     }
@@ -164,18 +169,21 @@ struct CachesReviewView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(DiskMapTheme.ink)
 
-            GeometryReader { geo in
-                let total = max(1, totalBytes)
-                HStack(spacing: 2) {
-                    ForEach(Array(topLegend.enumerated()), id: \.offset) { _, row in
-                        let w = geo.size.width * CGFloat(Double(row.1) / Double(total))
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(row.2)
-                            .frame(width: max(row.1 > 0 ? 4 : 0, w))
+            Color.clear
+                .frame(height: 12)
+                .overlay {
+                    GeometryReader { geo in
+                        let total = max(1, totalBytes)
+                        HStack(spacing: 2) {
+                            ForEach(Array(topLegend.enumerated()), id: \.offset) { _, row in
+                                let w = geo.size.width * CGFloat(Double(row.1) / Double(total))
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(row.2)
+                                    .frame(width: max(row.1 > 0 ? 4 : 0, w))
+                            }
+                        }
                     }
                 }
-            }
-            .frame(height: 12)
 
             HStack(spacing: 12) {
                 ForEach(Array(topLegend.enumerated()), id: \.offset) { _, row in
@@ -260,7 +268,9 @@ struct CachesReviewView: View {
         .font(.system(size: 10, weight: .semibold))
         .foregroundStyle(DiskMapTheme.mutedLabel)
         .padding(.horizontal, 28)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DiskMapTheme.cardFill.opacity(0.72))
     }
 
     private var list: some View {
@@ -276,6 +286,7 @@ struct CachesReviewView: View {
             }
             .padding(.horizontal, 12)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func cacheRow(_ t: ReviewableTarget) -> some View {
