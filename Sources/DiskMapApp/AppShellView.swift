@@ -252,9 +252,9 @@ struct AppShellView: View {
                 BiggestFoldersView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })
             } else { needsScan }
         case .forgottenFiles:
-            findWrapper(title: "Forgotten Files", blurb: forgottenBlurb, trailing: { forgottenTrailing }) { tree, root in
-                AgeMapView(model: model, tree: tree, totals: model.selectedTotals, rootURL: root, findWorkflow: true)
-            }
+            if let tree = model.tree, let root = model.rootURL {
+                ForgottenFilesView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })
+            } else { needsScan }
         case .duplicates:
             if let tree = model.tree, let root = model.rootURL {
                 DuplicatesView(model: model, tree: tree, rootURL: root)
