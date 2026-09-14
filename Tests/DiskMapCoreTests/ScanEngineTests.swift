@@ -351,3 +351,90 @@ struct ExternalVolumeScanTests {
         #expect(result.itemCount >= 0)
     }
 }
+
+
+struct EdgeCaseRobustnessTests {
+    /// Builds a disposable tree: combining-Unicode name, deep path, chmod 000
+    /// directory, identical non-clone copies. Confirms scan + CloneDetector
+    /// fallback + DuplicateFinder grouping without hanging.
+    @Test func unicodeDeepDeniedAndIndependentCopies() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("diskmap-edge-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let combining = "cafe\u{0301}.txt"
+        try "combining\n".write(to: root.appendingPathComponent(combining), atomically: true, encoding: .utf8)
+
+        var deep = root.appendingPathComponent("deep", isDirectory: true)
+        for i in 1...25 {
+            deep = deep.appendingPathComponent("d\(i)", isDirectory: true)
+        }
+        try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
+        try "leaf\n".write(to: deep.appendingPathComponent("leaf.txt"), atomically: true, encoding: .utf8)
+
+        let denied = root.appendingPathComponent("denied/secret", isDirectory: true)
+        try FileManager.default.createDirectory(at: denied, withIntermediateDirectories: true)
+        try "secret\n".write(to: denied.appendingPathComponent("hidden.txt"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: denied.path)
+
+        let dups = root.appendingPathComponent("dups", isDirectory: true)
+        try FileManager.default.createDirectory(at: dups, withIntermediateDirectories: true)
+        let payload = Data("same-bytes-payload-for-hash\n".utf8)
+        try payload.write(to: dups.appendingPathComponent("a.bin"))
+        try payload.write(to: dups.appendingPathComponent("b.bin"))
+
+        let a = dups.appendingPathComponent("a.bin").path
+        let b = dups.appendingPathComponent("b.bin").path
+        #expect(CloneDetector.areLikelyClones(a, b) == false)
+
+        let result = await ScanEngine().scan(root: root)
+        #expect(result.itemCount > 20)
+        var sawCombining = false
+        var sawLeaf = false
+        var sawSecret = false
+        for id in 0..<Int32(result.tree.count) {
+            let name = result.tree.name(of: id)
+            if name.unicodeScalars.contains(where: { $0.value == 0x0301 }) { sawCombining = true }
+            if name == "leaf.txt" { sawLeaf = true }
+            if name == "secret" { sawSecret = true }
+        }
+        #expect(sawCombining)
+        #expect(sawLeaf)
+        #expect(sawSecret)
+
+        let groups = await DuplicateFinder.findDuplicates(
+            candidates: DuplicateFinder.candidates(in: result.tree, root: root)
+        )
+        #expect(groups.contains { !$0.sharesStorage && $0.fileIDs.count == 2 })
+    }
+
+    /// Optional: when `/Volumes/DiskMapExFAT` is mounted (see
+    /// `scripts/make-exfat-fixture.sh`), confirm CloneDetector returns false
+    /// and a scan does not hang.
+    @Test func exFATVolumeCloneDetectorFailsCleanlyWhenPresent() async throws {
+        // Prefer RAM-disk fixture from scripts/make-exfat-fixture.sh (/Volumes/DISKMAP).
+        let candidates = [
+            URL(fileURLWithPath: "/Volumes/DISKMAP", isDirectory: true),
+            URL(fileURLWithPath: "/Volumes/DiskMapExFAT", isDirectory: true),
+        ]
+        var vol: URL?
+        for candidate in candidates {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDir), isDir.boolValue {
+                vol = candidate
+                break
+            }
+        }
+        guard let vol else { return } // skip — no fixture volume
+        let a = vol.appendingPathComponent("edge-cases/dups/a.bin")
+        let b = vol.appendingPathComponent("edge-cases/dups/b.bin")
+        if FileManager.default.fileExists(atPath: a.path), FileManager.default.fileExists(atPath: b.path) {
+            #expect(CloneDetector.areLikelyClones(a.path, b.path) == false)
+        }
+        let result = await ScanEngine().scan(root: vol.appendingPathComponent("edge-cases", isDirectory: true))
+        #expect(result.itemCount > 0)
+        #expect(result.elapsedSeconds < 120)
+    }
+}
+

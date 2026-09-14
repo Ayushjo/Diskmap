@@ -1,0 +1,19 @@
+Building for production...
+[0/6] Write sources
+[2/6] Copying quick-wins-patterns.json
+[3/6] Write swift-version--1AB21518FC5DEDBE.txt
+[5/7] Compiling DiskMapCore AppLeftoverFinder.swift
+[6/8] Compiling EdgeProbe main.swift
+[6/8] Write Objects.LinkFileList
+[7/8] Linking EdgeProbe
+Build of product 'EdgeProbe' complete! (27.67s)
+clone_ab=false
+clone_self=false
+clone_missing=false
+clone_large_a=false
+DiskMap scan: items=40 elapsed=0.007s rss_during_walk_peak=54181888 rss_after_enumerator_release=54181888 not_downloaded=0
+scan_items=40 nodes=41 elapsed=0.007 peak_rss=54181888
+found_cafeish=false found_leaf=true found_large=true
+dup_candidates=6
+dup_groups=1 rss_before=54427648 rss_after=54722560 rss_peak_task=54722560
+group sizeEach=28 files=2 shares=false hash=e130fa1ed8d3cc70

@@ -41,9 +41,9 @@ public struct DuplicateGroup: Sendable, Equatable {
     }
 }
 
-struct DuplicateScanResult: Sendable, Equatable {
-    var groups: [DuplicateGroup]
-    var fullContentHashCalls: Int
+public struct DuplicateScanResult: Sendable, Equatable {
+    public var groups: [DuplicateGroup]
+    public var fullContentHashCalls: Int
 }
 
 /// Three-phase duplicate detection, cheapest checks first:
@@ -86,7 +86,7 @@ public enum DuplicateFinder {
         return result
     }
 
-    static func scan(
+    public static func scan(
         _ candidates: [(id: Int32, url: URL, size: Int64)]
     ) async -> DuplicateScanResult {
         var bySize: [Int64: [(id: Int32, url: URL)]] = [:]

@@ -303,15 +303,39 @@ prefixes were not changed.
 
 
 
-## Milestone 6 — Ship
+## Milestone 6 — Maximize, then ad-hoc build (re-sequenced)
 
-- [ ] **TASK-020: Apple Developer account + signing** — see SETUP.md, this
-  one is mostly you, not Cursor.
-- [ ] **TASK-021: Notarization pipeline** — script `xcrun notarytool`
-  submission, wire into the CI workflow once you have a Developer ID cert.
-- [ ] **TASK-022: Update mechanism** — Sparkle is the standard choice
-  outside the App Store; evaluate vs. a simple custom "check GitHub
-  releases" checker given this is a smaller project.
-- [ ] **TASK-023: App icon + visual polish pass** — design decision, do
-  this yourself or commission it; Cursor can implement once you have
-  source assets.
+TASK-020/021 (paid Developer Program + notarization) deferred — ad-hoc
+signing needs no Apple account. Revisit only if this goes to more than
+one Mac. TASK-022 (auto-update) deprioritized for the same reason.
+
+- [x] **TASK-026: Feature-completeness audit against docs/PRD.md**
+  Done 2026-09-14: `docs/PRD-AUDIT.md`. Biggest confirmed gap was
+  external/network volume confirmation (addressed in TASK-027 for ExFAT;
+  network share still N/A on this machine).
+
+- [x] **TASK-027: External volumes + edge-case robustness pass**
+  Done 2026-09-14: `docs/EDGE-ROBUSTNESS.md`. RAM ExFAT volume (because
+  `hdiutil create` is TCC-blocked). `F_LOG2PHYS_EXT` → errno 45;
+  CloneDetector false; DuplicateFinder hashes. Unicode / deep path /
+  chmod 000 / 64 MB file OK. Script: `scripts/make-exfat-fixture.sh`.
+
+- [x] **TASK-028: DuplicateFinder memory-at-scale benchmark**
+  Done 2026-09-14 on `~/Downloads` (~23.7k items, 20 080 candidates):
+  dup elapsed **0.331 s**, rss_before **72.4 MB**, rss_peak_sampled /
+  after **140.0 MB**, full_hash_calls **748**, groups **281**.
+  Raw: `docs/perf-results/downloads-duplicates-rss.txt`.
+  Peak is modest; no TaskGroup concurrency throttle added. Home-scale
+  re-run still useful later if Downloads is not representative of large
+  media trees.
+
+- [x] **TASK-029: Ad-hoc build & package script**
+  Done: `scripts/build-adhoc.sh` → `dist/DiskMap.app`, ad-hoc signed
+  (`com.ayushjo.diskmap`). Documented in SETUP.md (right-click → Open).
+
+### Still deferred
+
+- [ ] **TASK-020: Apple Developer account + signing**
+- [ ] **TASK-021: Notarization pipeline**
+- [ ] **TASK-022: Update mechanism**
+- [ ] **TASK-023: App icon + visual polish pass**

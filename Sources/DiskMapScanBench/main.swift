@@ -5,7 +5,7 @@ import Foundation
 /// Stable release bench for DiskMap scans.
 ///
 /// Usage:
-///   DiskMapScanBench [--repeat N] [--rollup] [--layout] [--json] [--label NAME] [path]
+///   DiskMapScanBench [--repeat N] [--rollup] [--layout] [--duplicates] [--json] [--label NAME] [path]
 ///
 /// Prints one line per run plus a summary (min / median / max). Record
 /// cold vs warm disk context in docs/PERF.md alongside these numbers.
@@ -14,6 +14,7 @@ struct Args {
     var repeats = 1
     var rollup = false
     var layout = false
+    var duplicates = false
     var json = false
     var label = "scan"
 }
@@ -31,13 +32,15 @@ func parseArgs() -> Args {
             args.rollup = true
         case "--layout":
             args.layout = true
+        case "--duplicates":
+            args.duplicates = true
         case "--json":
             args.json = true
         case "--label":
             args.label = rest.first ?? args.label
             if !rest.isEmpty { rest.removeFirst() }
         case "--help", "-h":
-            print("DiskMapScanBench [--repeat N] [--rollup] [--layout] [--json] [--label NAME] [path]")
+            print("DiskMapScanBench [--repeat N] [--rollup] [--layout] [--duplicates] [--json] [--label NAME] [path]")
             exit(0)
         default:
             if token.hasPrefix("-") {
@@ -125,6 +128,31 @@ for run in 1...args.repeats {
         layoutSeconds = durationSeconds(from: started)
     }
 
+    if args.duplicates {
+        let tree = result.tree
+        let cands = DuplicateFinder.candidates(in: tree, root: root)
+        let before = ProcessMemory.current()
+        let samplePeak = MutexPeak()
+        samplePeak.value = before?.residentBytes ?? 0
+        let sampler = Task.detached {
+            while !Task.isCancelled {
+                if let rss = ProcessMemory.current()?.residentBytes {
+                    samplePeak.update(rss)
+                }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+        let started = ContinuousClock.now
+        let dupResult = await DuplicateFinder.scan(cands)
+        let dupSeconds = durationSeconds(from: started)
+        sampler.cancel()
+        let after = ProcessMemory.current()
+        let peak = max(samplePeak.value, after?.residentBytes ?? 0, before?.residentBytes ?? 0)
+        print(
+            "duplicates label=\(args.label) candidates=\(cands.count) groups=\(dupResult.groups.count) full_hash_calls=\(dupResult.fullContentHashCalls) elapsed=\(String(format: "%.3f", dupSeconds))s rss_before=\(before?.residentBytes ?? 0) rss_peak_sampled=\(peak) rss_after=\(after?.residentBytes ?? 0) task_peak=\(after?.peakResidentBytes ?? 0)"
+        )
+    }
+
     let row = RunRow(
         label: args.label,
         path: root.path,
@@ -171,4 +199,20 @@ if args.json {
     print(
         "summary label=\(args.label) n=\(rows.count) scan_min=\(String(format: "%.3f", scans.min() ?? 0)) scan_median=\(String(format: "%.3f", median(scans))) scan_max=\(String(format: "%.3f", scans.max() ?? 0)) walk_rss_median=\(rows.map(\.walkPeakRSS).sorted()[rows.count / 2])"
     )
+}
+
+
+/// Tiny peak tracker for the duplicates RSS sampler.
+final class MutexPeak: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: UInt64 = 0
+    var value: UInt64 {
+        get { lock.lock(); defer { lock.unlock() }; return _value }
+        set { lock.lock(); _value = newValue; lock.unlock() }
+    }
+    func update(_ rss: UInt64) {
+        lock.lock()
+        if rss > _value { _value = rss }
+        lock.unlock()
+    }
 }

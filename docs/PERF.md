@@ -172,3 +172,22 @@ No Instruments (no Xcode). Added `DiskMapScanBench --layout`: after rollup, time
 - [x] Cold vs warm called out (2026-09-13 post-reboot matrix)
 - [ ] `TASKS.md` ticket updated with min/median/max
 - [ ] No network code; CleanupQueue excluded-paths untouched unless called out
+
+### DuplicateFinder RSS — Downloads (TASK-028, 2026-09-14)
+
+`DiskMapScanBench --duplicates ~/Downloads`:
+
+| metric | value |
+|---|---|
+| scan items | 23 724 |
+| candidates | 20 080 |
+| groups | 281 |
+| full_hash_calls | 748 |
+| dup elapsed | 0.331 s |
+| rss_before | 75 907 072 (~72.4 MB) |
+| rss_peak_sampled | 146 751 488 (~140.0 MB) |
+| rss_after | 146 751 488 (~140.0 MB) |
+
+Raw: `docs/perf-results/downloads-duplicates-rss.txt`. No concurrency
+cap added — peak stayed modest on this folder.
+
