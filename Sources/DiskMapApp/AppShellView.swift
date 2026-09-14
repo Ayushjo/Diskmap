@@ -259,7 +259,19 @@ struct AppShellView: View {
             if let tree = model.tree, let root = model.rootURL {
                 DuplicatesView(model: model, tree: tree, rootURL: root)
             } else { needsScan }
-        case .cleanSafe, .cleanCaches, .cleanDownloads, .cleanMedia:
+        case .cleanSafe:
+            SafeToReviewView(
+                model: model,
+                onOpenCleanup: { showCleanup = true },
+                onOpenCaches: { model.destination = .cleanCaches }
+            )
+        case .cleanCaches:
+            CachesReviewView(
+                model: model,
+                onOpenCleanup: { showCleanup = true },
+                onBack: { model.destination = .cleanSafe }
+            )
+        case .cleanDownloads, .cleanMedia:
             CleanReviewView(model: model, mode: model.destination, showCleanup: $showCleanup, pickFolder: pickFolder)
         case .developerStorage:
             DeveloperStorageView(model: model, pickFolder: pickFolder)

@@ -38,6 +38,11 @@ final class ScanModel: ObservableObject {
     @Published var analysis: AnalysisSnapshot = .empty
     /// When set, Biggest Files filters to files under this absolute path prefix.
     @Published var folderFilterPath: String? = nil
+    /// Precomputed after scan — Forgotten Files must not re-walk the tree on every click.
+    @Published var cachedForgotten: [ForgottenCandidate] = []
+    @Published var cachedForgottenSummary: ForgottenSummary = .empty
+    @Published var cachedReviewables: [ReviewableTarget] = []
+    @Published var cachedReviewableSummary: ReviewableSummary = .empty
 
     let cleanupQueue = CleanupQueue()
     let fileTypeCategories = FileTypeCatalog.loadBundled()
@@ -72,6 +77,10 @@ final class ScanModel: ObservableObject {
         cachedFileTypes = []
         duplicateGroups = []
         folderFilterPath = nil
+        cachedForgotten = []
+        cachedForgottenSummary = .empty
+        cachedReviewables = []
+        cachedReviewableSummary = .empty
         log("scan start \(url.path)")
 
         let before = ProcessMemory.current()
@@ -128,6 +137,22 @@ final class ScanModel: ObservableObject {
             basis: sizeBasis,
             quickWins: cachedQuickWins
         )
+        let forgotten = ForgottenFiles.candidates(
+            tree: result.tree,
+            root: url,
+            totals: allocated,
+            limit: 400
+        )
+        cachedForgotten = forgotten
+        cachedForgottenSummary = ForgottenFiles.summary(from: forgotten)
+        let reviewable = ReviewableCatalog.build(
+            tree: result.tree,
+            root: url,
+            totals: allocated,
+            quickWins: cachedQuickWins
+        )
+        cachedReviewables = reviewable.targets
+        cachedReviewableSummary = reviewable.summary
         selectedNode = 0
         currentNode = 0
         lastScanSeconds = result.elapsedSeconds
@@ -190,6 +215,38 @@ final class ScanModel: ObservableObject {
             basis: sizeBasis,
             quickWins: cachedQuickWins
         )
+    }
+
+    func refreshReviewableCache() {
+        guard let tree, let rootURL, selectedTotals.count == tree.count else {
+            cachedReviewables = []
+            cachedReviewableSummary = .empty
+            return
+        }
+        let built = ReviewableCatalog.build(
+            tree: tree,
+            root: rootURL,
+            totals: selectedTotals,
+            quickWins: cachedQuickWins
+        )
+        cachedReviewables = built.targets
+        cachedReviewableSummary = built.summary
+    }
+
+    func refreshForgottenCache() {
+        guard let tree, let rootURL, selectedTotals.count == tree.count else {
+            cachedForgotten = []
+            cachedForgottenSummary = .empty
+            return
+        }
+        let forgotten = ForgottenFiles.candidates(
+            tree: tree,
+            root: rootURL,
+            totals: selectedTotals,
+            limit: 400
+        )
+        cachedForgotten = forgotten
+        cachedForgottenSummary = ForgottenFiles.summary(from: forgotten)
     }
 
     func refreshQueue() async {
@@ -343,6 +400,8 @@ struct ContentView: View {
         AppShellView(model: model)
             .onChange(of: model.sizeBasis) { _, _ in
                 model.rebuildAnalysis()
+                model.refreshForgottenCache()
+                model.refreshReviewableCache()
             }
     }
 }
