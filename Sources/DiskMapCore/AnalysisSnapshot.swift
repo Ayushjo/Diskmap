@@ -160,7 +160,6 @@ public struct AnalysisSnapshot: Sendable, Equatable {
         let children = tree.children(of: 0, totals: totals)
         for entry in children {
             let child = entry.id
-            let idx = Int(child)
             let name = tree.name(of: child)
             let bytes = entry.size
             guard bytes > 0 else { continue }
