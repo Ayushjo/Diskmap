@@ -163,7 +163,6 @@ struct FileBrowserView: View {
             folderCard
             controls
             listHeader
-            Divider().overlay(DiskMapTheme.cardStroke)
             Group {
                 if model.isScanning {
                     ProgressView("Indexing… File Browser uses the finished scan.")
@@ -421,19 +420,37 @@ struct FileBrowserView: View {
         .padding(.bottom, 8)
     }
 
+    // Shared column metrics — header and rows MUST use the same widths.
+    private enum Col {
+        static let check: CGFloat = 20
+        static let icon: CGFloat = 22
+        static let kind: CGFloat = 90
+        static let sizeBar: CGFloat = 80
+        static let sizeText: CGFloat = 78
+        static let modified: CGFloat = 104
+        static let spacing: CGFloat = 10
+        static let hPad: CGFloat = 16
+    }
+
     private var listHeader: some View {
-        HStack(spacing: 8) {
-            Color.clear.frame(width: 22)
-            Text("Name").frame(maxWidth: .infinity, alignment: .leading)
-            Text("Kind").frame(width: 92, alignment: .leading)
-            Text("Size").frame(width: 148, alignment: .leading)
-            Text("Modified").frame(width: 100, alignment: .trailing)
+        HStack(spacing: Col.spacing) {
+            Color.clear.frame(width: Col.check)
+            Color.clear.frame(width: Col.icon)
+            Text("Name")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("Kind")
+                .frame(width: Col.kind, alignment: .leading)
+            Text("Size")
+                .frame(width: Col.sizeBar + Col.spacing + Col.sizeText, alignment: .leading)
+            Text("Modified")
+                .frame(width: Col.modified, alignment: .trailing)
         }
-        .font(.system(size: 10, weight: .semibold))
+        .font(.system(size: 11, weight: .semibold))
         .foregroundStyle(DiskMapTheme.mutedLabel)
-        .padding(.horizontal, 22)
-        .padding(.vertical, 7)
-        .background(DiskMapTheme.cardFill.opacity(0.85))
+        .padding(.horizontal, Col.hPad)
+        .padding(.vertical, 8)
+        .background(DiskMapTheme.cardFill)
+        .overlay(alignment: .bottom) { Divider().overlay(DiskMapTheme.cardStroke) }
     }
 
     private var list: some View {
@@ -441,16 +458,13 @@ struct FileBrowserView: View {
             LazyVStack(spacing: 0) {
                 ForEach(rows, id: \.id) { row in
                     browserRow(row)
-                    Rectangle()
-                        .fill(DiskMapTheme.cardStroke.opacity(0.5))
-                        .frame(height: 1)
-                        .padding(.leading, 48)
+                    Divider()
+                        .overlay(DiskMapTheme.cardStroke.opacity(0.65))
+                        .padding(.leading, Col.hPad + Col.check + Col.spacing + Col.icon + Col.spacing)
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 2)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func browserRow(_ row: (id: Int32, size: Int64)) -> some View {
@@ -462,79 +476,64 @@ struct FileBrowserView: View {
         let kind = kindTitle(of: row.id)
         let modified = relativeModified(tree.modifiedDay[Int(row.id)])
         let tint = kindTint(of: row.id)
-        let symbol = isDir ? "folder.fill" : FileKind.classify(
-            fileName: name,
-            path: tree.path(of: row.id, root: rootURL).path
-        ).symbolName
+        let absPath = tree.path(of: row.id, root: rootURL).path
+        let symbol = isDir ? "folder.fill" : FileKind.classify(fileName: name, path: absPath).symbolName
 
-        return HStack(spacing: 8) {
+        return HStack(spacing: Col.spacing) {
             Button {
                 if on { checked.remove(row.id) } else { checked.insert(row.id) }
             } label: {
                 Image(systemName: on ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 14))
                     .foregroundStyle(on ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
             }
             .buttonStyle(.plain)
-            .frame(width: 22)
+            .frame(width: Col.check, height: 28)
 
-            Button {
-                selectRow(row.id)
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: symbol)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isDir ? Color(red: 0.32, green: 0.56, blue: 0.98) : tint)
-                        .frame(width: 22, height: 22)
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(isDir ? Color(red: 0.32, green: 0.56, blue: 0.98) : tint)
+                .frame(width: Col.icon, height: 22)
 
-                    Text(name)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .help(name)
+            Text(name)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(DiskMapTheme.ink)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(name)
 
-                    Text(kind)
-                        .font(.system(size: 11))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .lineLimit(1)
-                        .frame(width: 92, alignment: .leading)
+            Text(kind)
+                .font(.system(size: 12))
+                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .lineLimit(1)
+                .frame(width: Col.kind, alignment: .leading)
 
-                    ZStack(alignment: .leading) {
-                        ProportionBar(fraction: frac, tint: tint.opacity(0.28))
-                            .frame(height: 18)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        HStack {
-                            Spacer(minLength: 0)
-                            Text(ByteFormat.string(row.size))
-                                .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(DiskMapTheme.ink)
-                                .padding(.trailing, 4)
-                        }
-                    }
-                    .frame(width: 148)
+            // Bar and size are SIDE BY SIDE — never stacked/overlapping.
+            ProportionBar(fraction: frac, tint: Color(red: 0.32, green: 0.56, blue: 0.98).opacity(0.55))
+                .frame(width: Col.sizeBar, height: 6)
+                .clipShape(Capsule())
 
-                    Text(modified)
-                        .font(.system(size: 11))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .frame(width: 100, alignment: .trailing)
-                }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(selected ? DiskMapTheme.ink.opacity(0.07) : Color.clear)
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .simultaneousGesture(
-                TapGesture(count: 2).onEnded { openItem(row.id) }
-            )
-            .contextMenu { contextMenu(for: row.id) }
+            Text(ByteFormat.string(row.size))
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .foregroundStyle(DiskMapTheme.ink)
+                .frame(width: Col.sizeText, alignment: .trailing)
+                .lineLimit(1)
+
+            Text(modified)
+                .font(.system(size: 12))
+                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .frame(width: Col.modified, alignment: .trailing)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 8)
-        .frame(minHeight: 42)
+        .padding(.horizontal, Col.hPad)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(selected ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { openItem(row.id) }
+        .onTapGesture(count: 1) { selectRow(row.id) }
+        .contextMenu { contextMenu(for: row.id) }
     }
 
     private func selectRow(_ id: Int32) {
