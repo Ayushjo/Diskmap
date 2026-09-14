@@ -99,8 +99,14 @@ public struct AnalysisSnapshot: Sendable, Equatable {
         let cats = categorize(tree: tree, root: root, totals: totals)
         let topFiles = topFileHits(tree: tree, root: root, totals: totals, limit: 12)
         let topFolders = topFolderHits(tree: tree, root: root, totals: totals, limit: 12)
-        let forgotten = AgeMap.untouched(in: tree, totals: totals, today: today, limit: 200)
-        let forgottenBytes = forgotten.reduce(Int64(0)) { $0 + totals[Int($1)] }
+        let forgottenCandidates = ForgottenFiles.candidates(
+            tree: tree,
+            root: root,
+            totals: totals,
+            today: today,
+            limit: 200
+        )
+        let forgottenBytes = ForgottenFiles.summary(from: forgottenCandidates).reviewableBytes
         let qwBytes = quickWins.reduce(Int64(0)) { partial, hit in
             let i = Int(hit.id)
             return partial + (i < totals.count ? totals[i] : 0)
