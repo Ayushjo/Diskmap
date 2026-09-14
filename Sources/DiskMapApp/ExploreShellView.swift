@@ -181,17 +181,6 @@ struct ExploreShellView: View {
     }
 }
 
-private struct InkButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(DiskMapTheme.ink))
-            .opacity(configuration.isPressed ? 0.85 : 1)
-    }
-}
 
 struct ExploreSidebar: View {
     @ObservedObject var model: ScanModel

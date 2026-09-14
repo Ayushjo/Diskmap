@@ -34,6 +34,8 @@ final class ScanModel: ObservableObject {
     @Published var colorMode: ExploreColorMode = .folder
     @Published var depthLevel: Double = 7
     @Published var topNav: TopNavTab = .explore
+    @Published var destination: AppDestination = .overview
+    @Published var analysis: AnalysisSnapshot = .empty
 
     let cleanupQueue = CleanupQueue()
     let fileTypeCategories = FileTypeCatalog.loadBundled()
@@ -115,6 +117,14 @@ final class ScanModel: ObservableObject {
             sizes: allocated,
             categories: fileTypeCategories
         )
+        analysis = AnalysisSnapshot.build(
+            tree: result.tree,
+            root: url,
+            allocated: allocated,
+            logical: logical,
+            basis: sizeBasis,
+            quickWins: cachedQuickWins
+        )
         selectedNode = 0
         currentNode = 0
         lastScanSeconds = result.elapsedSeconds
@@ -160,6 +170,23 @@ final class ScanModel: ObservableObject {
         let files = DuplicateFinder.candidates(in: tree, root: rootURL)
         duplicateGroups = await DuplicateFinder.findDuplicates(candidates: files)
         isFindingDuplicates = false
+    }
+
+    func rebuildAnalysis() {
+        guard let tree, let rootURL,
+              allocatedTotals.count == tree.count,
+              logicalTotals.count == tree.count else {
+            analysis = .empty
+            return
+        }
+        analysis = AnalysisSnapshot.build(
+            tree: tree,
+            root: rootURL,
+            allocated: allocatedTotals,
+            logical: logicalTotals,
+            basis: sizeBasis,
+            quickWins: cachedQuickWins
+        )
     }
 
     func refreshQueue() async {
@@ -306,97 +333,9 @@ struct ContentView: View {
     @ObservedObject private var model = ScanModel.shared
 
     var body: some View {
-        VStack(spacing: 0) {
-            topNav
-            Divider()
-            tabBody
-        }
-        .background(DiskMapTheme.cream)
-        .preferredColorScheme(.light)
-        .frame(minWidth: 1100, minHeight: 720)
-    }
-
-    private var topNav: some View {
-        HStack(spacing: 4) {
-            ForEach(TopNavTab.allCases) { tab in
-                Button {
-                    if tab != .monitor { model.topNav = tab }
-                } label: {
-                    Text(tab.rawValue)
-                        .font(.system(size: 13, weight: model.topNav == tab ? .semibold : .regular))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .foregroundStyle(tab == .monitor ? DiskMapTheme.mutedLabel.opacity(0.5) : (model.topNav == tab ? .white : DiskMapTheme.ink))
-                        .background(
-                            Capsule().fill(model.topNav == tab ? DiskMapTheme.ink : Color.clear)
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(tab == .monitor)
-                .help(tab == .monitor ? "Monitor is not in this build" : tab.rawValue)
+        AppShellView(model: model)
+            .onChange(of: model.sizeBasis) { _, _ in
+                model.rebuildAnalysis()
             }
-            Spacer()
-            if model.tree != nil {
-                Picker("Size", selection: $model.sizeBasis) {
-                    Text("Logical").tag(SizeBasis.logical)
-                    Text("On Disk").tag(SizeBasis.allocated)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 180)
-                .accessibilityIdentifier("size-basis")
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(DiskMapTheme.cream)
-    }
-
-    @ViewBuilder
-    private var tabBody: some View {
-        switch model.topNav {
-        case .explore:
-            ExploreShellView(model: model, pickFolder: pickFolder)
-        case .duplicates:
-            if let tree = model.tree, let root = model.rootURL {
-                DuplicatesView(model: model, tree: tree, rootURL: root)
-            } else { needsScan }
-        case .applications:
-            AppsView(model: model)
-        case .monitor:
-            Text("Monitor is not in this build")
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .snapshots:
-            if let tree = model.tree, let root = model.rootURL {
-                SnapshotDiffView(tree: tree, rootURL: root, basis: model.sizeBasis)
-            } else { needsScan }
-        }
-    }
-
-
-    private var scanning: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-            Text("Scanning… \(model.scannedCount) items")
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .accessibilityIdentifier("scan-progress")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var needsScan: some View {
-        Text("Pick a folder to see what's using space")
-            .foregroundStyle(DiskMapTheme.mutedLabel)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func pickFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Scan"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task { await model.scan(url) }
     }
 }
