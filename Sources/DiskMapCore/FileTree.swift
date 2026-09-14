@@ -468,6 +468,43 @@ public struct FileTree: Sendable {
         return (logical, allocated)
     }
 
+    /// Files and folders under each node (inclusive for files on file nodes;
+    /// folder count excludes the node itself). One post-order walk — call
+    /// once after scan, never from the Inspector on every selection.
+    public func rollUpDescendantCounts() -> (files: [Int], folders: [Int]) {
+        var files = [Int](repeating: 0, count: count)
+        var folders = [Int](repeating: 0, count: count)
+        guard count > 0 else { return (files, folders) }
+
+        var stack: [(id: Int32, expanded: Bool)] = [(0, false)]
+        stack.reserveCapacity(64)
+        while let frame = stack.popLast() {
+            if !frame.expanded {
+                stack.append((frame.id, true))
+                var child = firstChild[Int(frame.id)]
+                while child != -1 {
+                    stack.append((child, false))
+                    child = nextSibling[Int(child)]
+                }
+                continue
+            }
+            let index = Int(frame.id)
+            var fileTotal = isDirectory[index] ? 0 : 1
+            var folderTotal = 0
+            var child = firstChild[index]
+            while child != -1 {
+                let childIndex = Int(child)
+                fileTotal += files[childIndex]
+                folderTotal += folders[childIndex]
+                if isDirectory[childIndex] { folderTotal += 1 }
+                child = nextSibling[childIndex]
+            }
+            files[index] = fileTotal
+            folders[index] = folderTotal
+        }
+        return (files, folders)
+    }
+
     private func ownSize(_ id: Int32, basis: SizeBasis) -> Int64 {
         let index = Int(id)
         let selected = basis == .logical ? logicalSize[index] : allocatedSize[index]

@@ -25,6 +25,11 @@ final class ScanModel: ObservableObject {
     @Published var selectedNode: Int32 = 0
     @Published var recentRoots: [URL] = ScanModel.loadRecentRoots()
     @Published var lastScanSeconds: Double?
+    @Published var descendantFileCounts: [Int] = []
+    @Published var descendantFolderCounts: [Int] = []
+    @Published var cachedQuickWins: [QuickWins.Hit] = []
+    @Published var cachedFileTypes: [FileTypeTotals] = []
+    @Published var toastMessage: String?
     @Published var exploreMode: ExploreViewMode = .treemap
     @Published var colorMode: ExploreColorMode = .folder
     @Published var depthLevel: Double = 7
@@ -57,6 +62,10 @@ final class ScanModel: ObservableObject {
         currentNode = 0
         allocatedTotals = []
         logicalTotals = []
+        descendantFileCounts = []
+        descendantFolderCounts = []
+        cachedQuickWins = []
+        cachedFileTypes = []
         duplicateGroups = []
         log("scan start \(url.path)")
 
@@ -96,12 +105,34 @@ final class ScanModel: ObservableObject {
         tree = result.tree
         allocatedTotals = allocated
         logicalTotals = logical
+        let counts = result.tree.rollUpDescendantCounts()
+        descendantFileCounts = counts.files
+        descendantFolderCounts = counts.folders
+        let patterns = QuickWins.bundledPatterns()
+        cachedQuickWins = QuickWins.find(in: result.tree, root: url, patterns: patterns)
+        cachedFileTypes = FileTypeCatalog.totals(
+            in: result.tree,
+            sizes: allocated,
+            categories: fileTypeCategories
+        )
         selectedNode = 0
         currentNode = 0
         lastScanSeconds = result.elapsedSeconds
         rememberRecent(url)
         isScanning = false
         log("scan finished items=\(result.itemCount)")
+    }
+
+    func isStaged(_ url: URL) -> Bool {
+        stagedItems.contains { $0.url.standardizedFileURL == url.standardizedFileURL }
+    }
+
+    func showToast(_ message: String) {
+        toastMessage = message
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            if toastMessage == message { toastMessage = nil }
+        }
     }
 
     private func rememberRecent(_ url: URL) {

@@ -9,20 +9,35 @@ struct ExploreShellView: View {
     @State private var showCleanup = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            ExploreSidebar(model: model, pickFolder: pickFolder)
-                .frame(width: 280)
-            Divider()
-            center
-            Divider()
-            ExploreInspector(model: model, showCleanup: $showCleanup)
-                .frame(width: 300)
-                .background(DiskMapTheme.inspectorFill)
+        ZStack(alignment: .top) {
+            HStack(spacing: 0) {
+                ExploreSidebar(model: model, pickFolder: pickFolder)
+                    .frame(width: 280)
+                Divider().background(DiskMapTheme.cardStroke)
+                center
+                Divider().background(DiskMapTheme.cardStroke)
+                ExploreInspector(model: model, showCleanup: $showCleanup)
+                    .frame(width: 300)
+                    .background(DiskMapTheme.inspectorFill)
+            }
+            if let toast = model.toastMessage {
+                Text(toast)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(DiskMapTheme.ink.opacity(0.92)))
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(10)
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: model.toastMessage)
         .background(DiskMapTheme.cream)
         .sheet(isPresented: $showCleanup) {
             CleanupQueueView(model: model)
                 .frame(minWidth: 640, minHeight: 480)
+                .preferredColorScheme(.light)
         }
     }
 
@@ -127,17 +142,6 @@ struct ExploreSidebar: View {
         VolumeStats.forPath(model.rootURL?.path ?? NSHomeDirectory())
     }
 
-    private var quickWins: [QuickWins.Hit] {
-        guard let tree = model.tree, let root = model.rootURL,
-              model.allocatedTotals.count == tree.count else { return [] }
-        let patterns = QuickWins.bundledPatterns()
-        return QuickWins.find(in: tree, root: root, patterns: patterns)
-    }
-
-    private var fileTypes: [FileTypeTotals] {
-        guard let tree = model.tree, model.allocatedTotals.count == tree.count else { return [] }
-        return FileTypeCatalog.totals(in: tree, sizes: model.allocatedTotals, categories: model.fileTypeCategories)
-    }
 
     var body: some View {
         ScrollView {
@@ -252,7 +256,7 @@ struct ExploreSidebar: View {
     private var sectionQuickWins: some View {
         VStack(alignment: .leading, spacing: 6) {
             SectionLabel(title: "Quick Wins")
-            let hits = quickWins
+            let hits = model.cachedQuickWins
             if hits.isEmpty {
                 Text("Scan to see regenerable folders")
                     .font(.caption)
@@ -290,7 +294,7 @@ struct ExploreSidebar: View {
     private var sectionFileTypes: some View {
         VStack(alignment: .leading, spacing: 6) {
             SectionLabel(title: "File Types")
-            let rows = fileTypes
+            let rows = model.cachedFileTypes
             if rows.isEmpty {
                 Text("Scan to classify files")
                     .font(.caption)
@@ -336,6 +340,7 @@ struct ExploreSidebar: View {
 struct ExploreInspector: View {
     @ObservedObject var model: ScanModel
     @Binding var showCleanup: Bool
+    @State private var confirmCleanup = false
 
     var body: some View {
         Group {
@@ -363,10 +368,12 @@ struct ExploreInspector: View {
         let ofParent = parentSize > 0 ? Double(active) / Double(parentSize) : 0
         let ofScan = scanTotal > 0 ? Double(active) / Double(scanTotal) : 0
         let children = tree.children(of: id, totals: model.selectedTotals).sorted { $0.size > $1.size }
-        let fileCount = countFiles(tree: tree, id: id)
-        let folderCount = countFolders(tree: tree, id: id)
+        let fileCount = model.descendantFileCounts.indices.contains(idx) ? model.descendantFileCounts[idx] : 0
+        let folderCount = model.descendantFolderCounts.indices.contains(idx) ? model.descendantFolderCounts[idx] : 0
         let day = tree.modifiedDay[idx]
         let created = tree.createdDay[idx]
+        let itemURL = tree.path(of: id, root: root)
+        let alreadyStaged = model.isStaged(itemURL)
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -466,24 +473,42 @@ struct ExploreInspector: View {
                 }
 
                 Button {
-                    let url = tree.path(of: id, root: root)
-                    let size = model.allocatedTotals[idx]
-                    Task {
-                        _ = await model.cleanupQueue.stage(url, size: size, reason: "manual")
-                        await model.refreshQueue()
-                    }
+                    confirmCleanup = true
                 } label: {
-                    Text("Add to Cleanup")
+                    Text(alreadyStaged ? "Already in Cleanup" : "Add to Cleanup")
                         .font(.system(size: 13, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .foregroundStyle(.white)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(DiskMapTheme.ink))
+                        .foregroundStyle(alreadyStaged ? DiskMapTheme.mutedLabel : .white)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(alreadyStaged ? DiskMapTheme.cardStroke : DiskMapTheme.ink)
+                        )
                 }
                 .buttonStyle(.plain)
+                .disabled(alreadyStaged)
+                .confirmationDialog(
+                    "Add to Cleanup Queue?",
+                    isPresented: $confirmCleanup,
+                    titleVisibility: .visible
+                ) {
+                    Button("Add to Cleanup") {
+                        let size = model.allocatedTotals[idx]
+                        let name = tree.name(of: id)
+                        Task {
+                            let ok = await model.cleanupQueue.stage(itemURL, size: size, reason: "manual")
+                            await model.refreshQueue()
+                            model.showToast(ok ? "Added “\(name)” to Cleanup" : "Couldn’t add — excluded or already queued")
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text(tree.path(of: id, root: root).path)
+                }
 
                 Button("Open Cleanup Queue") { showCleanup = true }
-                    .font(.caption)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DiskMapTheme.ink)
             }
             .padding(14)
         }
@@ -507,35 +532,6 @@ struct ExploreInspector: View {
         return RelativeDateTimeFormatter().localizedString(for: date, relativeTo: Date())
     }
 
-    private func countFiles(tree: FileTree, id: Int32) -> Int {
-        var n = 0
-        func walk(_ i: Int32) {
-            let index = Int(i)
-            if !tree.isDirectory[index] { n += 1 }
-            var c = tree.firstChild[index]
-            while c != -1 {
-                walk(c)
-                c = tree.nextSibling[Int(c)]
-            }
-        }
-        walk(id)
-        return tree.isDirectory[Int(id)] ? n : (n > 0 ? n : 1)
-    }
-
-    private func countFolders(tree: FileTree, id: Int32) -> Int {
-        var n = 0
-        func walk(_ i: Int32) {
-            let index = Int(i)
-            if tree.isDirectory[index] && i != id { n += 1 }
-            var c = tree.firstChild[index]
-            while c != -1 {
-                walk(c)
-                c = tree.nextSibling[Int(c)]
-            }
-        }
-        if tree.isDirectory[Int(id)] { walk(id) }
-        return n
-    }
 }
 
 struct ExploreCanvas: View {
@@ -623,9 +619,9 @@ struct ExploreTreemapView: View {
                     let selected = r.id == selectedNode
                     context.fill(path, with: .color(colorFor(id: r.id)))
                     context.stroke(path, with: .color(selected ? DiskMapTheme.ink : .black.opacity(0.25)), lineWidth: selected ? 2 : 1)
-                    if inset.width > 40 && inset.height > 16 {
+                    if inset.width > 52 && inset.height > 20 {
                         context.draw(
-                            Text(tree.name(of: r.id)).font(.caption).foregroundStyle(.white),
+                            Text(tree.name(of: r.id)).font(.caption.weight(.semibold)).foregroundStyle(DiskMapTheme.ink),
                             at: CGPoint(x: inset.minX + 4, y: inset.minY + 4),
                             anchor: .topLeading
                         )

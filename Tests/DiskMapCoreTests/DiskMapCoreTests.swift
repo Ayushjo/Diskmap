@@ -6,6 +6,20 @@ import Testing
 
 struct FileTreeTests {
 
+    @Test func descendantCountsRollUp() {
+        var tree = FileTree()
+        let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        let dir = tree.addNode(name: "dir", parent: root, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "a.txt", parent: dir, isDirectory: false, logicalSize: 1, allocatedSize: 1, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "b.txt", parent: dir, isDirectory: false, logicalSize: 1, allocatedSize: 1, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "c.txt", parent: root, isDirectory: false, logicalSize: 1, allocatedSize: 1, modifiedDaysSinceEpoch: 0)
+        let counts = tree.rollUpDescendantCounts()
+        #expect(counts.files[Int(root)] == 3)
+        #expect(counts.folders[Int(root)] == 1)
+        #expect(counts.files[Int(dir)] == 2)
+        #expect(counts.folders[Int(dir)] == 0)
+    }
+
     @Test func createdDayStoresBirthtimeDays() {
         var tree = FileTree()
         let root = tree.addNode(

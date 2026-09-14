@@ -97,11 +97,12 @@ private struct SunburstChart: View {
                 context.fill(path, with: .color(color(wedge.nodeID)))
                 context.stroke(path, with: .color(isSel ? DiskMapTheme.ink : .black.opacity(0.25)), lineWidth: isSel ? 2 : 1)
                 let sweep = wedge.end - wedge.start
-                if sweep > 0.12, wedge.outer - wedge.inner > 16 {
+                if sweep > 0.14, wedge.outer - wedge.inner > 22 {
                     let mid = (wedge.start + wedge.end) / 2
                     let radius = (wedge.inner + wedge.outer) / 2
+                    let short = wedge.label.count > 16 ? String(wedge.label.prefix(14)) + "…" : wedge.label
                     context.draw(
-                        Text(wedge.label).font(.caption2).foregroundStyle(.white),
+                        Text(short).font(.caption2.weight(.semibold)).foregroundStyle(DiskMapTheme.ink),
                         at: polarPoint(center: wedge.center, angle: mid, radius: radius)
                     )
                 }
@@ -130,10 +131,11 @@ private struct FlameChart: View {
                 let isSel = bar.nodeID == selected
                 context.fill(path, with: .color(color(bar.nodeID)))
                 context.stroke(path, with: .color(isSel ? DiskMapTheme.ink : .black.opacity(0.25)), lineWidth: isSel ? 2 : 1)
-                if bar.rect.width > 48 && bar.rect.height > 16 {
+                if bar.rect.width > 56 && bar.rect.height > 18 {
+                    let short = bar.label.count > 22 ? String(bar.label.prefix(20)) + "…" : bar.label
                     context.draw(
-                        Text(bar.label).font(.caption2).foregroundStyle(.white),
-                        at: CGPoint(x: bar.rect.minX + 4, y: bar.rect.midY),
+                        Text(short).font(.caption2.weight(.semibold)).foregroundStyle(DiskMapTheme.ink),
+                        at: CGPoint(x: bar.rect.minX + 6, y: bar.rect.midY),
                         anchor: .leading
                     )
                 }
@@ -219,9 +221,11 @@ private struct MindMapChart: View {
                 if isSel {
                     context.stroke(path, with: .color(DiskMapTheme.ink), lineWidth: 2)
                 }
-                if node.labelWidth > 0.18 || node.hub {
+                if node.labelWidth > 0.14 || node.hub {
+                    let short = node.label.count > 14 ? String(node.label.prefix(12)) + "…" : node.label
                     context.draw(
-                        Text(node.label).font(.caption2).foregroundStyle(.white),
+                        Text(short).font(.caption2.weight(.semibold))
+                            .foregroundStyle(node.hub ? Color.white : DiskMapTheme.ink),
                         at: node.center
                     )
                 }

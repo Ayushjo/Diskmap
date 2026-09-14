@@ -368,3 +368,10 @@ one Mac. TASK-022 (auto-update) deprioritized for the same reason.
   Done 2026-09-14: force light color scheme; replace semantic `.secondary`/`.primary`
   on cream with ink/mutedLabel so Inspector/File Types/Quick Wins/Largest Inside
   labels stay readable under system Dark Mode. Bubbles label threshold raised.
+
+
+- [x] **TASK-035: Explore click lag + Cleanup UX + list/canvas polish**
+  Done 2026-09-14: post-scan `rollUpDescendantCounts` + cached Quick Wins /
+  File Types (no full-tree walk on every selection). Cleanup confirm dialog,
+  toast, disabled when already staged. Folders/Top Sizes denser rows; chart
+  labels use ink on pastels with truncation.
