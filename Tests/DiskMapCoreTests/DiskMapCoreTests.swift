@@ -302,3 +302,32 @@ private struct CloneFixture {
         return info.st_ino
     }
 }
+
+struct VolumeStatsTests {
+    @Test func homePathReportsPositiveCapacity() {
+        let stats = VolumeStats.forPath(NSHomeDirectory())
+        #expect(stats != nil)
+        #expect(stats!.totalBytes > 0)
+        #expect(stats!.freeBytes <= stats!.totalBytes)
+        #expect(stats!.usedBytes + stats!.freeBytes == stats!.totalBytes || stats!.usedBytes <= stats!.totalBytes)
+    }
+}
+
+struct FileTypeCatalogTests {
+    @Test func bundledCategoriesLoadAndClassify() {
+        let cats = FileTypeCatalog.loadBundled()
+        #expect(cats.count >= 6)
+        #expect(cats.contains { $0.id == "video" && $0.extensions.contains("mp4") })
+
+        var tree = FileTree()
+        let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "clip.mp4", parent: root, isDirectory: false, logicalSize: 100, allocatedSize: 100, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "song.mp3", parent: root, isDirectory: false, logicalSize: 40, allocatedSize: 40, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "readme.txt", parent: root, isDirectory: false, logicalSize: 10, allocatedSize: 10, modifiedDaysSinceEpoch: 0)
+        let sizes = tree.rollUpSizes(basis: .allocated)
+        let totals = FileTypeCatalog.totals(in: tree, sizes: sizes, categories: cats)
+        #expect(totals.contains { $0.categoryID == "video" && $0.bytes == 100 })
+        #expect(totals.contains { $0.categoryID == "audio" && $0.bytes == 40 })
+        #expect(totals.contains { $0.categoryID == "document" && $0.bytes == 10 })
+    }
+}

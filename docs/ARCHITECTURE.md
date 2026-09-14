@@ -280,6 +280,21 @@ Offline. No networking.
 
 **Status:** implemented (TASK-018, TASK-019).
 
+### Explore is one shell; viz modes are not pages
+
+DiskBuddy’s left chrome (scan actions, Recent, Disk Storage, Current View,
+Quick Wins, File Types) and right Inspector stay put while the center canvas
+swaps among Treemap / Sunburst / Flame / Bubbles / Mind Map / Top Sizes /
+Age Map / Folders. Top nav is Explore | Duplicates | Applications | Monitor
+(stub) | Snapshots — Quick Wins is not a destination. Shared cream
+`#FAF5EC` and ink `#1C1B17` tokens live in `DesignSystem.swift`.
+`VolumeStats` and `FileTypeCatalog` are DiskMapCore; ChartLayout’s
+`otherFraction` is an optional parameter only (depth slider). No birthtime
+on `FileTree`, so Inspector Created is "—" until a deliberate schema task.
+
+**Status:** implemented (TASK-030). Treemap is the skin checkpoint; other
+seven modes reuse existing canvas views inside the same shell.
+
 ## Adding a new decision
 
 When you make a non-obvious architectural choice, add an entry here:

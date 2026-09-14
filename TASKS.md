@@ -339,3 +339,20 @@ one Mac. TASK-022 (auto-update) deprioritized for the same reason.
 - [ ] **TASK-021: Notarization pipeline**
 - [ ] **TASK-022: Update mechanism**
 - [ ] **TASK-023: App icon + visual polish pass**
+
+- [x] **TASK-030: DiskBuddy-parity Explore shell (Treemap checkpoint + 8 view-modes)**
+  Done 2026-09-13 on `perf/scan-and-runtime`. Supersedes the old TASK-030/031
+  polish split: one Explore screen owns all 8 viz modes; top nav is
+  Explore | Duplicates | Applications | Monitor (stub) | Snapshots.
+  Quick Wins lives as an ambient sidebar panel (not a top-nav page).
+  - Core: `VolumeStats` (`statfs`), `FileTypeCatalog` +
+    `file-type-categories.json`, `ChartLayout.slices(..., otherFraction:)`
+  - App: cream `#FAF5EC` / ink `#1C1B17` in `DesignSystem.swift`;
+    `ExploreShellView` (sidebar + view-picker + canvas + inspector);
+    Treemap with By folder/type/age coloring; depth slider drives
+    `otherFraction` for sunburst/flame/bubbles/mind map
+  - Inspector: DETAILS (Compressed by = logical − on disk), Largest Inside,
+    Reveal / Quick Look / Focus / Copy Path, Add to Cleanup. Created shows
+    "—" (no birthtime on `FileTree` — flagged, no core schema change)
+  - `swift test`: 46 green. DiskMapCore layout math unchanged beyond the
+    additive `otherFraction` parameter.

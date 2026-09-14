@@ -17,6 +17,7 @@ struct LayoutChartView: View {
     let tree: FileTree
     let totals: [Int64]
     @Binding var currentNode: Int32
+    var otherFraction: Double = ChartLayout.otherFraction
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,7 +37,7 @@ struct LayoutChartView: View {
 
     private var currentSlices: [ChartSlice] {
         guard currentNode >= 0, Int(currentNode) < tree.count, totals.count == tree.count else { return [] }
-        return ChartLayout.slices(of: currentNode, in: tree, totals: totals)
+        return ChartLayout.slices(of: currentNode, in: tree, totals: totals, otherFraction: otherFraction)
     }
 
     @ViewBuilder
