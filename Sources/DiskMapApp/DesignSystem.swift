@@ -5,7 +5,7 @@ enum DiskMapTheme {
     static let cream = Color(red: 250 / 255, green: 245 / 255, blue: 236 / 255)
     /// Near-black primary / active (28,27,23).
     static let ink = Color(red: 28 / 255, green: 27 / 255, blue: 23 / 255)
-    static let mutedLabel = Color(red: 120 / 255, green: 110 / 255, blue: 98 / 255)
+    static let mutedLabel = Color(red: 90 / 255, green: 82 / 255, blue: 72 / 255)
     static let cardFill = Color(red: 255 / 255, green: 254 / 255, blue: 248 / 255)
     static let cardStroke = Color(red: 220 / 255, green: 214 / 255, blue: 204 / 255)
     static let compressed = Color(red: 70 / 255, green: 140 / 255, blue: 90 / 255)
@@ -67,13 +67,14 @@ struct StatRow: View {
     let value: String
     var emphasize: Bool = false
     var body: some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline) {
             Text(label)
-                .foregroundStyle(emphasize ? DiskMapTheme.compressed : .secondary)
-            Spacer()
+                .foregroundStyle(emphasize ? DiskMapTheme.compressed : DiskMapTheme.mutedLabel)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Text(value)
                 .fontWeight(emphasize ? .semibold : .regular)
                 .foregroundStyle(emphasize ? DiskMapTheme.compressed : DiskMapTheme.ink)
+                .multilineTextAlignment(.trailing)
         }
         .font(.system(size: 12))
     }

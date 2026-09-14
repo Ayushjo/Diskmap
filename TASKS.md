@@ -355,3 +355,16 @@ one Mac. TASK-022 (auto-update) deprioritized for the same reason.
     Reveal / Quick Look / Focus / Copy Path, Add to Cleanup. Created wired to `FileTree.createdDay` (TASK-031).
   - `swift test`: 46 green. DiskMapCore layout math unchanged beyond the
     additive `otherFraction` parameter.
+
+
+- [x] **TASK-032: Explore Batch A — Folders / Top Sizes / Age Map**
+  Done 2026-09-14 (`10dc869`): selection sync into Inspector; cream row chrome.
+
+- [x] **TASK-033: Explore Batch B — Sunburst / Flame / Bubbles / Mind Map**
+  Done 2026-09-14 (`61204fb`): shared ExploreColoring; depth → otherFraction.
+
+
+- [x] **TASK-034: Explore cream contrast polish**
+  Done 2026-09-14: force light color scheme; replace semantic `.secondary`/`.primary`
+  on cream with ink/mutedLabel so Inspector/File Types/Quick Wins/Largest Inside
+  labels stay readable under system Dark Mode. Bubbles label threshold raised.

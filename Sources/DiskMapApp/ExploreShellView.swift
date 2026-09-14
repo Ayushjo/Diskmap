@@ -32,7 +32,7 @@ struct ExploreShellView: View {
             VStack(spacing: 12) {
                 ProgressView()
                 Text("Scanning… \(model.scannedCount) items")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let tree = model.tree, let root = model.rootURL,
@@ -49,7 +49,7 @@ struct ExploreShellView: View {
         } else {
             VStack(spacing: 16) {
                 Text("Pick a folder to explore")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
                 Button("Scan Full Mac") {
                     Task { await model.scan(URL(fileURLWithPath: "/", isDirectory: true)) }
                 }
@@ -174,7 +174,7 @@ struct ExploreSidebar: View {
             if model.recentRoots.isEmpty {
                 Text("No recent scans")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
                 ForEach(model.recentRoots.prefix(6), id: \.path) { url in
                     Button {
@@ -229,14 +229,15 @@ struct ExploreSidebar: View {
                     if let tree = model.tree, model.currentNode < tree.count {
                         Text(tree.name(of: model.currentNode))
                             .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(DiskMapTheme.ink)
                         if let root = model.rootURL {
                             Text(tree.path(of: model.currentNode, root: root).path)
                                 .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .lineLimit(2)
                         }
                     } else {
-                        Text("No scan yet").foregroundStyle(.secondary)
+                        Text("No scan yet").foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                     if let secs = model.lastScanSeconds {
                         Text(String(format: "Last scan %.1fs", secs))
@@ -255,7 +256,7 @@ struct ExploreSidebar: View {
             if hits.isEmpty {
                 Text("Scan to see regenerable folders")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
                 ForEach(hits.prefix(8), id: \.id) { hit in
                     Button {
@@ -265,7 +266,10 @@ struct ExploreSidebar: View {
                         HStack {
                             Image(systemName: "bolt.fill").foregroundStyle(DiskMapTheme.ink.opacity(0.7))
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(hit.name).font(.system(size: 12, weight: .medium))
+                                Text(hit.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(DiskMapTheme.ink)
+                                    .lineLimit(1)
                             }
                             Spacer()
                             if model.tree != nil, Int(hit.id) < model.allocatedTotals.count {
@@ -274,7 +278,7 @@ struct ExploreSidebar: View {
                             }
                             Image(systemName: "chevron.right")
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
                         }
                     }
                     .buttonStyle(.plain)
@@ -290,7 +294,7 @@ struct ExploreSidebar: View {
             if rows.isEmpty {
                 Text("Scan to classify files")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
                 let total = max(1, rows.reduce(Int64(0)) { $0 + $1.bytes })
                 PanelCard {
@@ -308,10 +312,14 @@ struct ExploreSidebar: View {
                         ForEach(rows, id: \.categoryID) { row in
                             HStack(spacing: 8) {
                                 Circle().fill(DiskMapTheme.hex(row.colorHex)).frame(width: 8, height: 8)
-                                Text(row.label).font(.system(size: 11))
-                                Spacer()
+                                Text(row.label)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(DiskMapTheme.ink)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
                                 Text(byte(UInt64(row.bytes)))
                                     .font(.system(size: 11).monospacedDigit())
+                                    .foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                         }
                     }
@@ -337,7 +345,7 @@ struct ExploreInspector: View {
                 inspector(tree: tree, root: root, id: model.selectedNode)
             } else {
                 Text("Select an item")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -367,13 +375,15 @@ struct ExploreInspector: View {
                         .font(.title2)
                         .foregroundStyle(DiskMapTheme.ink)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(tree.name(of: id)).font(.headline)
+                        Text(tree.name(of: id))
+                            .font(.headline)
+                            .foregroundStyle(DiskMapTheme.ink)
                         Text(tree.isDirectory[idx] ? "Folder" : "File")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
                         Text(tree.path(of: id, root: root).path)
                             .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
                             .textSelection(.enabled)
                     }
                 }
@@ -381,9 +391,10 @@ struct ExploreInspector: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(byte(active))
                         .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(DiskMapTheme.ink)
                     Text(id == 0 ? String(format: "%.1f%% of scan", ofScan * 100) : String(format: "%.1f%% of parent", ofParent * 100))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
 
                 PanelCard {
@@ -404,6 +415,7 @@ struct ExploreInspector: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Largest Inside")
                         .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.ink)
                     PanelCard {
                         VStack(spacing: 8) {
                             ForEach(Array(children.prefix(8).enumerated()), id: \.element.id) { _, child in
@@ -415,10 +427,12 @@ struct ExploreInspector: View {
                                         HStack {
                                             Text(tree.name(of: child.id))
                                                 .font(.system(size: 12))
+                                                .foregroundStyle(DiskMapTheme.ink)
                                                 .lineLimit(1)
                                             Spacer()
                                             Text(byte(child.size))
                                                 .font(.system(size: 11).monospacedDigit())
+                                                .foregroundStyle(DiskMapTheme.mutedLabel)
                                         }
                                         ProportionBar(fraction: frac)
                                     }
@@ -426,7 +440,7 @@ struct ExploreInspector: View {
                                 .buttonStyle(.plain)
                             }
                             if children.isEmpty {
-                                Text("No children").font(.caption).foregroundStyle(.secondary)
+                                Text("No children").font(.caption).foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                         }
                     }
@@ -477,8 +491,10 @@ struct ExploreInspector: View {
 
     private func actionButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(title, action: action)
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(DiskMapTheme.ink)
             .buttonStyle(.bordered)
+            .tint(DiskMapTheme.ink)
     }
 
     private func byte(_ v: Int64) -> String {
@@ -594,7 +610,7 @@ struct ExploreTreemapView: View {
                 }
                 Spacer()
                 Text(ByteCountFormatter.string(fromByteCount: currentSize, countStyle: .file))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             .padding(8)
 

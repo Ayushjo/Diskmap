@@ -281,6 +281,7 @@ struct ContentView: View {
             tabBody
         }
         .background(DiskMapTheme.cream)
+        .preferredColorScheme(.light)
         .frame(minWidth: 1100, minHeight: 720)
     }
 
@@ -332,7 +333,7 @@ struct ContentView: View {
             AppsView(model: model)
         case .monitor:
             Text("Monitor is not in this build")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DiskMapTheme.mutedLabel)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .snapshots:
             if let tree = model.tree, let root = model.rootURL {
@@ -346,7 +347,7 @@ struct ContentView: View {
         VStack(spacing: 12) {
             ProgressView()
             Text("Scanning… \(model.scannedCount) items")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DiskMapTheme.mutedLabel)
                 .accessibilityIdentifier("scan-progress")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -354,7 +355,7 @@ struct ContentView: View {
 
     private var needsScan: some View {
         Text("Pick a folder to see what's using space")
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DiskMapTheme.mutedLabel)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 

@@ -32,7 +32,7 @@ struct LayoutChartView: View {
                 let slices = currentSlices
                 if slices.isEmpty {
                     Text("Nothing with a size in this folder")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     chart(slices, in: proxy.size)
@@ -167,9 +167,13 @@ private struct BubbleChart: View {
                 let isSel = circle.nodeID == selected
                 context.fill(path, with: .color(color(circle.nodeID)))
                 context.stroke(path, with: .color(isSel ? DiskMapTheme.ink : .black.opacity(0.3)), lineWidth: isSel ? 2 : 1)
-                if circle.radius > 18 {
+                // Only label large bubbles — small ones overlap into illegible stacks.
+                if circle.radius > 28 {
+                    let short = circle.label.count > 18
+                        ? String(circle.label.prefix(16)) + "…"
+                        : circle.label
                     context.draw(
-                        Text(circle.label).font(.caption2).foregroundStyle(.white),
+                        Text(short).font(.caption2.weight(.semibold)).foregroundStyle(DiskMapTheme.ink),
                         at: circle.center
                     )
                 }
