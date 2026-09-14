@@ -36,6 +36,8 @@ final class ScanModel: ObservableObject {
     @Published var topNav: TopNavTab = .explore
     @Published var destination: AppDestination = .overview
     @Published var analysis: AnalysisSnapshot = .empty
+    /// When set, Biggest Files filters to files under this absolute path prefix.
+    @Published var folderFilterPath: String? = nil
 
     let cleanupQueue = CleanupQueue()
     let fileTypeCategories = FileTypeCatalog.loadBundled()
@@ -69,6 +71,7 @@ final class ScanModel: ObservableObject {
         cachedQuickWins = []
         cachedFileTypes = []
         duplicateGroups = []
+        folderFilterPath = nil
         log("scan start \(url.path)")
 
         let before = ProcessMemory.current()

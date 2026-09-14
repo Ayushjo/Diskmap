@@ -7,6 +7,7 @@ struct BiggestFilesView: View {
     @ObservedObject var model: ScanModel
     let tree: FileTree
     let rootURL: URL
+    var onOpenCleanup: () -> Void = {}
 
     enum SortMode: String, CaseIterable, Identifiable {
         case largest, smallest, newest, oldest, name
@@ -41,9 +42,14 @@ struct BiggestFilesView: View {
 
     private var filtered: [Int32] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let pathPrefix = model.folderFilterPath
         var ids = allFileIDs.filter { id in
             let name = tree.name(of: id)
             let abs = tree.path(of: id, root: rootURL).path
+            if let pathPrefix {
+                let prefix = pathPrefix.hasSuffix("/") ? pathPrefix : pathPrefix + "/"
+                if abs != pathPrefix && !abs.hasPrefix(prefix) { return false }
+            }
             let kind = FileKind.classify(fileName: name, path: abs)
             if let kindFilter, kind != kindFilter { return false }
             if q.isEmpty { return true }
@@ -146,6 +152,24 @@ struct BiggestFilesView: View {
                 searchField
                 sortControl
                     .frame(width: 172)
+            }
+            if let pathPrefix = model.folderFilterPath {
+                HStack(spacing: 8) {
+                    Text("In " + CanonicalPath.displayPath(absolutePath: pathPrefix))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("Clear") {
+                        model.folderFilterPath = nil
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                }
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(DiskMapTheme.navSelected))
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -359,7 +383,8 @@ struct BiggestFilesView: View {
                     rootURL: rootURL,
                     id: id,
                     size: totals[Int(id)],
-                    usedDenominator: usedDenominator
+                    usedDenominator: usedDenominator,
+                    onOpenCleanup: onOpenCleanup
                 )
             } else {
                 VStack(spacing: 8) {
@@ -400,6 +425,7 @@ private struct FileInspectorPanel: View {
     let id: Int32
     let size: Int64
     let usedDenominator: Int64
+    var onOpenCleanup: () -> Void = {}
 
     var body: some View {
         let name = tree.name(of: id)
@@ -509,13 +535,20 @@ private struct FileInspectorPanel: View {
     }
 
     private func stageForTrash(url: URL, name: String) async {
+        let url = url.standardizedFileURL
         if model.isStaged(url) {
             model.showToast("Already in cleanup list")
+            onOpenCleanup()
             return
         }
         let ok = await model.cleanupQueue.stage(url, size: size, reason: "Biggest file: " + name)
         await model.refreshQueue()
-        model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
+        if ok {
+            model.showToast("Added to cleanup review")
+            onOpenCleanup()
+        } else {
+            model.showToast("Blocked by safety rules")
+        }
     }
 
     private func metaBlock(label: String, value: String) -> some View {
