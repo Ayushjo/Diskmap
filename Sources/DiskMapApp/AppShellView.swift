@@ -223,9 +223,9 @@ struct AppShellView: View {
                 BiggestFilesView(model: model, tree: tree, rootURL: root)
             } else { needsScan }
         case .biggestFolders:
-            findWrapper(title: "Biggest Folders", blurb: "Browse the largest folders. Click to drill in.") { tree, root in
-                FoldersView(tree: tree, totals: model.selectedTotals, rootURL: root, currentNode: $model.currentNode, selectedNode: $model.selectedNode)
-            }
+            if let tree = model.tree, let root = model.rootURL {
+                BiggestFoldersView(model: model, tree: tree, rootURL: root)
+            } else { needsScan }
         case .forgottenFiles:
             findWrapper(title: "Forgotten Files", blurb: forgottenBlurb, trailing: { forgottenTrailing }) { tree, root in
                 AgeMapView(model: model, tree: tree, totals: model.selectedTotals, rootURL: root, findWorkflow: true)

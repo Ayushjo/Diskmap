@@ -41,9 +41,14 @@ struct BiggestFilesView: View {
 
     private var filtered: [Int32] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let pathPrefix = model.folderFilterPath
         var ids = allFileIDs.filter { id in
             let name = tree.name(of: id)
             let abs = tree.path(of: id, root: rootURL).path
+            if let pathPrefix {
+                let prefix = pathPrefix.hasSuffix("/") ? pathPrefix : pathPrefix + "/"
+                if abs != pathPrefix && !abs.hasPrefix(prefix) { return false }
+            }
             let kind = FileKind.classify(fileName: name, path: abs)
             if let kindFilter, kind != kindFilter { return false }
             if q.isEmpty { return true }
@@ -146,6 +151,24 @@ struct BiggestFilesView: View {
                 searchField
                 sortControl
                     .frame(width: 172)
+            }
+            if let pathPrefix = model.folderFilterPath {
+                HStack(spacing: 8) {
+                    Text("In " + CanonicalPath.displayPath(absolutePath: pathPrefix))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("Clear") {
+                        model.folderFilterPath = nil
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                }
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(DiskMapTheme.navSelected))
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
