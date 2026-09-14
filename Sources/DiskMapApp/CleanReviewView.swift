@@ -163,14 +163,56 @@ struct CleanReviewView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(mode.label)
                 .font(DiskMapType.title)
                 .foregroundStyle(DiskMapTheme.ink)
             Text("Review candidates before anything moves to Trash. Nothing is deleted automatically.")
                 .font(DiskMapType.body)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
+            if model.analysis.quickWinBytes > 0 || model.analysis.forgottenBytes > 0 {
+                HStack(spacing: 10) {
+                    if model.analysis.quickWinBytes > 0 {
+                        metricChip(
+                            label: "Quick wins",
+                            value: ByteFormat.string(model.analysis.quickWinBytes)
+                        )
+                    }
+                    if model.analysis.forgottenBytes > 0 {
+                        metricChip(
+                            label: "Forgotten",
+                            value: ByteFormat.string(model.analysis.forgottenBytes)
+                        )
+                    }
+                    metricChip(
+                        label: "Worth reviewing",
+                        value: ByteFormat.string(model.analysis.reviewableBytes)
+                    )
+                }
+            }
         }
+    }
+
+    private func metricChip(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(0.6)
+                .foregroundStyle(DiskMapTheme.mutedLabel)
+            Text(value)
+                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .foregroundStyle(DiskMapTheme.ink)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(DiskMapTheme.cardFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
+                )
+        )
     }
 
     private func filteredHits(totals: [Int64]) -> [QuickWins.Hit] {

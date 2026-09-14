@@ -221,8 +221,8 @@ struct AppShellView: View {
                 FoldersView(tree: tree, totals: model.selectedTotals, rootURL: root, currentNode: $model.currentNode, selectedNode: $model.selectedNode)
             }
         case .forgottenFiles:
-            findWrapper(title: "Forgotten Files", blurb: "Based on modification date — access time is not always reliable on macOS.") { tree, root in
-                AgeMapView(model: model, tree: tree, totals: model.selectedTotals, rootURL: root)
+            findWrapper(title: "Forgotten Files", blurb: forgottenBlurb, trailing: { forgottenTrailing }) { tree, root in
+                AgeMapView(model: model, tree: tree, totals: model.selectedTotals, rootURL: root, findWorkflow: true)
             }
         case .duplicates:
             if let tree = model.tree, let root = model.rootURL {
@@ -241,20 +241,58 @@ struct AppShellView: View {
         }
     }
 
+    private var forgottenBlurb: String {
+        "Files not modified in over a year. Dates are last-modified — macOS often lacks a reliable last-opened stamp."
+    }
+
     @ViewBuilder
-    private func findWrapper<Content: View>(title: String, blurb: String, @ViewBuilder content: (FileTree, URL) -> Content) -> some View {
+    private var forgottenTrailing: some View {
+        if model.tree != nil {
+            if model.analysis.forgottenBytes > 0 {
+                Text(ByteFormat.string(model.analysis.forgottenBytes) + " forgotten")
+                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(DiskMapTheme.ink)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule().fill(DiskMapTheme.navSelected)
+                    )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func findWrapper<Content: View>(
+        title: String,
+        blurb: String,
+        @ViewBuilder content: (FileTree, URL) -> Content
+    ) -> some View {
+        findWrapper(title: title, blurb: blurb, trailing: { EmptyView() }, content: content)
+    }
+
+    @ViewBuilder
+    private func findWrapper<Content: View, Trailing: View>(
+        title: String,
+        blurb: String,
+        @ViewBuilder trailing: () -> Trailing,
+        @ViewBuilder content: (FileTree, URL) -> Content
+    ) -> some View {
         if model.isScanning {
             ProgressView("Scanning… \(model.scannedCount)")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let tree = model.tree, let root = model.rootURL, model.selectedTotals.count == tree.count {
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(DiskMapType.title)
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Text(blurb)
-                        .font(DiskMapType.body)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(DiskMapType.title)
+                            .foregroundStyle(DiskMapTheme.ink)
+                        Text(blurb)
+                            .font(DiskMapType.body)
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                    }
+                    Spacer(minLength: 8)
+                    trailing()
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -269,8 +307,14 @@ struct AppShellView: View {
 
     private var needsScan: some View {
         VStack(spacing: 12) {
-            Text("Pick a folder to see what's using space")
+            Text("Scan first to see what's using space")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(DiskMapTheme.ink)
+            Text("Pick a folder (or your home directory) — DiskMap never invents filesystem facts.")
+                .font(DiskMapType.body)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
             Button("Choose Folder…", action: pickFolder)
                 .buttonStyle(InkButtonStyle())
         }

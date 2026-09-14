@@ -68,14 +68,21 @@ struct ExploreShellView: View {
                 }
             }
         } else {
-            VStack(spacing: 16) {
-                Text("Pick a folder to explore")
+            VStack(spacing: 14) {
+                Text("Scan first to explore")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.ink)
+                Text("Where is the space? What have I forgotten? Pick a folder to open Treemap, Age Map, and the other views.")
+                    .font(DiskMapType.body)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
                 Button("Scan Full Mac") {
                     Task { await model.scan(URL(fileURLWithPath: "/", isDirectory: true)) }
                 }
                 .buttonStyle(InkButtonStyle())
                 Button("Choose Folder…", action: pickFolder)
+                    .buttonStyle(InkButtonStyle(filled: false))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -146,7 +153,7 @@ struct ExploreShellView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .help(mode.rawValue)
+                    .help("\(mode.rawValue) — \(mode.blurb)")
                     .accessibilityIdentifier("explore-mode-\(mode.rawValue)")
                 }
             }
@@ -160,10 +167,17 @@ struct ExploreShellView: View {
                     )
             )
 
-            Text(model.exploreMode.blurb)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .lineLimit(1)
+            HStack(spacing: 6) {
+                Text(model.exploreMode.rawValue)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.ink)
+                Text("·")
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                Text(model.exploreMode.blurb)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .lineLimit(1)
+            }
 
             Spacer(minLength: 8)
 

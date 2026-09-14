@@ -35,7 +35,19 @@ public enum AgeBucket: String, Sendable, CaseIterable, Equatable {
         case .days90to365: return "90 days–1 year"
         case .oneToTwoYears: return "1–2 years"
         case .overTwoYears: return "Over 2 years"
-        case .unknown: return "Unknown"
+        case .unknown: return "No date"
+        }
+    }
+
+    /// Compact labels for heatmaps and chips (e.g. Find → Forgotten).
+    public var shortTitle: String {
+        switch self {
+        case .under30: return "<30d"
+        case .days30to90: return "30–90d"
+        case .days90to365: return "90d–1y"
+        case .oneToTwoYears: return "1–2y"
+        case .overTwoYears: return "2y+"
+        case .unknown: return "No date"
         }
     }
 }
