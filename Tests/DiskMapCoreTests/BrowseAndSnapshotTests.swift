@@ -16,6 +16,10 @@ struct BrowseQueryTests {
         #expect(AgeMap.bucket(modifiedDay: today - 200, today: today) == .days90to365)
         #expect(AgeMap.bucket(modifiedDay: today - 400, today: today) == .oneToTwoYears)
         #expect(AgeMap.bucket(modifiedDay: today - 800, today: today) == .overTwoYears)
+        #expect(AgeBucket.oneToTwoYears.shortTitle == "1–2y")
+        #expect(AgeBucket.overTwoYears.shortTitle == "2y+")
+        #expect(AgeBucket.unknown.shortTitle == "No date")
+        #expect(AgeBucket.unknown.title == "No date")
 
         var tree = FileTree()
         let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
