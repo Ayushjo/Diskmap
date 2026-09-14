@@ -2,7 +2,7 @@ import AppKit
 import DiskMapCore
 import SwiftUI
 
-/// Find → Forgotten Files: discovery + review (not a raw age sort).
+/// Find → Forgotten Files. Uses ScanModel.cachedForgotten (computed once per scan).
 struct ForgottenFilesView: View {
     @ObservedObject var model: ScanModel
     let tree: FileTree
@@ -14,9 +14,9 @@ struct ForgottenFilesView: View {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .all: return "Worth reviewing"
+            case .all: return "All"
             case .likely: return "Likely forgotten"
-            case .worth: return "Worth a look"
+            case .worth: return "Worth reviewing"
             case .excluded: return "Old but important"
             }
         }
@@ -27,7 +27,7 @@ struct ForgottenFilesView: View {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .reviewValue: return "Most worth reviewing"
+            case .reviewValue: return "Most relevant"
             case .largest: return "Largest"
             case .oldest: return "Oldest"
             case .name: return "Name"
@@ -41,22 +41,12 @@ struct ForgottenFilesView: View {
     @State private var checked: Set<Int32> = []
     @State private var selectedID: Int32?
     @State private var ageFilter: ForgottenAgeBucket?
+    @State private var onlyLarge = false
+    @State private var onlyDownloads = false
+    @State private var onlyMedia = false
 
-    private var totals: [Int64] { model.selectedTotals }
-
-    private var allCandidates: [ForgottenCandidate] {
-        guard totals.count == tree.count else { return [] }
-        return ForgottenFiles.candidates(
-            tree: tree,
-            root: rootURL,
-            totals: totals,
-            limit: 500
-        )
-    }
-
-    private var summary: ForgottenSummary {
-        ForgottenFiles.summary(from: allCandidates)
-    }
+    private var allCandidates: [ForgottenCandidate] { model.cachedForgotten }
+    private var summary: ForgottenSummary { model.cachedForgottenSummary }
 
     private var visible: [ForgottenCandidate] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -71,50 +61,55 @@ struct ForgottenFilesView: View {
         if let ageFilter {
             list = list.filter { ForgottenAgeBucket.bucket(ageDays: $0.ageDays) == ageFilter }
         }
+        if onlyLarge { list = list.filter { $0.bytes >= 1_000_000_000 } }
+        if onlyDownloads { list = list.filter { $0.absolutePath.lowercased().contains("/downloads/") } }
+        if onlyMedia {
+            list = list.filter { [.video, .diskImage, .archive, .deviceBackup].contains($0.kind) }
+        }
         if !q.isEmpty {
             list = list.filter {
                 $0.name.lowercased().contains(q)
                     || $0.displayPath.lowercased().contains(q)
-                    || $0.kind.title.lowercased().contains(q)
+                    || $0.parentDisplay.lowercased().contains(q)
             }
         }
         switch sortMode {
-        case .reviewValue:
-            list.sort { $0.score > $1.score }
-        case .largest:
-            list.sort { $0.bytes > $1.bytes }
-        case .oldest:
-            list.sort { $0.ageDays > $1.ageDays }
-        case .name:
-            list.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .reviewValue: list.sort { $0.score > $1.score }
+        case .largest: list.sort { $0.bytes > $1.bytes }
+        case .oldest: list.sort { $0.ageDays > $1.ageDays }
+        case .name: list.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         }
         return list
     }
 
-    private var activeSelection: ForgottenCandidate? {
-        if let selectedID, let hit = visible.first(where: { $0.id == selectedID }) {
-            return hit
-        }
+    private var active: ForgottenCandidate? {
+        if let selectedID, let hit = visible.first(where: { $0.id == selectedID }) { return hit }
+        if let selectedID, let hit = allCandidates.first(where: { $0.id == selectedID }) { return hit }
         return visible.first
     }
 
     private var selectedBytes: Int64 {
-        visible.filter { checked.contains($0.id) }.reduce(Int64(0)) { $0 + $1.bytes }
+        let ids = checked
+        return visible.reduce(Int64(0)) { partial, c in
+            ids.contains(c.id) ? partial + c.bytes : partial
+        }
     }
 
     var body: some View {
         HStack(spacing: 0) {
             mainColumn
             Divider().overlay(DiskMapTheme.cardStroke)
-            inspector
+            inspectorColumn
                 .frame(width: 320)
         }
         .background(DiskMapTheme.cream)
-        .onAppear {
-            if selectedID == nil { selectedID = visible.first?.id }
-        }
-        .onChange(of: filterTab) { _, _ in
-            selectedID = visible.first?.id
+        .task {
+            if model.cachedForgotten.isEmpty, model.tree != nil {
+                model.refreshForgottenCache()
+            }
+            if selectedID == nil {
+                selectedID = visible.first?.id
+            }
         }
     }
 
@@ -124,10 +119,14 @@ struct ForgottenFilesView: View {
             summaryCards
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
-            ageChart
+            ageBar
                 .padding(.horizontal, 20)
-                .padding(.bottom, 12)
+                .padding(.bottom, 10)
+            filterPills
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
             controls
+            listHeader
             Divider().overlay(DiskMapTheme.cardStroke)
             if model.isScanning {
                 ProgressView("Finding files you may have forgotten…")
@@ -136,34 +135,33 @@ struct ForgottenFilesView: View {
                 emptyState
             } else {
                 list
-                selectionBar
             }
+            selectionBar
         }
     }
 
     private var header: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Forgotten Files")
                     .font(DiskMapType.title)
                     .foregroundStyle(DiskMapTheme.ink)
-                Text("Find things you may no longer need. Older personal files are prioritized; system and app-managed data is excluded from recommendations.")
+                Text("Find things you may no longer need. Older personal files are prioritized; system and app-managed data is excluded.")
                     .font(DiskMapType.body)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 16)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("Potentially reviewable")
-                    .font(DiskMapType.caption)
+            Spacer(minLength: 12)
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle")
                     .foregroundStyle(DiskMapTheme.mutedLabel)
-                Text(ByteFormat.string(summary.reviewableBytes))
-                    .font(.system(size: 18, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("\(summary.reviewableCount.formatted()) files")
-                    .font(DiskMapType.caption)
+                Text("Based on last-modified date")
+                    .font(.system(size: 11))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(DiskMapTheme.navSelected))
         }
         .padding(.horizontal, 20)
         .padding(.top, 18)
@@ -172,75 +170,65 @@ struct ForgottenFilesView: View {
 
     private var summaryCards: some View {
         HStack(spacing: 10) {
-            summaryCard(
-                title: "Likely forgotten",
-                bytes: summary.likelyBytes,
-                count: summary.likelyCount,
-                tint: DiskMapTheme.safe,
-                selected: filterTab == .likely
-            ) { filterTab = .likely }
-
-            summaryCard(
-                title: "Worth a look",
-                bytes: summary.worthBytes,
-                count: summary.worthCount,
-                tint: DiskMapTheme.review,
-                selected: filterTab == .worth
-            ) { filterTab = .worth }
-
-            summaryCard(
-                title: "Excluded",
-                bytes: summary.excludedBytes,
-                count: summary.excludedCount,
-                tint: DiskMapTheme.mutedLabel,
-                selected: filterTab == .excluded
-            ) { filterTab = .excluded }
-
-            summaryCard(
-                title: "All reviewable",
-                bytes: summary.reviewableBytes,
-                count: summary.reviewableCount,
-                tint: DiskMapTheme.ink,
-                selected: filterTab == .all
-            ) { filterTab = .all; ageFilter = nil }
+            card("Potentially reviewable", summary.reviewableBytes, summary.reviewableCount, "tray.full", DiskMapTheme.ink, filterTab == .all) {
+                filterTab = .all; ageFilter = nil
+            }
+            card("Likely forgotten", summary.likelyBytes, summary.likelyCount, "leaf", DiskMapTheme.safe, filterTab == .likely) {
+                filterTab = .likely
+            }
+            card("Worth reviewing", summary.worthBytes, summary.worthCount, "eye", DiskMapTheme.review, filterTab == .worth) {
+                filterTab = .worth
+            }
+            card("Old but important", summary.excludedBytes, summary.excludedCount, "shield", DiskMapTheme.mutedLabel, filterTab == .excluded) {
+                filterTab = .excluded
+            }
         }
     }
 
-    private func summaryCard(
-        title: String,
-        bytes: Int64,
-        count: Int,
-        tint: Color,
-        selected: Bool,
+    private func card(
+        _ title: String,
+        _ bytes: Int64,
+        _ count: Int,
+        _ symbol: String,
+        _ tint: Color,
+        _ selected: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: symbol)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(tint)
+                    Spacer()
+                }
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .lineLimit(1)
                 Text(ByteFormat.string(bytes))
-                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                    .font(.system(size: 16, weight: .semibold).monospacedDigit())
                     .foregroundStyle(DiskMapTheme.ink)
-                Text("\(count.formatted()) files")
+                Text("\(count.formatted()) files" + (title.contains("important") ? " · excluded" : ""))
                     .font(.system(size: 10))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(DiskMapTheme.cardFill)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(selected ? tint.opacity(0.55) : DiskMapTheme.cardStroke, lineWidth: selected ? 1.5 : 1)
+                            .stroke(selected ? tint.opacity(0.6) : DiskMapTheme.cardStroke, lineWidth: selected ? 1.5 : 1)
                     )
             )
         }
         .buttonStyle(.plain)
     }
 
-    private var ageChart: some View {
+    /// Single segmented bar (reference style) — not separate columns.
+    private var ageBar: some View {
         let dist = summary.ageDistribution
         let total = max(1, ForgottenAgeBucket.allCases.reduce(Int64(0)) { $0 + (dist[$1] ?? 0) })
         return VStack(alignment: .leading, spacing: 8) {
@@ -249,39 +237,53 @@ struct ForgottenFilesView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DiskMapTheme.ink)
                 Spacer()
-                Text("Candidates only · not all disk files")
-                    .font(.system(size: 10))
+                Text("Show: Forgotten candidates")
+                    .font(.system(size: 11))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             GeometryReader { geo in
-                HStack(spacing: 3) {
+                HStack(spacing: 2) {
                     ForEach(ForgottenAgeBucket.allCases) { bucket in
                         let bytes = dist[bucket] ?? 0
-                        let frac = CGFloat(Double(bytes) / Double(total))
-                        let width = max(bytes > 0 ? 28 : 0, geo.size.width * frac)
+                        let w = geo.size.width * CGFloat(Double(bytes) / Double(total))
                         if bytes > 0 {
-                            Button {
-                                ageFilter = (ageFilter == bucket) ? nil : bucket
-                            } label: {
-                                VStack(spacing: 4) {
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .fill(ageTint(bucket).opacity(ageFilter == nil || ageFilter == bucket ? 0.85 : 0.35))
-                                        .frame(width: width, height: 28)
-                                    Text(bucket.shortTitle)
-                                        .font(.system(size: 9, weight: .semibold))
-                                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                                    Text(ByteFormat.string(bytes))
-                                        .font(.system(size: 9).monospacedDigit())
-                                        .foregroundStyle(DiskMapTheme.ink)
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(ageTint(bucket).opacity(ageFilter == nil || ageFilter == bucket ? 1 : 0.35))
+                                .frame(width: max(4, w))
+                                .help("\(bucket.title): \(ByteFormat.string(bytes))")
+                                .onTapGesture {
+                                    ageFilter = (ageFilter == bucket) ? nil : bucket
                                 }
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("\(bucket.title), \(ByteFormat.string(bytes))")
                         }
                     }
                 }
             }
-            .frame(height: 70)
+            .frame(height: 18)
+            HStack(spacing: 14) {
+                ForEach(ForgottenAgeBucket.allCases) { bucket in
+                    let bytes = dist[bucket] ?? 0
+                    if bytes > 0 {
+                        Button {
+                            ageFilter = (ageFilter == bucket) ? nil : bucket
+                        } label: {
+                            HStack(spacing: 5) {
+                                Circle().fill(ageTint(bucket)).frame(width: 7, height: 7)
+                                Text("\(bucket.shortTitle) · \(ByteFormat.string(bytes))")
+                                    .font(.system(size: 10, weight: ageFilter == bucket ? .bold : .medium))
+                                    .foregroundStyle(DiskMapTheme.ink)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                Spacer()
+                if ageFilter != nil {
+                    Button("Clear") { ageFilter = nil }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                }
+            }
         }
         .padding(12)
         .background(
@@ -296,11 +298,42 @@ struct ForgottenFilesView: View {
 
     private func ageTint(_ bucket: ForgottenAgeBucket) -> Color {
         switch bucket {
-        case .oneToTwoYears: return Color(red: 0.45, green: 0.62, blue: 0.90)
-        case .twoToThreeYears: return Color(red: 0.55, green: 0.55, blue: 0.88)
-        case .threeToFiveYears: return Color(red: 0.70, green: 0.50, blue: 0.80)
-        case .overFiveYears: return Color(red: 0.75, green: 0.45, blue: 0.55)
+        case .oneToTwoYears: return Color(red: 0.35, green: 0.72, blue: 0.55)
+        case .twoToThreeYears: return Color(red: 0.92, green: 0.72, blue: 0.28)
+        case .threeToFiveYears: return Color(red: 0.92, green: 0.55, blue: 0.28)
+        case .overFiveYears: return Color(red: 0.85, green: 0.38, blue: 0.38)
         }
+    }
+
+    private var filterPills: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                pill("All (\(summary.reviewableCount))", filterTab == .all && !onlyLarge && !onlyDownloads && !onlyMedia) {
+                    filterTab = .all; onlyLarge = false; onlyDownloads = false; onlyMedia = false
+                }
+                pill("Likely forgotten (\(summary.likelyCount))", filterTab == .likely) {
+                    filterTab = .likely
+                }
+                pill("Worth reviewing (\(summary.worthCount))", filterTab == .worth) {
+                    filterTab = .worth
+                }
+                pill("Large (>1 GB)", onlyLarge) { onlyLarge.toggle() }
+                pill("Downloads", onlyDownloads) { onlyDownloads.toggle() }
+                pill("Media", onlyMedia) { onlyMedia.toggle() }
+            }
+        }
+    }
+
+    private func pill(_ title: String, _ on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .foregroundStyle(on ? Color.white : DiskMapTheme.ink)
+                .background(Capsule().fill(on ? DiskMapTheme.ink : DiskMapTheme.navSelected))
+        }
+        .buttonStyle(.plain)
     }
 
     private var controls: some View {
@@ -322,7 +355,6 @@ struct ForgottenFilesView: View {
                             .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
                     )
             )
-
             Menu {
                 ForEach(SortMode.allCases) { mode in
                     Button(mode.title) { sortMode = mode }
@@ -339,6 +371,7 @@ struct ForgottenFilesView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
+                .frame(width: 190)
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .fill(DiskMapTheme.cardFill)
@@ -349,17 +382,51 @@ struct ForgottenFilesView: View {
                 )
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 210)
-
-            if ageFilter != nil {
-                Button("Clear age filter") { ageFilter = nil }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 12)
+        .padding(.bottom, 8)
+    }
+
+    private var listHeader: some View {
+        HStack(spacing: 8) {
+            Color.clear.frame(width: 22)
+            Text("Name").frame(maxWidth: .infinity, alignment: .leading)
+            Text("Location").frame(width: 140, alignment: .leading)
+            Text("Size").frame(width: 72, alignment: .trailing)
+            Text("Modified").frame(width: 88, alignment: .trailing)
+            Text("Reason").frame(width: 118, alignment: .leading)
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(DiskMapTheme.mutedLabel)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 6)
+    }
+
+    private var list: some View {
+        ScrollView {
+            LazyVStack(spacing: 0, pinnedViews: []) {
+                ForEach(visible) { c in
+                    ForgottenRow(
+                        candidate: c,
+                        selected: c.id == selectedID,
+                        checked: checked.contains(c.id),
+                        onSelect: {
+                            selectedID = c.id
+                            model.selectedNode = c.id
+                        },
+                        onToggleCheck: {
+                            if checked.contains(c.id) { checked.remove(c.id) }
+                            else { checked.insert(c.id) }
+                        }
+                    )
+                    Rectangle()
+                        .fill(DiskMapTheme.cardStroke.opacity(0.55))
+                        .frame(height: 1)
+                        .padding(.leading, 48)
+                }
+            }
+            .padding(.horizontal, 12)
+        }
     }
 
     private var emptyState: some View {
@@ -367,131 +434,51 @@ struct ForgottenFilesView: View {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 28, weight: .light))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
-            if filterTab == .excluded {
-                Text("No excluded old files in this scan")
-                    .font(DiskMapType.section)
-                    .foregroundStyle(DiskMapTheme.ink)
-            } else if summary.excludedCount > 0 && summary.reviewableCount == 0 {
+            if summary.excludedCount > 0 && summary.reviewableCount == 0 && filterTab != .excluded {
                 Text("Nothing worth reviewing yet")
                     .font(DiskMapType.section)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("DiskMap found old files, but most appear to belong to macOS or installed apps. No cleanup candidates were recommended.")
+                Text("Old files were found, but most belong to apps, package managers, or macOS — so they aren’t recommended here.")
                     .font(DiskMapType.body)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 420)
+                    .frame(maxWidth: 440)
+                Button("Show excluded") { filterTab = .excluded }
+                    .buttonStyle(InkButtonStyle(filled: false))
             } else {
-                Text("No forgotten files found")
+                Text(filterTab == .excluded ? "No excluded old files" : "No forgotten files found")
                     .font(DiskMapType.section)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("Nothing large and old enough to be worth reviewing matched this filter.")
+                Text("Try another filter, or clear search.")
                     .font(DiskMapType.body)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .multilineTextAlignment(.center)
             }
         }
+        .foregroundStyle(DiskMapTheme.ink)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
     }
 
-    private var list: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(visible) { candidate in
-                    row(candidate)
-                    Rectangle()
-                        .fill(DiskMapTheme.cardStroke.opacity(0.65))
-                        .frame(height: 1)
-                        .padding(.leading, 52)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-        }
-    }
-
-    private func row(_ c: ForgottenCandidate) -> some View {
-        let selected = c.id == (selectedID ?? activeSelection?.id)
-        let isChecked = checked.contains(c.id)
-        return HStack(spacing: 10) {
-            Button {
-                if isChecked { checked.remove(c.id) } else { checked.insert(c.id) }
-            } label: {
-                Image(systemName: isChecked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16))
-                    .foregroundStyle(isChecked ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(isChecked ? "Deselect \(c.name)" : "Select \(c.name)")
-
-            Button {
-                selectedID = c.id
-                model.selectedNode = c.id
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: c.kind.symbolName)
-                        .font(.system(size: 14))
-                        .foregroundStyle(kindTint(c.kind))
-                        .frame(width: 22)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(c.name)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(DiskMapTheme.ink)
-                            .lineLimit(1)
-                        Text(c.parentDisplay + " · " + relativeAge(c.ageDays))
-                            .font(.system(size: 11))
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    confidencePill(c.confidence)
-                    Text(ByteFormat.string(c.bytes))
-                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .frame(width: 84, alignment: .trailing)
-                }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(selected ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 8)
-    }
-
-    private func confidencePill(_ c: ForgottenConfidence) -> some View {
-        Text(c.title)
-            .font(.system(size: 10, weight: .semibold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .foregroundStyle(confidenceColor(c))
-            .background(Capsule().fill(confidenceColor(c).opacity(0.14)))
-            .frame(width: 120, alignment: .leading)
-    }
-
-    private func confidenceColor(_ c: ForgottenConfidence) -> Color {
-        switch c {
-        case .likelyForgotten: return DiskMapTheme.safe
-        case .worthReviewing: return DiskMapTheme.review
-        case .oldImportant: return DiskMapTheme.mutedLabel
-        }
-    }
-
     private var selectionBar: some View {
         HStack {
-            Text(checked.isEmpty
-                 ? "\(visible.count.formatted()) shown"
-                 : "\(checked.count.formatted()) selected · \(ByteFormat.string(selectedBytes))")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
+            if checked.isEmpty {
+                Text("\(visible.count.formatted()) shown")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+            } else {
+                Text("\(checked.count.formatted()) selected · \(ByteFormat.string(selectedBytes))")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.ink)
+            }
             Spacer()
-            if !checked.isEmpty {
-                Button("Clear selection") { checked.removeAll() }
+            if checked.isEmpty {
+                Button("Select visible") {
+                    checked = Set(visible.filter(\.isReviewable).prefix(200).map(\.id))
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DiskMapTheme.ink)
+                .disabled(visible.allSatisfy { !$0.isReviewable })
+            } else {
+                Button("Clear") { checked.removeAll() }
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
@@ -499,14 +486,6 @@ struct ForgottenFilesView: View {
                     Task { await stageSelected() }
                 }
                 .buttonStyle(InkButtonStyle(filled: true))
-            } else {
-                Button("Select visible") {
-                    checked = Set(visible.filter(\.isReviewable).map(\.id))
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(DiskMapTheme.ink)
-                .disabled(visible.allSatisfy { !$0.isReviewable })
             }
         }
         .padding(.horizontal, 20)
@@ -515,15 +494,12 @@ struct ForgottenFilesView: View {
         .overlay(alignment: .top) { Divider().overlay(DiskMapTheme.cardStroke) }
     }
 
-    private var inspector: some View {
+    private var inspectorColumn: some View {
         Group {
-            if let c = activeSelection {
-                ForgottenInspectorPanel(
-                    model: model,
-                    candidate: c,
-                    onOpenCleanup: onOpenCleanup,
-                    onStageOne: { Task { await stageOne(c) } }
-                )
+            if let c = active {
+                ForgottenInspectorPanel(model: model, candidate: c, onOpenCleanup: onOpenCleanup) {
+                    Task { await stageOne(c) }
+                }
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "clock")
@@ -541,18 +517,14 @@ struct ForgottenFilesView: View {
 
     private func stageSelected() async {
         let items = visible.filter { checked.contains($0.id) && $0.isReviewable }
-        guard !items.isEmpty else { return }
         var okCount = 0
         for c in items {
             let url = URL(fileURLWithPath: c.absolutePath).standardizedFileURL
             if model.isStaged(url) { okCount += 1; continue }
             if c.safety.level == .protected { continue }
-            let ok = await model.cleanupQueue.stage(
-                url,
-                size: c.bytes,
-                reason: "Forgotten: " + c.confidence.title
-            )
-            if ok { okCount += 1 }
+            if await model.cleanupQueue.stage(url, size: c.bytes, reason: "Forgotten: " + c.confidence.title) {
+                okCount += 1
+            }
         }
         await model.refreshQueue()
         model.showToast(okCount > 0 ? "Added \(okCount) to cleanup review" : "Nothing could be staged")
@@ -570,11 +542,7 @@ struct ForgottenFilesView: View {
             onOpenCleanup()
             return
         }
-        let ok = await model.cleanupQueue.stage(
-            url,
-            size: c.bytes,
-            reason: "Forgotten: " + c.confidence.title
-        )
+        let ok = await model.cleanupQueue.stage(url, size: c.bytes, reason: "Forgotten: " + c.confidence.title)
         await model.refreshQueue()
         if ok {
             model.showToast("Added to cleanup review")
@@ -583,29 +551,102 @@ struct ForgottenFilesView: View {
             model.showToast("Blocked by safety rules")
         }
     }
+}
 
-    private func relativeAge(_ ageDays: Int32) -> String {
-        if ageDays < 60 { return "\(ageDays) days ago" }
-        if ageDays < 365 {
-            let months = max(1, ageDays / 30)
-            return months == 1 ? "1 month ago" : "\(months) months ago"
+// MARK: - Row (separate type so selection doesn’t rebuild heavy closures inline)
+
+private struct ForgottenRow: View {
+    let candidate: ForgottenCandidate
+    let selected: Bool
+    let checked: Bool
+    let onSelect: () -> Void
+    let onToggleCheck: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: onToggleCheck) {
+                Image(systemName: checked ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 15))
+                    .foregroundStyle(checked ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
+            }
+            .buttonStyle(.plain)
+            .frame(width: 22)
+
+            Button(action: onSelect) {
+                HStack(spacing: 10) {
+                    Image(systemName: candidate.kind.symbolName)
+                        .font(.system(size: 13))
+                        .foregroundStyle(kindTint)
+                        .frame(width: 18)
+                    Text(candidate.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(candidate.parentDisplay)
+                        .font(.system(size: 11))
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(width: 140, alignment: .leading)
+                    Text(ByteFormat.string(candidate.bytes))
+                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .frame(width: 72, alignment: .trailing)
+                    Text(ForgottenAgeFormat.string(candidate.ageDays))
+                        .font(.system(size: 11))
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(width: 88, alignment: .trailing)
+                    Text(candidate.confidence.title)
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .foregroundStyle(confColor)
+                        .background(Capsule().fill(confColor.opacity(0.14)))
+                        .frame(width: 118, alignment: .leading)
+                }
+                .padding(.vertical, 9)
+                .padding(.horizontal, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(selected ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
-        let years = max(1, ageDays / 365)
-        return years == 1 ? "1 year ago" : "\(years) years ago"
+        .padding(.horizontal, 8)
     }
 
-    private func kindTint(_ kind: FileKind) -> Color {
-        switch kind {
+    private var confColor: Color {
+        switch candidate.confidence {
+        case .likelyForgotten: return DiskMapTheme.safe
+        case .worthReviewing: return DiskMapTheme.review
+        case .oldImportant: return DiskMapTheme.mutedLabel
+        }
+    }
+
+    private var kindTint: Color {
+        switch candidate.kind {
         case .video: return Color(red: 0.55, green: 0.35, blue: 0.85)
         case .diskImage: return Color(red: 0.25, green: 0.45, blue: 0.90)
         case .archive: return Color(red: 0.92, green: 0.50, blue: 0.20)
-        case .application: return Color(red: 0.20, green: 0.55, blue: 0.85)
-        case .document: return Color(red: 0.85, green: 0.65, blue: 0.15)
-        case .virtualDisk: return Color(red: 0.50, green: 0.35, blue: 0.80)
-        case .deviceBackup: return Color(red: 0.20, green: 0.65, blue: 0.45)
-        case .database: return Color(red: 0.40, green: 0.50, blue: 0.60)
-        case .other: return DiskMapTheme.mutedLabel
+        default: return DiskMapTheme.mutedLabel
         }
+    }
+}
+
+enum ForgottenAgeFormat {
+    static func string(_ ageDays: Int32) -> String {
+        // Packaging mtimes (cargo/npm sources) can look absurdly old — keep honest but compact.
+        if ageDays >= 15 * 365 { return "Very old" }
+        if ageDays < 60 { return "\(ageDays)d ago" }
+        if ageDays < 365 {
+            let m = max(1, ageDays / 30)
+            return m == 1 ? "1 month ago" : "\(m) months ago"
+        }
+        let y = max(1, ageDays / 365)
+        return y == 1 ? "1 year ago" : "\(y) years ago"
     }
 }
 
@@ -636,14 +677,16 @@ private struct ForgottenInspectorPanel: View {
                         Text(ByteFormat.string(candidate.bytes))
                             .font(.system(size: 26, weight: .semibold).monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
-                        Text(candidate.kind.title + " · " + relativeAge(candidate.ageDays))
+                        Text(candidate.kind.title + " · " + ForgottenAgeFormat.string(candidate.ageDays))
                             .font(.system(size: 11))
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                metaBlock(label: "Location", value: candidate.displayPath)
+                meta("Location", candidate.displayPath)
+                meta("Type", candidate.kind.title)
+                meta("Size", "\(candidate.bytes.formatted()) bytes")
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Why was this flagged?")
@@ -651,8 +694,7 @@ private struct ForgottenInspectorPanel: View {
                         .foregroundStyle(DiskMapTheme.ink)
                     ForEach(candidate.reasons, id: \.self) { reason in
                         HStack(alignment: .top, spacing: 6) {
-                            Text("•")
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                            Text("•").foregroundStyle(DiskMapTheme.mutedLabel)
                             Text(reason)
                                 .font(.system(size: 12))
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
@@ -668,23 +710,32 @@ private struct ForgottenInspectorPanel: View {
                 )
 
                 VStack(alignment: .leading, spacing: 6) {
+                    Text("Our recommendation")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
                     Text(candidate.confidence.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(confidenceColor(candidate.confidence))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(confColor)
                     Text(recommendationCopy)
                         .font(.system(size: 12))
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(candidate.safety.level.title + " — " + candidate.safety.reason)
-                        .font(.system(size: 11))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(confColor.opacity(0.10))
+                )
 
                 VStack(spacing: 8) {
                     if candidate.isReviewable && candidate.safety.level != .protected {
-                        Button("Add to Cleanup") { onStageOne() }
-                            .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                        Button {
+                            onStageOne()
+                        } label: {
+                            Label("Add to Cleanup", systemImage: "trash")
+                        }
+                        .buttonStyle(PrimaryCTAStyle(fullWidth: true))
                     }
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: candidate.absolutePath)])
@@ -700,31 +751,49 @@ private struct ForgottenInspectorPanel: View {
                         model.showToast("Path copied")
                     }
                     .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
+                    if candidate.isReviewable {
+                        Button("View in Biggest Files →") {
+                            model.folderFilterPath = URL(fileURLWithPath: candidate.absolutePath)
+                                .deletingLastPathComponent().path
+                            model.destination = .biggestFiles
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                    }
                 }
-                .padding(.top, 4)
 
                 Text("Based primarily on last-modified date. macOS doesn’t always provide a reliable last-opened date.")
                     .font(.system(size: 10))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 8)
             }
             .padding(18)
+        }
+    }
+
+    private var confColor: Color {
+        switch candidate.confidence {
+        case .likelyForgotten: return DiskMapTheme.safe
+        case .worthReviewing: return DiskMapTheme.review
+        case .oldImportant: return DiskMapTheme.mutedLabel
         }
     }
 
     private var recommendationCopy: String {
         switch candidate.confidence {
         case .likelyForgotten:
-            return "This looks like personal data you may have forgotten about. Review before removing — nothing is deleted until you confirm in Cleanup."
+            return "Large personal file that hasn’t been modified in a long time. Review before removing — nothing is deleted until you confirm in Cleanup."
         case .worthReviewing:
             return "Worth a careful look. Confirm you recognize it before adding it to Cleanup."
         case .oldImportant:
-            return "Although this file is old, DiskMap does not recommend removing it. It appears to belong to macOS, an app, or a development tool."
+            return "Although old, this isn’t recommended for Forgotten cleanup. It looks like app, package-manager, or system-related data."
         }
     }
 
-    private func metaBlock(label: String, value: String) -> some View {
+    private func meta(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(.system(size: 11))
@@ -736,18 +805,5 @@ private struct ForgottenInspectorPanel: View {
                 .lineLimit(3)
                 .truncationMode(.middle)
         }
-    }
-
-    private func confidenceColor(_ c: ForgottenConfidence) -> Color {
-        switch c {
-        case .likelyForgotten: return DiskMapTheme.safe
-        case .worthReviewing: return DiskMapTheme.review
-        case .oldImportant: return DiskMapTheme.mutedLabel
-        }
-    }
-
-    private func relativeAge(_ ageDays: Int32) -> String {
-        let years = max(1, ageDays / 365)
-        return years == 1 ? "1 year ago" : "\(years) years ago"
     }
 }

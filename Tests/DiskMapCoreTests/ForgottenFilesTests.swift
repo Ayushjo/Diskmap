@@ -172,6 +172,17 @@ struct ForgottenFilesTests {
         #expect(allSum > summary.reviewableBytes)
     }
 
+    @Test func cargoRegistryIsOldImportant() {
+        let conf = ForgottenFiles.classifyConfidence(
+            path: "/Users/alex/.cargo/registry/src/index.crates.io-xyz/windows-0.52.0/src/libwindows.0.52.0.a",
+            name: "libwindows.0.52.0.a",
+            kind: .other,
+            safety: SafetyAssessment(level: .safe, reason: "cache", title: "cache"),
+            bytes: 12_700_000
+        )
+        #expect(conf == .oldImportant)
+    }
+
     @Test func dockerRawIsOldImportant() {
         let conf = ForgottenFiles.classifyConfidence(
             path: "/Users/alex/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw",

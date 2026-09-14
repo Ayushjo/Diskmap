@@ -84,13 +84,43 @@ public struct ForgottenSummary: Sendable, Equatable {
     public var worthCount: Int
     public var excludedCount: Int
     public var ageDistribution: [ForgottenAgeBucket: Int64]
+
+    public static let empty = ForgottenSummary(
+        reviewableBytes: 0, likelyBytes: 0, worthBytes: 0, excludedBytes: 0,
+        reviewableCount: 0, likelyCount: 0, worthCount: 0, excludedCount: 0,
+        ageDistribution: [:]
+    )
+
+    public init(
+        reviewableBytes: Int64,
+        likelyBytes: Int64,
+        worthBytes: Int64,
+        excludedBytes: Int64,
+        reviewableCount: Int,
+        likelyCount: Int,
+        worthCount: Int,
+        excludedCount: Int,
+        ageDistribution: [ForgottenAgeBucket: Int64]
+    ) {
+        self.reviewableBytes = reviewableBytes
+        self.likelyBytes = likelyBytes
+        self.worthBytes = worthBytes
+        self.excludedBytes = excludedBytes
+        self.reviewableCount = reviewableCount
+        self.likelyCount = likelyCount
+        self.worthCount = worthCount
+        self.excludedCount = excludedCount
+        self.ageDistribution = ageDistribution
+    }
 }
 
 public enum ForgottenFiles {
     /// Minimum age (days) to be considered forgotten.
     public static let minAgeDays: Int32 = 365
     /// Tiny files are noise even if ancient.
-    public static let minBytes: Int64 = 1_000_000 // 1 MB
+    public static let minBytes: Int64 = 1_000_000 // 1 MB floor
+    /// Default list prefers meaningful storage impact for medium confidence.
+    public static let worthMinBytes: Int64 = 25_000_000
 
     public static func candidates(
         tree: FileTree,
@@ -240,12 +270,12 @@ public enum ForgottenFiles {
             return .likelyForgotten
         }
         if personal {
-            return .worthReviewing
+            return bytes >= worthMinBytes ? .worthReviewing : .oldImportant
         }
+        // Regenerable caches (npm, etc.) are cleaned via Caches — not Forgotten recommendations.
         if safety.level == .safe {
-            return .worthReviewing
+            return .oldImportant
         }
-        // Non-personal review paths (e.g. odd Library leaves) stay medium only if large.
         if safety.level == .review && bytes >= 100_000_000 && !lower.contains("/library/") {
             return .worthReviewing
         }
@@ -262,6 +292,21 @@ public enum ForgottenFiles {
         if lower.contains("/commandlinetools/") { return true }
         if lower.contains("/.swiftpm/") { return true }
         if lower.contains("/deriveddata/") { return true }
+        // Package-manager sources preserve ancient packaging mtimes — not "forgotten".
+        if lower.contains("/.cargo/") { return true }
+        if lower.contains("/.rustup/") { return true }
+        if lower.contains("/.gradle/") { return true }
+        if lower.contains("/.m2/") { return true }
+        if lower.contains("/go/pkg/mod/") { return true }
+        if lower.contains("/.nuget/") { return true }
+        if lower.contains("/.cocoapods/") { return true }
+        if lower.contains("/.pub-cache/") { return true }
+        if lower.contains("/library/caches/cocoapods/") { return true }
+        if lower.contains("/node_modules/") { return true }
+        if lower.contains("/.npm/") { return true }
+        if lower.contains("/.pnpm-store/") { return true }
+        if lower.contains("/.yarn/") { return true }
+        if lower.contains("/.cache/pip/") { return true }
         return false
     }
 
@@ -310,7 +355,9 @@ public enum ForgottenFiles {
     ) -> [String] {
         var reasons: [String] = []
         let years = max(1, ageDays / 365)
-        if years == 1 {
+        if years >= 15 {
+            reasons.append("Very old modification date (often preserved from packaging)")
+        } else if years == 1 {
             reasons.append("Not modified in over a year")
         } else {
             reasons.append("Not modified in \(years) years")
