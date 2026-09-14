@@ -7,6 +7,7 @@ struct BiggestFilesView: View {
     @ObservedObject var model: ScanModel
     let tree: FileTree
     let rootURL: URL
+    var onOpenCleanup: () -> Void = {}
 
     enum SortMode: String, CaseIterable, Identifiable {
         case largest, smallest, newest, oldest, name
@@ -382,7 +383,8 @@ struct BiggestFilesView: View {
                     rootURL: rootURL,
                     id: id,
                     size: totals[Int(id)],
-                    usedDenominator: usedDenominator
+                    usedDenominator: usedDenominator,
+                    onOpenCleanup: onOpenCleanup
                 )
             } else {
                 VStack(spacing: 8) {
@@ -423,6 +425,7 @@ private struct FileInspectorPanel: View {
     let id: Int32
     let size: Int64
     let usedDenominator: Int64
+    var onOpenCleanup: () -> Void = {}
 
     var body: some View {
         let name = tree.name(of: id)
@@ -532,13 +535,20 @@ private struct FileInspectorPanel: View {
     }
 
     private func stageForTrash(url: URL, name: String) async {
+        let url = url.standardizedFileURL
         if model.isStaged(url) {
             model.showToast("Already in cleanup list")
+            onOpenCleanup()
             return
         }
         let ok = await model.cleanupQueue.stage(url, size: size, reason: "Biggest file: " + name)
         await model.refreshQueue()
-        model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
+        if ok {
+            model.showToast("Added to cleanup review")
+            onOpenCleanup()
+        } else {
+            model.showToast("Blocked by safety rules")
+        }
     }
 
     private func metaBlock(label: String, value: String) -> some View {

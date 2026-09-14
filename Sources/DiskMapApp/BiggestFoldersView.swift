@@ -7,6 +7,7 @@ struct BiggestFoldersView: View {
     @ObservedObject var model: ScanModel
     let tree: FileTree
     let rootURL: URL
+    var onOpenCleanup: () -> Void = {}
 
     @State private var query = ""
     @State private var showTechnical = false
@@ -356,7 +357,8 @@ struct BiggestFoldersView: View {
                 FolderInspectorPanel(
                     model: model,
                     insight: insight,
-                    usedDenominator: usedDenominator
+                    usedDenominator: usedDenominator,
+                    onOpenCleanup: onOpenCleanup
                 )
             } else {
                 VStack(spacing: 8) {
@@ -378,6 +380,7 @@ private struct FolderInspectorPanel: View {
     @ObservedObject var model: ScanModel
     let insight: FolderInsight
     let usedDenominator: Int64
+    var onOpenCleanup: () -> Void = {}
 
     var body: some View {
         let pct = Double(insight.bytes) / Double(max(1, usedDenominator))
@@ -535,7 +538,9 @@ private struct FolderInspectorPanel: View {
                     .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
 
                     if allowStage {
-                        Button("Review in Cleanup") {
+                        Button(model.isStaged(URL(fileURLWithPath: insight.absolutePath, isDirectory: true))
+                               ? "Open Cleanup Queue"
+                               : "Review in Cleanup") {
                             Task { await stageFolder() }
                         }
                         .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
@@ -553,9 +558,10 @@ private struct FolderInspectorPanel: View {
     }
 
     private func stageFolder() async {
-        let url = URL(fileURLWithPath: insight.absolutePath, isDirectory: true)
+        let url = URL(fileURLWithPath: insight.absolutePath, isDirectory: true).standardizedFileURL
         if model.isStaged(url) {
             model.showToast("Already in cleanup list")
+            onOpenCleanup()
             return
         }
         let ok = await model.cleanupQueue.stage(
@@ -564,7 +570,12 @@ private struct FolderInspectorPanel: View {
             reason: "Biggest folder: " + insight.name
         )
         await model.refreshQueue()
-        model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
+        if ok {
+            model.showToast("Added to cleanup review")
+            onOpenCleanup()
+        } else {
+            model.showToast("Blocked by safety rules")
+        }
     }
 
     private func metaBlock(label: String, value: String) -> some View {

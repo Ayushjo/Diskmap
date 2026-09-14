@@ -12,16 +12,30 @@ struct AppShellView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 0) {
-            topBar
-            Divider().overlay(DiskMapTheme.cardStroke)
-            HStack(spacing: 0) {
-                sidebar
-                    .frame(width: 220)
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                topBar
                 Divider().overlay(DiskMapTheme.cardStroke)
-                destinationBody
+                HStack(spacing: 0) {
+                    sidebar
+                        .frame(width: 220)
+                    Divider().overlay(DiskMapTheme.cardStroke)
+                    destinationBody
+                }
+            }
+            if let toast = model.toastMessage {
+                Text(toast)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(DiskMapTheme.ink.opacity(0.92)))
+                    .padding(.top, 56)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(10)
             }
         }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.toastMessage)
         .background(DiskMapTheme.cream)
         .preferredColorScheme(.light)
         .frame(minWidth: 1180, minHeight: 740)
@@ -71,6 +85,17 @@ struct AppShellView: View {
             .buttonStyle(.plain)
             .keyboardShortcut("k", modifiers: .command)
             Spacer()
+            Button {
+                showCleanup = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "trash")
+                    Text(model.stagedItems.isEmpty ? "Cleanup" : "Cleanup (\(model.stagedItems.count))")
+                }
+                .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(InkButtonStyle(filled: !model.stagedItems.isEmpty))
+            .help("Review items staged for Trash")
             Button {
                 if let root = model.rootURL {
                     Task { await model.scan(root) }
@@ -220,11 +245,11 @@ struct AppShellView: View {
             ExploreShellView(model: model, pickFolder: pickFolder)
         case .biggestFiles:
             if let tree = model.tree, let root = model.rootURL {
-                BiggestFilesView(model: model, tree: tree, rootURL: root)
+                BiggestFilesView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })
             } else { needsScan }
         case .biggestFolders:
             if let tree = model.tree, let root = model.rootURL {
-                BiggestFoldersView(model: model, tree: tree, rootURL: root)
+                BiggestFoldersView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })
             } else { needsScan }
         case .forgottenFiles:
             findWrapper(title: "Forgotten Files", blurb: forgottenBlurb, trailing: { forgottenTrailing }) { tree, root in

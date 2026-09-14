@@ -55,9 +55,10 @@ public actor CleanupQueue {
         guard preflight.allowed else {
             return false
         }
-        guard !items.contains(where: { $0.url == url }) else { return false }
+        let standardized = url.standardizedFileURL
+        guard !items.contains(where: { $0.url.standardizedFileURL == standardized }) else { return false }
         items.append(StagedItem(
-            url: url,
+            url: standardized,
             size: size,
             reason: reason,
             sharesStorageGroup: sharesStorageGroup,
