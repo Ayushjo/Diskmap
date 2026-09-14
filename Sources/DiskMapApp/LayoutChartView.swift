@@ -17,11 +17,17 @@ struct LayoutChartView: View {
     let tree: FileTree
     let totals: [Int64]
     @Binding var currentNode: Int32
+    @Binding var selectedNode: Int32
     var otherFraction: Double = ChartLayout.otherFraction
+    var colorMode: ExploreColorMode = .folder
+    var categories: [FileTypeCategory] = []
 
     var body: some View {
         VStack(spacing: 0) {
-            DrillHeader(tree: tree, currentNode: currentNode, totals: totals) { currentNode = $0 }
+            DrillHeader(tree: tree, currentNode: currentNode, totals: totals) { id in
+                currentNode = id
+                selectedNode = id
+            }
             GeometryReader { proxy in
                 let slices = currentSlices
                 if slices.isEmpty {
@@ -32,7 +38,9 @@ struct LayoutChartView: View {
                     chart(slices, in: proxy.size)
                 }
             }
+            .background(DiskMapTheme.cream)
         }
+        .background(DiskMapTheme.cream)
     }
 
     private var currentSlices: [ChartSlice] {
@@ -44,18 +52,30 @@ struct LayoutChartView: View {
     private func chart(_ slices: [ChartSlice], in size: CGSize) -> some View {
         switch kind {
         case .sunburst:
-            SunburstChart(slices: slices, size: size, drill: drill)
+            SunburstChart(slices: slices, size: size, color: color, selected: selectedNode, select: select, drill: drill)
         case .flame:
-            FlameChart(slices: slices, size: size, drill: drill)
+            FlameChart(slices: slices, size: size, color: color, selected: selectedNode, select: select, drill: drill)
         case .bubbles:
-            BubbleChart(slices: slices, size: size, drill: drill)
+            BubbleChart(slices: slices, size: size, color: color, selected: selectedNode, select: select, drill: drill)
         case .mindMap:
-            MindMapChart(slices: slices, size: size, centerName: tree.name(of: currentNode), drill: drill)
+            MindMapChart(slices: slices, size: size, centerName: tree.name(of: currentNode), color: color, selected: selectedNode, select: select, drill: drill)
         }
     }
 
+    private func color(_ id: Int32?) -> Color {
+        guard let id, id >= 0, Int(id) < tree.count else { return DiskMapTheme.mutedLabel.opacity(0.4) }
+        return ExploreColoring.color(for: id, in: tree, mode: colorMode, categories: categories)
+    }
+
+    private func select(_ id: Int32?) {
+        guard let id, id >= 0, Int(id) < tree.count else { return }
+        selectedNode = id
+    }
+
     private func drill(_ id: Int32?) {
-        guard let id, id >= 0, Int(id) < tree.count, tree.isDirectory[Int(id)] else { return }
+        guard let id, id >= 0, Int(id) < tree.count else { return }
+        selectedNode = id
+        guard tree.isDirectory[Int(id)] else { return }
         currentNode = id
     }
 }
@@ -63,6 +83,9 @@ struct LayoutChartView: View {
 private struct SunburstChart: View {
     let slices: [ChartSlice]
     let size: CGSize
+    let color: (Int32?) -> Color
+    let selected: Int32
+    let select: (Int32?) -> Void
     let drill: (Int32?) -> Void
 
     var body: some View {
@@ -70,8 +93,9 @@ private struct SunburstChart: View {
         Canvas { context, _ in
             for wedge in layout {
                 let path = wedgePath(wedge)
-                context.fill(path, with: .color(nodeColor(id: wedge.nodeID)))
-                context.stroke(path, with: .color(.black.opacity(0.25)), lineWidth: 1)
+                let isSel = wedge.nodeID == selected
+                context.fill(path, with: .color(color(wedge.nodeID)))
+                context.stroke(path, with: .color(isSel ? DiskMapTheme.ink : .black.opacity(0.25)), lineWidth: isSel ? 2 : 1)
                 let sweep = wedge.end - wedge.start
                 if sweep > 0.12, wedge.outer - wedge.inner > 16 {
                     let mid = (wedge.start + wedge.end) / 2
@@ -93,6 +117,9 @@ private struct SunburstChart: View {
 private struct FlameChart: View {
     let slices: [ChartSlice]
     let size: CGSize
+    let color: (Int32?) -> Color
+    let selected: Int32
+    let select: (Int32?) -> Void
     let drill: (Int32?) -> Void
 
     var body: some View {
@@ -100,8 +127,9 @@ private struct FlameChart: View {
         Canvas { context, _ in
             for bar in bars {
                 let path = Path(bar.rect.insetBy(dx: 0.5, dy: 0.5))
-                context.fill(path, with: .color(nodeColor(id: bar.nodeID)))
-                context.stroke(path, with: .color(.black.opacity(0.25)), lineWidth: 1)
+                let isSel = bar.nodeID == selected
+                context.fill(path, with: .color(color(bar.nodeID)))
+                context.stroke(path, with: .color(isSel ? DiskMapTheme.ink : .black.opacity(0.25)), lineWidth: isSel ? 2 : 1)
                 if bar.rect.width > 48 && bar.rect.height > 16 {
                     context.draw(
                         Text(bar.label).font(.caption2).foregroundStyle(.white),
@@ -121,6 +149,9 @@ private struct FlameChart: View {
 private struct BubbleChart: View {
     let slices: [ChartSlice]
     let size: CGSize
+    let color: (Int32?) -> Color
+    let selected: Int32
+    let select: (Int32?) -> Void
     let drill: (Int32?) -> Void
 
     var body: some View {
@@ -133,8 +164,9 @@ private struct BubbleChart: View {
                     width: circle.radius * 2,
                     height: circle.radius * 2
                 ))
-                context.fill(path, with: .color(nodeColor(id: circle.nodeID)))
-                context.stroke(path, with: .color(.black.opacity(0.3)), lineWidth: 1)
+                let isSel = circle.nodeID == selected
+                context.fill(path, with: .color(color(circle.nodeID)))
+                context.stroke(path, with: .color(isSel ? DiskMapTheme.ink : .black.opacity(0.3)), lineWidth: isSel ? 2 : 1)
                 if circle.radius > 18 {
                     context.draw(
                         Text(circle.label).font(.caption2).foregroundStyle(.white),
@@ -154,6 +186,9 @@ private struct MindMapChart: View {
     let slices: [ChartSlice]
     let size: CGSize
     let centerName: String
+    let color: (Int32?) -> Color
+    let selected: Int32
+    let select: (Int32?) -> Void
     let drill: (Int32?) -> Void
 
     var body: some View {
@@ -174,7 +209,12 @@ private struct MindMapChart: View {
                     width: node.radius * 2,
                     height: node.radius * 2
                 ))
-                context.fill(path, with: .color(node.hub ? Color.secondary : nodeColor(id: node.nodeID)))
+                let isSel = !node.hub && node.nodeID == selected
+                let fill = node.hub ? DiskMapTheme.ink.opacity(0.55) : color(node.nodeID)
+                context.fill(path, with: .color(fill))
+                if isSel {
+                    context.stroke(path, with: .color(DiskMapTheme.ink), lineWidth: 2)
+                }
                 if node.labelWidth > 0.18 || node.hub {
                     context.draw(
                         Text(node.label).font(.caption2).foregroundStyle(.white),
