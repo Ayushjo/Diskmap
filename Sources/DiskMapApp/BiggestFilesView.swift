@@ -2,7 +2,7 @@ import AppKit
 import DiskMapCore
 import SwiftUI
 
-/// Find → Biggest Files: files only, ranked by allocated/logical totals, with inspector.
+/// Find → Biggest Files: files only, ranked by size, with inspector matching DiskMap-BiggestFiles ref.
 struct BiggestFilesView: View {
     @ObservedObject var model: ScanModel
     let tree: FileTree
@@ -59,13 +59,16 @@ struct BiggestFilesView: View {
             ids.sort { tree.modifiedDay[Int($0)] > tree.modifiedDay[Int($1)] }
         case .oldest:
             ids.sort { a, b in
-                let da = tree.modifiedDay[Int(a)], db = tree.modifiedDay[Int(b)]
+                let da = tree.modifiedDay[Int(a)]
+                let db = tree.modifiedDay[Int(b)]
                 if da == 0 { return false }
                 if db == 0 { return true }
                 return da < db
             }
         case .name:
-            ids.sort { tree.name(of: $0).localizedCaseInsensitiveCompare(tree.name(of: $1)) == .orderedAscending }
+            ids.sort {
+                tree.name(of: $0).localizedCaseInsensitiveCompare(tree.name(of: $1)) == .orderedAscending
+            }
         }
         return ids
     }
@@ -74,12 +77,17 @@ struct BiggestFilesView: View {
         filtered.reduce(Int64(0)) { $0 + totals[Int($1)] }
     }
 
+    private var activeSelection: Int32? {
+        if let selectedID, filtered.contains(selectedID) { return selectedID }
+        return filtered.first
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             mainColumn
             Divider().overlay(DiskMapTheme.cardStroke)
             inspector
-                .frame(width: 300)
+                .frame(width: 320)
         }
         .background(DiskMapTheme.cream)
         .onAppear {
@@ -117,7 +125,7 @@ struct BiggestFilesView: View {
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer()
+            Spacer(minLength: 16)
             VStack(alignment: .trailing, spacing: 2) {
                 Text("Showing \(filtered.count.formatted()) files")
                     .font(DiskMapType.caption)
@@ -129,41 +137,24 @@ struct BiggestFilesView: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 18)
-        .padding(.bottom, 12)
+        .padding(.bottom, 14)
     }
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    TextField("Search files by name or path…", text: $query)
-                        .textFieldStyle(.plain)
-                }
-                .padding(8)
-                .background(RoundedRectangle(cornerRadius: 8).fill(DiskMapTheme.cardFill)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(DiskMapTheme.cardStroke)))
-                Menu {
-                    ForEach(SortMode.allCases) { mode in
-                        Button(mode.title) { sortMode = mode }
-                    }
-                } label: {
-                    Text("Sort: \(sortMode.title)")
-                        .font(.system(size: 12, weight: .medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(DiskMapTheme.cardFill)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(DiskMapTheme.cardStroke)))
-                }
-                .menuStyle(.borderlessButton)
+                searchField
+                sortControl
+                    .frame(width: 172)
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    filterChip("All Files", selected: kindFilter == nil) { kindFilter = nil }
+                    filterChip(title: "All Files", selected: kindFilter == nil) {
+                        kindFilter = nil
+                    }
                     ForEach([FileKind.video, .diskImage, .archive, .application, .document, .other], id: \.self) { kind in
-                        filterChip(kind.title, selected: kindFilter == kind) {
-                            kindFilter = kindFilter == kind ? nil : kind
+                        filterChip(title: kind.title, selected: kindFilter == kind) {
+                            kindFilter = (kindFilter == kind) ? nil : kind
                         }
                     }
                 }
@@ -173,11 +164,65 @@ struct BiggestFilesView: View {
         .padding(.bottom, 12)
     }
 
-    private func filterChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(DiskMapTheme.mutedLabel)
+            TextField("Search files by name or path…", text: $query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(DiskMapTheme.cardFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
+                )
+        )
+    }
+
+    private var sortControl: some View {
+        Menu {
+            ForEach(SortMode.allCases) { mode in
+                Button(mode.title) { sortMode = mode }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text("Sort: " + sortMode.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(DiskMapTheme.cardFill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
+                    )
+            )
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Sort by " + sortMode.title)
+    }
+
+    private func filterChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold))
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 11)
                 .padding(.vertical, 6)
                 .foregroundStyle(selected ? Color.white : DiskMapTheme.ink)
                 .background(Capsule().fill(selected ? DiskMapTheme.ink : DiskMapTheme.navSelected))
@@ -195,12 +240,14 @@ struct BiggestFilesView: View {
             Text(allFileIDs.isEmpty ? "No unusually large files" : "No files match this filter")
                 .font(DiskMapType.section)
                 .foregroundStyle(DiskMapTheme.ink)
-            Text(allFileIDs.isEmpty
-                 ? "Your largest files are all relatively small, or the scan found no files."
-                 : "Try another type filter or clear the search.")
-                .font(DiskMapType.body)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .multilineTextAlignment(.center)
+            Text(
+                allFileIDs.isEmpty
+                    ? "Your largest files are all relatively small, or the scan found no files."
+                    : "Try another type filter or clear the search."
+            )
+            .font(DiskMapType.body)
+            .foregroundStyle(DiskMapTheme.mutedLabel)
+            .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
@@ -239,10 +286,10 @@ struct BiggestFilesView: View {
                 Text("\(rank)")
                     .font(.system(size: 12, weight: .bold).monospacedDigit())
                     .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .frame(width: 28)
+                    .frame(width: 28, alignment: .center)
                 Image(systemName: kind.symbolName)
                     .font(.system(size: 14))
-                    .foregroundStyle(DiskMapTheme.ink.opacity(0.75))
+                    .foregroundStyle(kindTint(kind))
                     .frame(width: 22)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
@@ -256,19 +303,19 @@ struct BiggestFilesView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                Spacer(minLength: 8)
+                .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
                 kindPill(kind)
                 Text(modified)
                     .font(.system(size: 11))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .frame(width: 90, alignment: .trailing)
+                    .frame(width: 88, alignment: .trailing)
                 Text(ByteFormat.string(size))
                     .font(.system(size: 13, weight: .semibold).monospacedDigit())
                     .foregroundStyle(DiskMapTheme.ink)
-                    .frame(width: 88, alignment: .trailing)
+                    .frame(width: 84, alignment: .trailing)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 10)
+            .padding(.vertical, 11)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(selected ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
@@ -283,82 +330,150 @@ struct BiggestFilesView: View {
         Text(kind.title)
             .font(.system(size: 10, weight: .semibold))
             .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .foregroundStyle(DiskMapTheme.ink)
-            .background(Capsule().fill(DiskMapTheme.navSelected))
-            .frame(width: 88, alignment: .leading)
+            .padding(.vertical, 4)
+            .foregroundStyle(kindTint(kind))
+            .background(Capsule().fill(kindTint(kind).opacity(0.14)))
+            .frame(width: 92, alignment: .leading)
+    }
+
+    private func kindTint(_ kind: FileKind) -> Color {
+        switch kind {
+        case .video: return Color(red: 0.55, green: 0.35, blue: 0.85)
+        case .diskImage: return Color(red: 0.25, green: 0.45, blue: 0.90)
+        case .archive: return Color(red: 0.92, green: 0.50, blue: 0.20)
+        case .application: return Color(red: 0.20, green: 0.55, blue: 0.85)
+        case .document: return Color(red: 0.85, green: 0.65, blue: 0.15)
+        case .virtualDisk: return Color(red: 0.50, green: 0.35, blue: 0.80)
+        case .deviceBackup: return Color(red: 0.20, green: 0.65, blue: 0.45)
+        case .database: return Color(red: 0.40, green: 0.50, blue: 0.60)
+        case .other: return DiskMapTheme.mutedLabel
+        }
     }
 
     private var inspector: some View {
         Group {
-            if let id = selectedID ?? filtered.first {
-                inspectorBody(id: id)
+            if let id = activeSelection {
+                FileInspectorPanel(
+                    model: model,
+                    tree: tree,
+                    rootURL: rootURL,
+                    id: id,
+                    size: totals[Int(id)],
+                    usedDenominator: usedDenominator
+                )
             } else {
-                Text("Select a file")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 8) {
+                    Image(systemName: "doc")
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                    Text("Select a file")
+                        .font(DiskMapType.body)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(DiskMapTheme.inspectorFill)
+        .background(DiskMapTheme.cardFill)
     }
 
-    private func inspectorBody(id: Int32) -> some View {
-        let i = Int(id)
+    private func relativeModified(_ day: Int32) -> String {
+        guard day > 0 else { return "Unknown" }
+        let today = AgeMap.today()
+        let age = today - day
+        if age <= 0 { return "Today" }
+        if age == 1 { return "Yesterday" }
+        if age < 30 { return "\(age) days ago" }
+        if age < 365 {
+            let months = max(1, age / 30)
+            return months == 1 ? "1 month ago" : "\(months) months ago"
+        }
+        let years = max(1, age / 365)
+        return years == 1 ? "1 year ago" : "\(years) years ago"
+    }
+}
+
+/// Separated so escaping Task closures capture a stable ObservedObject cleanly.
+private struct FileInspectorPanel: View {
+    @ObservedObject var model: ScanModel
+    let tree: FileTree
+    let rootURL: URL
+    let id: Int32
+    let size: Int64
+    let usedDenominator: Int64
+
+    var body: some View {
         let name = tree.name(of: id)
         let abs = tree.path(of: id, root: rootURL).path
         let kind = FileKind.classify(fileName: name, path: abs)
-        let size = totals[i]
         let display = CanonicalPath.displayPath(absolutePath: abs)
         let safety = SafetyClassifier.assess(path: abs, name: name, isDirectory: false)
         let pct = Double(size) / Double(usedDenominator)
+        let allowTrash = safety.level != SafetyLevel.protected && kind != FileKind.virtualDisk
+        let modified = relativeModified(tree.modifiedDay[Int(id)])
+
         return ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 12) {
                     Image(systemName: kind.symbolName)
-                        .font(.system(size: 28))
-                        .frame(width: 52, height: 52)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(DiskMapTheme.cardFill)
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(DiskMapTheme.cardStroke)))
+                        .font(.system(size: 26, weight: .medium))
+                        .foregroundStyle(tint(kind))
+                        .frame(width: 56, height: 56)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(tint(kind).opacity(0.12))
+                        )
+                        .accessibilityHidden(true)
+
                     VStack(alignment: .leading, spacing: 4) {
                         Text(name)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(DiskMapTheme.ink)
                             .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
                         Text(ByteFormat.string(size))
-                            .font(DiskMapType.heroNumber)
+                            .font(.system(size: 26, weight: .semibold).monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
-                        Text("\(kind.title) · \(String(format: "%.1f%% of used storage", pct * 100))")
-                            .font(DiskMapType.caption)
+                        Text(kind.title + " · " + String(format: "%.1f%% of used storage", min(100, pct * 100)))
+                            .font(.system(size: 11))
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                metaRow("Location", CanonicalPath.parentDisplay(of: abs))
-                metaRow("Modified", relativeModified(tree.modifiedDay[i]))
+
+                VStack(alignment: .leading, spacing: 12) {
+                    metaBlock(label: "Location", value: CanonicalPath.parentDisplay(of: abs))
+                    metaBlock(label: "Modified", value: modified)
+                }
+
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Why is it large?")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(DiskMapTheme.ink)
                     Text(FileKind.whyLarge(kind: kind, name: name))
-                        .font(DiskMapType.caption)
+                        .font(.system(size: 12))
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color(red: 0.93, green: 0.95, blue: 0.99)))
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(red: 0.93, green: 0.95, blue: 0.99))
+                )
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(safety.level.title)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(safety.level == .safe ? DiskMapTheme.safe : (safety.level == .protected ? DiskMapTheme.danger : DiskMapTheme.review))
+                        .foregroundStyle(safetyColor(safety.level))
                     Text(safety.reason)
-                        .font(DiskMapType.caption)
+                        .font(.system(size: 12))
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .fixedSize(horizontal: false, vertical: true)
-                    if kind == .virtualDisk || name.lowercased().hasSuffix(".raw") {
+                    if kind == FileKind.virtualDisk || name.lowercased().hasSuffix(".raw") {
                         Text("Do not delete this file directly — manage storage in the owning app.")
-                            .font(DiskMapType.caption)
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(DiskMapTheme.danger)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -366,49 +481,76 @@ struct BiggestFilesView: View {
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: abs)])
                     }
-                    .buttonStyle(PrimaryCTAStyle())
+                    .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+
                     Button("Open Containing Folder") {
                         NSWorkspace.shared.open(URL(fileURLWithPath: abs).deletingLastPathComponent())
                     }
-                    .buttonStyle(InkButtonStyle(filled: false))
+                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
+
                     Button("Copy Path") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(display, forType: .string)
                         model.showToast("Path copied")
                     }
-                    .buttonStyle(InkButtonStyle(filled: false))
-                    if safety.level != .protected && kind != .virtualDisk {
+                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
+
+                    if allowTrash {
                         Button("Move to Trash…") {
-                            Task {
-                                let url = URL(fileURLWithPath: abs)
-                                if model.isStaged(url) {
-                                    model.showToast("Already in cleanup list")
-                                    return
-                                }
-                                let ok = await model.cleanupQueue.stage(url, size: size, reason: "Biggest file: \(name)")
-                                await model.refreshQueue()
-                                model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
-                            }
+                            Task { await stageForTrash(url: URL(fileURLWithPath: abs), name: name) }
                         }
-                        .buttonStyle(InkButtonStyle(filled: false))
-                        .foregroundStyle(DiskMapTheme.danger)
+                        .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
                     }
                 }
                 .padding(.top, 4)
             }
-            .padding(16)
+            .padding(18)
         }
     }
 
-    private func metaRow(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+    private func stageForTrash(url: URL, name: String) async {
+        if model.isStaged(url) {
+            model.showToast("Already in cleanup list")
+            return
+        }
+        let ok = await model.cleanupQueue.stage(url, size: size, reason: "Biggest file: " + name)
+        await model.refreshQueue()
+        model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
+    }
+
+    private func metaBlock(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(DiskMapType.caption)
+                .font(.system(size: 11))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(value)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(DiskMapTheme.ink)
                 .textSelection(.enabled)
+                .lineLimit(2)
+                .truncationMode(.middle)
+        }
+    }
+
+    private func safetyColor(_ level: SafetyLevel) -> Color {
+        switch level {
+        case .safe: return DiskMapTheme.safe
+        case .review: return DiskMapTheme.review
+        case .protected: return DiskMapTheme.danger
+        }
+    }
+
+    private func tint(_ kind: FileKind) -> Color {
+        switch kind {
+        case .video: return Color(red: 0.55, green: 0.35, blue: 0.85)
+        case .diskImage: return Color(red: 0.25, green: 0.45, blue: 0.90)
+        case .archive: return Color(red: 0.92, green: 0.50, blue: 0.20)
+        case .application: return Color(red: 0.20, green: 0.55, blue: 0.85)
+        case .document: return Color(red: 0.85, green: 0.65, blue: 0.15)
+        case .virtualDisk: return Color(red: 0.50, green: 0.35, blue: 0.80)
+        case .deviceBackup: return Color(red: 0.20, green: 0.65, blue: 0.45)
+        case .database: return Color(red: 0.40, green: 0.50, blue: 0.60)
+        case .other: return DiskMapTheme.mutedLabel
         }
     }
 
@@ -416,9 +558,14 @@ struct BiggestFilesView: View {
         guard day > 0 else { return "Unknown" }
         let today = AgeMap.today()
         let age = today - day
-        if age <= 1 { return "Yesterday" }
+        if age <= 0 { return "Today" }
+        if age == 1 { return "Yesterday" }
         if age < 30 { return "\(age) days ago" }
-        if age < 365 { return "\(age / 30) months ago" }
-        return "\(age / 365) years ago"
+        if age < 365 {
+            let months = max(1, age / 30)
+            return months == 1 ? "1 month ago" : "\(months) months ago"
+        }
+        let years = max(1, age / 365)
+        return years == 1 ? "1 year ago" : "\(years) years ago"
     }
 }
