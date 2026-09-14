@@ -27,11 +27,11 @@ struct AgeMapView: View {
                 .frame(minHeight: 180, maxHeight: 260)
                 .padding(8)
             HStack {
-                Text("Big & Untouched")
+                Text("Forgotten files (1+ year)")
                     .font(.headline)
                     .foregroundStyle(DiskMapTheme.ink)
                 Spacer()
-                Button("Stage Selected") { Task { await stageSelected() } }
+                Button("Add selected to review") { Task { await stageSelected() } }
                     .disabled(checked.isEmpty)
             }
             .padding(.horizontal, 8)

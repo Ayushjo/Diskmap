@@ -7,6 +7,7 @@ struct AppShellView: View {
     @ObservedObject var model: ScanModel
     @State private var showCleanup = false
     @State private var showExplain = false
+    @State private var showPalette = false
     @State private var searchText = ""
 
     var body: some View {
@@ -33,6 +34,16 @@ struct AppShellView: View {
                 .frame(minWidth: 520, minHeight: 420)
                 .preferredColorScheme(.light)
         }
+        .overlay {
+            if showPalette {
+                ZStack {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                        .onTapGesture { showPalette = false }
+                    CommandPalette(model: model, isPresented: $showPalette, onReviewCleanup: { showPalette = false; showCleanup = true })
+                }
+            }
+        }
     }
 
     private var topBar: some View {
@@ -42,6 +53,18 @@ struct AppShellView: View {
             TextField("Search files, folders or ask anything… (⌘K)", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
+                .onSubmit { showPalette = true }
+            Button {
+                showPalette = true
+            } label: {
+                Text("⌘K")
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(DiskMapTheme.navSelected))
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("k", modifiers: .command)
             Spacer()
             Button {
                 if let root = model.rootURL {
@@ -190,15 +213,15 @@ struct AppShellView: View {
         case .visualize, .fileBrowser:
             ExploreShellView(model: model, pickFolder: pickFolder)
         case .biggestFiles:
-            findWrapper { tree, root in
+            findWrapper(title: "Biggest Files", blurb: "Largest items in this scan. Select one to inspect or review.") { tree, root in
                 TopSizesView(tree: tree, totals: model.selectedTotals, rootURL: root, selectedNode: $model.selectedNode)
             }
         case .biggestFolders:
-            findWrapper { tree, root in
+            findWrapper(title: "Biggest Folders", blurb: "Browse the largest folders. Click to drill in.") { tree, root in
                 FoldersView(tree: tree, totals: model.selectedTotals, rootURL: root, currentNode: $model.currentNode, selectedNode: $model.selectedNode)
             }
         case .forgottenFiles:
-            findWrapper { tree, root in
+            findWrapper(title: "Forgotten Files", blurb: "Based on modification date — access time is not always reliable on macOS.") { tree, root in
                 AgeMapView(model: model, tree: tree, totals: model.selectedTotals, rootURL: root)
             }
         case .duplicates:
@@ -219,13 +242,26 @@ struct AppShellView: View {
     }
 
     @ViewBuilder
-    private func findWrapper<Content: View>(@ViewBuilder content: (FileTree, URL) -> Content) -> some View {
+    private func findWrapper<Content: View>(title: String, blurb: String, @ViewBuilder content: (FileTree, URL) -> Content) -> some View {
         if model.isScanning {
             ProgressView("Scanning… \(model.scannedCount)")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let tree = model.tree, let root = model.rootURL, model.selectedTotals.count == tree.count {
-            content(tree, root)
-                .background(DiskMapTheme.cream)
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(DiskMapType.title)
+                        .foregroundStyle(DiskMapTheme.ink)
+                    Text(blurb)
+                        .font(DiskMapType.body)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                Divider().overlay(DiskMapTheme.cardStroke)
+                content(tree, root)
+            }
+            .background(DiskMapTheme.cream)
         } else {
             needsScan
         }
