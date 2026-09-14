@@ -29,6 +29,7 @@ struct AgeMapView: View {
             HStack {
                 Text("Big & Untouched")
                     .font(.headline)
+                    .foregroundStyle(DiskMapTheme.ink)
                 Spacer()
                 Button("Stage Selected") { Task { await stageSelected() } }
                     .disabled(checked.isEmpty)
@@ -38,17 +39,26 @@ struct AgeMapView: View {
                 Toggle(isOn: binding(id)) {
                     HStack {
                         Text(tree.path(of: id, root: rootURL).path)
+                            .foregroundStyle(DiskMapTheme.ink)
                             .lineLimit(1)
                         Spacer()
                         Text(diskByteString(totals[Int(id)]))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
+                .listRowBackground(id == model.selectedNode ? DiskMapTheme.ink.opacity(0.08) : Color.clear)
+                .onTapGesture {
+                    model.selectedNode = id
+                }
                 .onTapGesture(count: 2) {
+                    model.selectedNode = id
                     revealDownloadedFile(id, tree: tree, root: rootURL)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(DiskMapTheme.cream)
         }
+        .background(DiskMapTheme.cream)
     }
 
     private var heatmap: some View {

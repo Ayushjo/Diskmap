@@ -77,6 +77,7 @@ struct ExploreShellView: View {
                 }
                 .buttonStyle(.plain)
                 .help(mode.rawValue)
+                .accessibilityIdentifier("explore-mode-\(mode.rawValue)")
             }
             Text(model.exploreMode.blurb)
                 .font(.system(size: 12))
@@ -558,11 +559,11 @@ struct ExploreCanvas: View {
                 LayoutChartView(kind: .mindMap, tree: tree, totals: totals, currentNode: $model.currentNode, otherFraction: otherFraction)
                     .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             case .topSizes:
-                TopSizesView(tree: tree, totals: totals, rootURL: rootURL)
+                TopSizesView(tree: tree, totals: totals, rootURL: rootURL, selectedNode: $model.selectedNode)
             case .ageMap:
                 AgeMapView(model: model, tree: tree, totals: totals, rootURL: rootURL)
             case .folders:
-                FoldersView(tree: tree, totals: totals, rootURL: rootURL, currentNode: $model.currentNode)
+                FoldersView(tree: tree, totals: totals, rootURL: rootURL, currentNode: $model.currentNode, selectedNode: $model.selectedNode)
                     .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             }
         }
