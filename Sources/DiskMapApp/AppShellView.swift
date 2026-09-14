@@ -169,7 +169,6 @@ struct AppShellView: View {
             if dest == .biggestFiles { model.exploreMode = .topSizes }
             if dest == .biggestFolders { model.exploreMode = .folders }
             if dest == .forgottenFiles { model.exploreMode = .ageMap }
-            if dest == .fileBrowser { model.exploreMode = .folders }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: dest.symbol)
@@ -241,7 +240,11 @@ struct AppShellView: View {
                 },
                 onOpenBiggestFiles: { model.destination = .biggestFiles }
             )
-        case .visualize, .fileBrowser:
+        case .fileBrowser:
+            if let tree = model.tree, let root = model.rootURL {
+                FileBrowserView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })
+            } else { needsScan }
+        case .visualize:
             ExploreShellView(model: model, pickFolder: pickFolder)
         case .biggestFiles:
             if let tree = model.tree, let root = model.rootURL {
