@@ -50,6 +50,7 @@ enum DiskMapTheme {
         case "caches": return folderPastels[3]
         case "apps": return folderPastels[4]
         case "documents": return folderPastels[5]
+        case "system": return Color(red: 0.45, green: 0.47, blue: 0.52)
         default: return folderPastels[6]
         }
     }

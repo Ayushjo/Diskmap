@@ -9,6 +9,7 @@ struct OverviewView: View {
     var onExplain: () -> Void
     var onOpenVisualize: () -> Void
     var onSelectFile: (Int32) -> Void
+    var onOpenBiggestFiles: () -> Void = {}
 
     var body: some View {
         Group {
@@ -108,14 +109,14 @@ struct OverviewView: View {
                                 .background(Capsule().fill(DiskMapTheme.danger.opacity(0.12)))
                         }
                     }
-                    SegmentedStorageBar(segments: categorySegments(total: Int64(vol.usedBytes)))
+                    SegmentedStorageBar(segments: categorySegments(total: categorySum))
                         .padding(.top, 4)
                     categoryLegend
                 } else {
                     Text("\(ByteFormat.string(snap.scannedBytes)) in this scan")
                         .font(DiskMapType.body)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
-                    SegmentedStorageBar(segments: categorySegments(total: max(1, snap.scannedBytes)))
+                    SegmentedStorageBar(segments: categorySegments(total: categorySum))
                     categoryLegend
                 }
             }
@@ -144,7 +145,7 @@ struct OverviewView: View {
                 Text("Not sure where to start?")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.white)
-                Text("Get a simple, human-readable summary of what's using your space and what you can safely review.")
+                Text("Diskmap can explain what's taking up space and point you toward things worth reviewing.")
                     .font(DiskMapType.caption)
                     .foregroundStyle(Color.white.opacity(0.75))
                     .fixedSize(horizontal: false, vertical: true)
@@ -171,7 +172,7 @@ struct OverviewView: View {
                     Spacer()
                 }
                 ForEach(snap.categories) { cat in
-                    let denom = max(1, snap.volume.map { Int64($0.usedBytes) } ?? snap.scannedBytes)
+                    let denom = categorySum
                     HStack(spacing: 10) {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(DiskMapTheme.categoryColor(cat.colorHint).opacity(0.2))
@@ -209,10 +210,17 @@ struct OverviewView: View {
     private var biggestFilesCard: some View {
         PanelCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Biggest files")
-                    .font(DiskMapType.section)
-                    .foregroundStyle(DiskMapTheme.ink)
-                ForEach(snap.topFiles.prefix(6)) { file in
+                HStack {
+                    Text("Biggest files")
+                        .font(DiskMapType.section)
+                        .foregroundStyle(DiskMapTheme.ink)
+                    Spacer()
+                    Button("View all →", action: onOpenBiggestFiles)
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.info)
+                }
+                ForEach(snap.topFiles.prefix(5)) { file in
                     Button {
                         onSelectFile(file.nodeID)
                     } label: {
@@ -258,14 +266,11 @@ struct OverviewView: View {
                         .rotationEffect(.degrees(-90))
                     VStack(spacing: 2) {
                         Text(pct(snap.volume?.usedFraction ?? 0))
-                            .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                            .font(.system(size: 14, weight: .semibold).monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
-                        Text("used")
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
-                .frame(width: 120, height: 120)
+                .frame(width: 72, height: 72)
                 .frame(maxWidth: .infinity)
                 if let vol = snap.volume {
                     Text("\(ByteFormat.string(Int64(vol.freeBytes))) free")
@@ -311,7 +316,7 @@ struct OverviewView: View {
         let stories = StorageNarrator.stories(from: snap, limit: 3)
         return PanelCard {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Recent findings")
+                Text("Worth looking at")
                     .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 if stories.isEmpty {
@@ -353,13 +358,13 @@ struct OverviewView: View {
             Image(systemName: "leaf.fill")
                 .foregroundStyle(DiskMapTheme.safe)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Potential space to recover")
+                Text("Potential reclaimable space")
                     .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
-                Text(ByteFormat.string(snap.reviewableBytes))
+                Text("~" + ByteFormat.string(snap.reviewableBytes))
                     .font(.system(size: 18, weight: .semibold).monospacedDigit())
                     .foregroundStyle(DiskMapTheme.safe)
-                Text("Worth reviewing — not a guaranteed delete.")
+                Text("Estimated — review before deleting.")
                     .font(.system(size: 10))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
@@ -382,6 +387,10 @@ struct OverviewView: View {
         case .tight: return DiskMapTheme.review
         case .low, .critical: return DiskMapTheme.danger
         }
+    }
+
+    private var categorySum: Int64 {
+        max(1, snap.categories.reduce(Int64(0)) { $0 + $1.bytes })
     }
 
     private func categorySegments(total: Int64) -> [(color: Color, fraction: Double)] {
