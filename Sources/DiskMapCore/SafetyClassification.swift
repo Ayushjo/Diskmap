@@ -83,6 +83,29 @@ public enum SafetyClassifier {
                 title: "Downloads"
             )
         }
+
+        if n == ".cursor" || lower.contains("/.cursor") {
+            return SafetyAssessment(
+                level: .review,
+                reason: "Cursor IDE data (caches, indexes, or agent state). Clearing caches is usually safe; review project data carefully.",
+                title: "Cursor data"
+            )
+        }
+        if n == ".codex" || lower.contains("/.codex") {
+            return SafetyAssessment(
+                level: .review,
+                reason: "Codex / AI coding tool data. Confirm you don't need session history before removing.",
+                title: "Codex data"
+            )
+        }
+        if n == "coresimulator" || lower.contains("/coresimulator") {
+            return SafetyAssessment(
+                level: .review,
+                reason: "iOS Simulator data. Usually regenerable, but Xcode may re-download runtimes.",
+                title: "iOS Simulator data"
+            )
+        }
+
         if !isDirectory, n.hasSuffix(".dmg") || n.hasSuffix(".pkg") || n.hasSuffix(".zip") {
             return SafetyAssessment(
                 level: .review,

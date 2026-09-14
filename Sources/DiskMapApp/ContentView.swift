@@ -303,14 +303,14 @@ enum ExploreViewMode: String, CaseIterable, Identifiable {
 
     var blurb: String {
         switch self {
-        case .treemap: return "Every file as a rectangle, sized by bytes"
-        case .sunburst: return "Rings radiating out from the scan root"
-        case .flame: return "Depth top to bottom, size left to right"
-        case .bubbles: return "Nested bubbles, one per folder"
-        case .folders: return "Browse folder by folder, sized as you go"
-        case .ageMap: return "Where your bytes sit on a timeline"
+        case .treemap: return "Where is the space?"
+        case .sunburst: return "How does storage break down?"
+        case .flame: return "Where does the hierarchy get deep?"
+        case .bubbles: return "What are the largest clusters?"
+        case .folders: return "Browse folder by folder"
+        case .ageMap: return "What have I forgotten?"
         case .topSizes: return "The biggest items, ranked"
-        case .mindMap: return "Branches from the root, sized by weight"
+        case .mindMap: return "How does the filesystem branch?"
         }
     }
 

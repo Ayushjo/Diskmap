@@ -62,6 +62,10 @@ struct ExploreShellView: View {
                     totals: model.selectedTotals,
                     rootURL: root
                 )
+                if model.exploreMode.showsLayoutControls || model.exploreMode == .folders {
+                    LargestItemsStrip(model: model, tree: tree, root: root)
+                        .frame(height: 160)
+                }
             }
         } else {
             VStack(spacing: 16) {
@@ -810,3 +814,64 @@ struct ExploreTreemapView: View {
     }
 }
 
+
+
+struct LargestItemsStrip: View {
+    @ObservedObject var model: ScanModel
+    let tree: FileTree
+    let root: URL
+
+    private var rows: [(id: Int32, size: Int64)] {
+        let node = model.currentNode
+        guard model.selectedTotals.count == tree.count else { return [] }
+        return tree.children(of: node, totals: model.selectedTotals).sorted { $0.size > $1.size }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Largest items in this folder")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DiskMapTheme.ink)
+                .padding(.horizontal, 14)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(rows.prefix(12).enumerated()), id: \.element.id) { _, row in
+                        Button {
+                            model.selectedNode = row.id
+                            if tree.isDirectory[Int(row.id)] {
+                                model.currentNode = row.id
+                            }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(tree.name(of: row.id))
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(DiskMapTheme.ink)
+                                    .lineLimit(1)
+                                Text(ByteFormat.string(row.size))
+                                    .font(.system(size: 11).monospacedDigit())
+                                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                                Text(tree.isDirectory[Int(row.id)] ? "Folder" : "File")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                            }
+                            .padding(10)
+                            .frame(width: 140, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(DiskMapTheme.cardFill)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14)
+            }
+        }
+        .padding(.vertical, 8)
+        .background(DiskMapTheme.inspectorFill.opacity(0.5))
+    }
+}
