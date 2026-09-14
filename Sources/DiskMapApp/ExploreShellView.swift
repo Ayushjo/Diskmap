@@ -689,6 +689,8 @@ struct ExploreCanvas: View {
     let tree: FileTree
     let totals: [Int64]
     let rootURL: URL
+    /// When true, Treemap omits its internal breadcrumb (VisualizeView owns chrome).
+    var hideTreemapChrome: Bool = false
 
     private var otherFraction: Double {
         // Map depth slider 1…12 onto a collapse fraction (shallower → more Other).
@@ -706,7 +708,8 @@ struct ExploreCanvas: View {
                     currentNode: $model.currentNode,
                     selectedNode: $model.selectedNode,
                     colorMode: model.colorMode,
-                    categories: model.fileTypeCategories
+                    categories: model.fileTypeCategories,
+                    showInlineChrome: !hideTreemapChrome
                 )
             case .sunburst:
                 LayoutChartView(kind: .sunburst, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: $model.selectedNode, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
@@ -741,6 +744,8 @@ struct ExploreTreemapView: View {
     @Binding var selectedNode: Int32
     var colorMode: ExploreColorMode
     var categories: [FileTypeCategory]
+    /// When false, breadcrumbs/size chrome are provided by VisualizeView.
+    var showInlineChrome: Bool = true
 
     @State private var layoutRects: [TreemapRect] = []
     @State private var canvasSize: CGSize = .zero
@@ -748,20 +753,22 @@ struct ExploreTreemapView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                BreadcrumbBar(tree: tree, currentNode: currentNode) { id in
-                    currentNode = id
-                    selectedNode = id
-                    cacheLayout()
+            if showInlineChrome {
+                HStack {
+                    BreadcrumbBar(tree: tree, currentNode: currentNode) { id in
+                        currentNode = id
+                        selectedNode = id
+                        cacheLayout()
+                    }
+                    Spacer()
+                    Text(ByteCountFormatter.string(fromByteCount: currentSize, countStyle: .file))
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
-                Spacer()
-                Text(ByteCountFormatter.string(fromByteCount: currentSize, countStyle: .file))
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                .padding(8)
             }
-            .padding(8)
 
             Canvas { context, size in
-                let items = tree.children(of: currentNode, totals: totals)
+                let items = tree.children(of: currentNode, totals: totals).filter { $0.size > 0 }
                 let rects = SquarifiedTreemap.layout(items: items, in: CGRect(origin: .zero, size: size))
                 for r in rects {
                     let inset = r.rect.insetBy(dx: 1, dy: 1)
@@ -819,7 +826,7 @@ struct ExploreTreemapView: View {
             return
         }
         layoutRects = SquarifiedTreemap.layout(
-            items: tree.children(of: currentNode, totals: totals),
+            items: tree.children(of: currentNode, totals: totals).filter { $0.size > 0 },
             in: CGRect(origin: .zero, size: canvasSize)
         )
     }

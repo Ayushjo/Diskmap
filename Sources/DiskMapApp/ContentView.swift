@@ -367,14 +367,14 @@ enum ExploreViewMode: String, CaseIterable, Identifiable {
 
     var blurb: String {
         switch self {
-        case .treemap: return "Where is the space?"
-        case .sunburst: return "How does storage break down?"
-        case .flame: return "Where does the hierarchy get deep?"
-        case .bubbles: return "What are the largest clusters?"
+        case .treemap: return "See what's taking space"
+        case .sunburst: return "See how it's nested"
+        case .flame: return "Trace folder depth"
+        case .bubbles: return "Compare visually"
         case .folders: return "Browse folder by folder"
-        case .ageMap: return "What have I forgotten?"
+        case .ageMap: return "Find old data"
         case .topSizes: return "The biggest items, ranked"
-        case .mindMap: return "How does the filesystem branch?"
+        case .mindMap: return "Explore structure"
         }
     }
 
@@ -383,6 +383,11 @@ enum ExploreViewMode: String, CaseIterable, Identifiable {
         case .treemap, .sunburst, .flame, .bubbles, .mindMap: return true
         default: return false
         }
+    }
+
+    /// Modes shown in the Visualize workspace picker (not File Browser / Find lists).
+    static var visualizeModes: [ExploreViewMode] {
+        [.treemap, .sunburst, .flame, .bubbles, .mindMap, .ageMap]
     }
 }
 
