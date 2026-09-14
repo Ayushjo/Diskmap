@@ -92,7 +92,7 @@ enum BulkScan {
         var list = attrlist()
         memset(&list, 0, MemoryLayout<attrlist>.size)
         list.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
-        list.commonattr = attrReturned | attrName | attrError | attrObjType | attrModTime | attrFlags
+        list.commonattr = attrReturned | attrName | attrError | attrObjType | attrCrTime | attrModTime | attrFlags
         list.dirattr = attrDirAlloc | attrDirData
         list.fileattr = attrFileTotal | attrFileAlloc
 
@@ -118,7 +118,7 @@ enum BulkScan {
         state.submit(Batch(parentPathUTF8: job.pathUTF8, parent: job.nodeID, names: names, entries: entries))
     }
 
-    /// Offsets measured 2026-09-14. Name bytes sit at `nameRef + dataOffset`.
+    /// Offsets measured 2026-09-14; +16 for ATTR_CMN_CRTIME (2026-09-14). Name at `nameRef + dataOffset`.
     private static func parse(buffer: [UInt8], count: Int, names: inout [UInt8], entries: inout [Entry]) {
         var offset = 0
         for _ in 0..<count {
@@ -130,10 +130,12 @@ enum BulkScan {
             let nameLength = Int(load(UInt32.self, buffer, offset + 32))
             let nameStart = offset + 28 + Int(nameOffset)
             let objType = load(UInt32.self, buffer, offset + 36)
-            let modified = load(Int64.self, buffer, offset + 40)
-            let flags = load(UInt32.self, buffer, offset + 56)
-            let firstSize = load(Int64.self, buffer, offset + 60)
-            let secondSize = load(Int64.self, buffer, offset + 68)
+            // ATTR_CMN_CRTIME then ATTR_CMN_MODTIME (each timespec = 16 bytes).
+            let created = load(Int64.self, buffer, offset + 40)
+            let modified = load(Int64.self, buffer, offset + 56)
+            let flags = load(UInt32.self, buffer, offset + 72)
+            let firstSize = load(Int64.self, buffer, offset + 76)
+            let secondSize = load(Int64.self, buffer, offset + 84)
             defer { offset += length }
 
             guard error == 0, nameLength > 1, nameStart >= offset, nameStart + nameLength <= offset + length else {
@@ -165,14 +167,15 @@ enum BulkScan {
                 isDirectory: isDirectory,
                 logical: logical,
                 allocated: allocated > 0 ? allocated : logical,
-                day: modifiedDay(modified),
+                day: dayFromEpochSeconds(modified),
+                createdDay: dayFromEpochSeconds(created),
                 notDownloaded: dataless,
                 descend: isDirectory && !isLink && !dataless
             ))
         }
     }
 
-    private static func modifiedDay(_ seconds: Int64) -> Int32 {
+    private static func dayFromEpochSeconds(_ seconds: Int64) -> Int32 {
         guard seconds > 0 else { return 0 }
         let days = seconds / 86400
         guard days <= Int64(Int32.max) else { return 0 }
@@ -307,6 +310,7 @@ enum BulkScan {
                         logicalSize: entry.logical,
                         allocatedSize: entry.allocated,
                         modifiedDaysSinceEpoch: entry.day,
+                        createdDaysSinceEpoch: entry.createdDay,
                         flags: flags
                     )
                     if entry.descend {
@@ -390,6 +394,7 @@ private struct Entry {
     var logical: Int64
     var allocated: Int64
     var day: Int32
+    var createdDay: Int32
     var notDownloaded: Bool
     var descend: Bool
 
@@ -401,6 +406,7 @@ private struct Entry {
         logical: 0,
         allocated: 0,
         day: 0,
+        createdDay: 0,
         notDownloaded: false,
         descend: false
     )
@@ -409,6 +415,7 @@ private struct Entry {
 private let attrReturned: UInt32 = 0x80000000
 private let attrName: UInt32 = 0x00000001
 private let attrObjType: UInt32 = 0x00000008
+private let attrCrTime: UInt32 = 0x00000200
 private let attrModTime: UInt32 = 0x00000400
 private let attrFlags: UInt32 = 0x00040000
 private let attrError: UInt32 = 0x20000000
@@ -420,4 +427,4 @@ private let options = UInt64(FSOPT_NOFOLLOW | FSOPT_PACK_INVAL_ATTRS)
 private let sfDataless: UInt32 = 0x40000000
 private let vdir: UInt32 = 2
 private let vlunk: UInt32 = 5
-private let fixedPrefix = 76
+private let fixedPrefix = 92

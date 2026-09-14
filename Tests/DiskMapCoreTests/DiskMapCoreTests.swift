@@ -6,6 +6,35 @@ import Testing
 
 struct FileTreeTests {
 
+    @Test func createdDayStoresBirthtimeDays() {
+        var tree = FileTree()
+        let root = tree.addNode(
+            name: "root",
+            parent: -1,
+            isDirectory: true,
+            logicalSize: 0,
+            allocatedSize: 0,
+            modifiedDaysSinceEpoch: 100,
+            createdDaysSinceEpoch: 50
+        )
+        let file = tree.addNode(
+            name: "a.txt",
+            parent: root,
+            isDirectory: false,
+            logicalSize: 1,
+            allocatedSize: 1,
+            modifiedDaysSinceEpoch: 200,
+            createdDaysSinceEpoch: 150
+        )
+        #expect(tree.createdDay[Int(root)] == 50)
+        #expect(tree.createdDay[Int(file)] == 150)
+        #expect(tree.modifiedDay[Int(file)] == 200)
+        tree.compact()
+        #expect(tree.createdDay[Int(file)] == 150)
+        #expect(tree.count == tree.createdDay.count)
+    }
+
+
     @Test func rollUpSizesSumsCorrectly() {
         var tree = FileTree()
         let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)

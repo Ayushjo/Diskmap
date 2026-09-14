@@ -357,6 +357,7 @@ struct ExploreInspector: View {
         let fileCount = countFiles(tree: tree, id: id)
         let folderCount = countFolders(tree: tree, id: id)
         let day = tree.modifiedDay[idx]
+        let created = tree.createdDay[idx]
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -395,7 +396,7 @@ struct ExploreInspector: View {
                             StatRow(label: "Of parent", value: String(format: "%.1f%%", ofParent * 100))
                         }
                         StatRow(label: "Modified", value: relativeDay(day))
-                        StatRow(label: "Created", value: "—")
+                        StatRow(label: "Created", value: relativeDay(created))
                     }
                 }
 

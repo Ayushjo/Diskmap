@@ -50,6 +50,7 @@ public struct FileTree: Sendable {
     public private(set) var logicalSize: [Int64] = []   // st_size
     public private(set) var allocatedSize: [Int64] = [] // size-on-disk (reflects APFS compression)
     public private(set) var modifiedDay: [Int32] = []   // days since epoch, not a full Date (8 bytes -> 4)
+    public private(set) var createdDay: [Int32] = []    // birthtime days since epoch; 0 = unknown
     public private(set) var isDirectory: [Bool] = []
     public private(set) var flags: [UInt8] = []         // see NodeFlags
 
@@ -65,6 +66,7 @@ public struct FileTree: Sendable {
         logicalSize.reserveCapacity(capacity)
         allocatedSize.reserveCapacity(capacity)
         modifiedDay.reserveCapacity(capacity)
+        createdDay.reserveCapacity(capacity)
         isDirectory.reserveCapacity(capacity)
         flags.reserveCapacity(capacity)
         if uniqueNames > 0 {
@@ -85,7 +87,7 @@ public struct FileTree: Sendable {
     /// string heap. Built from `MemoryLayout` so the number tracks the
     /// stored types instead of a handwritten guess.
     public static var packedNodeStride: Int {
-        MemoryLayout<Int32>.stride * 5
+        MemoryLayout<Int32>.stride * 6
             + MemoryLayout<Int64>.stride * 2
             + MemoryLayout<Bool>.stride
             + MemoryLayout<UInt8>.stride
@@ -117,6 +119,7 @@ public struct FileTree: Sendable {
             + firstChild.capacity * MemoryLayout<Int32>.stride
             + nextSibling.capacity * MemoryLayout<Int32>.stride
             + modifiedDay.capacity * MemoryLayout<Int32>.stride
+            + createdDay.capacity * MemoryLayout<Int32>.stride
             + logicalSize.capacity * MemoryLayout<Int64>.stride
             + allocatedSize.capacity * MemoryLayout<Int64>.stride
             + isDirectory.capacity * MemoryLayout<Bool>.stride
@@ -145,6 +148,7 @@ public struct FileTree: Sendable {
         logicalSize = Self.exactCopy(logicalSize)
         allocatedSize = Self.exactCopy(allocatedSize)
         modifiedDay = Self.exactCopy(modifiedDay)
+        createdDay = Self.exactCopy(createdDay)
         isDirectory = Self.exactCopy(isDirectory)
         flags = Self.exactCopy(flags)
         nameBlob = Self.exactCopy(nameBlob)
@@ -171,6 +175,7 @@ public struct FileTree: Sendable {
         logicalSize: Int64,
         allocatedSize: Int64,
         modifiedDaysSinceEpoch: Int32,
+        createdDaysSinceEpoch: Int32 = 0,
         flags: UInt8 = 0
     ) -> Int32 {
         appendNode(
@@ -180,6 +185,7 @@ public struct FileTree: Sendable {
             logicalSize: logicalSize,
             allocatedSize: allocatedSize,
             modifiedDaysSinceEpoch: modifiedDaysSinceEpoch,
+            createdDaysSinceEpoch: createdDaysSinceEpoch,
             flags: flags
         )
     }
@@ -194,6 +200,7 @@ public struct FileTree: Sendable {
         logicalSize: Int64,
         allocatedSize: Int64,
         modifiedDaysSinceEpoch: Int32,
+        createdDaysSinceEpoch: Int32 = 0,
         flags: UInt8 = 0
     ) -> Int32 {
         let nid = internUTF8(nameBytes)
@@ -204,6 +211,7 @@ public struct FileTree: Sendable {
             logicalSize: logicalSize,
             allocatedSize: allocatedSize,
             modifiedDaysSinceEpoch: modifiedDaysSinceEpoch,
+            createdDaysSinceEpoch: createdDaysSinceEpoch,
             flags: flags
         )
     }
@@ -215,6 +223,7 @@ public struct FileTree: Sendable {
         logicalSize: Int64,
         allocatedSize: Int64,
         modifiedDaysSinceEpoch: Int32,
+        createdDaysSinceEpoch: Int32,
         flags: UInt8
     ) -> Int32 {
         let id = Int32(nameIndex.count)
@@ -225,6 +234,7 @@ public struct FileTree: Sendable {
         self.logicalSize.append(logicalSize)
         self.allocatedSize.append(allocatedSize)
         modifiedDay.append(modifiedDaysSinceEpoch)
+        createdDay.append(createdDaysSinceEpoch)
         self.isDirectory.append(isDirectory)
         self.flags.append(flags)
         if parentID >= 0 {
@@ -478,13 +488,14 @@ public struct FileTree: Sendable {
         logicalSize: [Int64],
         allocatedSize: [Int64],
         modifiedDay: [Int32],
+        createdDay: [Int32],
         isDirectory: [Bool],
         flags: [UInt8]
     ) -> Bool {
         let n = nameIndex.count
         guard parent.count == n, firstChild.count == n, nextSibling.count == n,
               logicalSize.count == n, allocatedSize.count == n, modifiedDay.count == n,
-              isDirectory.count == n, flags.count == n else { return false }
+              createdDay.count == n, isDirectory.count == n, flags.count == n else { return false }
         for index in nameIndex where index < 0 || index >= nameTable.count { return false }
         // Snapshot still ships length-prefixed Strings; rebuild the packed blob once.
         var blob: [UInt8] = []
@@ -513,6 +524,7 @@ public struct FileTree: Sendable {
         self.logicalSize = logicalSize
         self.allocatedSize = allocatedSize
         self.modifiedDay = modifiedDay
+        self.createdDay = createdDay
         self.isDirectory = isDirectory
         self.flags = flags
         return true

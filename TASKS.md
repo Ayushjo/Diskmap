@@ -352,7 +352,6 @@ one Mac. TASK-022 (auto-update) deprioritized for the same reason.
     Treemap with By folder/type/age coloring; depth slider drives
     `otherFraction` for sunburst/flame/bubbles/mind map
   - Inspector: DETAILS (Compressed by = logical − on disk), Largest Inside,
-    Reveal / Quick Look / Focus / Copy Path, Add to Cleanup. Created shows
-    "—" (no birthtime on `FileTree` — flagged, no core schema change)
+    Reveal / Quick Look / Focus / Copy Path, Add to Cleanup. Created wired to `FileTree.createdDay` (TASK-031).
   - `swift test`: 46 green. DiskMapCore layout math unchanged beyond the
     additive `otherFraction` parameter.

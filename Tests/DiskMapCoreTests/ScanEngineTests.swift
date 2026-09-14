@@ -98,7 +98,7 @@ struct ScanDecisionTests {
 
 struct FileTreeStorageTests {
     @Test func packedStrideMatchesStoredFields() {
-        let stride = MemoryLayout<Int32>.stride * 5
+        let stride = MemoryLayout<Int32>.stride * 6
             + MemoryLayout<Int64>.stride * 2
             + MemoryLayout<Bool>.stride
             + MemoryLayout<UInt8>.stride
@@ -226,12 +226,14 @@ struct ScanEngineFixtureTests {
         let visible = try #require(tree.node(named: "visible.txt", parentNamed: fixture.root.lastPathComponent))
         let visibleURL = fixture.root.appendingPathComponent("visible.txt")
         let visibleValues = try visibleURL.resourceValues(forKeys: [
-            .fileSizeKey, .totalFileAllocatedSizeKey, .contentModificationDateKey,
+            .fileSizeKey, .totalFileAllocatedSizeKey, .contentModificationDateKey, .creationDateKey,
         ])
         #expect(tree.logicalSize[Int(visible)] == Int64(visibleValues.fileSize ?? -1))
         #expect(tree.allocatedSize[Int(visible)] == Int64(visibleValues.totalFileAllocatedSize ?? -1))
         let day = Int32((visibleValues.contentModificationDate ?? .distantPast).timeIntervalSince1970 / 86400)
         #expect(tree.modifiedDay[Int(visible)] == day)
+        let createdDay = Int32((visibleValues.creationDate ?? .distantPast).timeIntervalSince1970 / 86400)
+        #expect(tree.createdDay[Int(visible)] == createdDay)
         // A constructed evicted placeholder is not part of this fixture.
         // SF_DATALESS is not settable from userspace, and evictUbiquitousItem
         // on a file this process created failed with NSFileProviderError -2008.

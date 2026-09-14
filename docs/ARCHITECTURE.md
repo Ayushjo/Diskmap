@@ -265,11 +265,12 @@ A scan is already packed arrays plus an interned name table. SQLite would
 be a second data model for the same bytes, and a query engine we do not
 need to load a scan or diff two scans by folder path.
 
-The file is little-endian. Magic `DMAP`, version `UInt32` 1, timestamp
-seconds, root path, node count, name-table count, then the packed arrays
-(`nameIndex`, `parent`, `firstChild`, `nextSibling`, `logicalSize`,
-`allocatedSize`, `modifiedDay`, directory flags, node flags) and the name
-table. One file per scan, under Application Support `DiskMap/snapshots`,
+The file is little-endian. Magic `DMAP`, version `UInt32` 2 (v1 still
+loads; missing `createdDay` fills zeros), timestamp seconds, root path,
+node count, name-table count, then the packed arrays (`nameIndex`,
+`parent`, `firstChild`, `nextSibling`, `logicalSize`, `allocatedSize`,
+`modifiedDay`, `createdDay` from v2, directory flags, node flags) and the
+name table. One file per scan, under Application Support `DiskMap/snapshots`,
 named by timestamp. Listing reads that header only, so a saved home scan
 is not decoded just to show a date.
 
@@ -294,6 +295,16 @@ on `FileTree`, so Inspector Created is "—" until a deliberate schema task.
 
 **Status:** implemented (TASK-030). Treemap is the skin checkpoint; other
 seven modes reuse existing canvas views inside the same shell.
+
+### createdDay mirrors modifiedDay (birthtime days)
+
+`FileTree.createdDay` stores birthtime as days since epoch, same packing as
+`modifiedDay`. Live scans use `getattrlistbulk` (`BulkScan`), not per-file
+`resourceValues` — so creation is `ATTR_CMN_CRTIME` on the same attribute
+mask / syscall as `ATTR_CMN_MODTIME` (one more attr, same bulk call). Snapshot
+codec is version 2; version 1 files still decode with createdDay zeros.
+
+**Status:** implemented.
 
 ## Adding a new decision
 
