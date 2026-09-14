@@ -51,6 +51,10 @@ public actor CleanupQueue {
         guard !Self.excludedPrefixes.contains(where: { path.hasPrefix($0) }) else {
             return false
         }
+        let preflight = CleanupPreflight.evaluate(url: url)
+        guard preflight.allowed else {
+            return false
+        }
         guard !items.contains(where: { $0.url == url }) else { return false }
         items.append(StagedItem(
             url: url,

@@ -280,15 +280,26 @@ struct OverviewView: View {
     }
 
     private var insightCard: some View {
-        PanelCard {
+        let top = StorageNarrator.recommendations(from: snap).first
+        return PanelCard {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Quick insight")
                     .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
-                Text("You have \(ByteFormat.string(snap.reviewableBytes)) worth of files that may be worth reviewing.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let top {
+                    Text(top.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.ink)
+                    Text("\(top.detail) · \(ByteFormat.string(top.bytes))")
+                        .font(DiskMapType.body)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("You have \(ByteFormat.string(snap.reviewableBytes)) worth of files that may be worth reviewing.")
+                        .font(DiskMapType.body)
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Button("Review cleanup →", action: onReviewCleanup)
                     .buttonStyle(PrimaryCTAStyle())
                     .padding(.top, 4)
@@ -297,18 +308,40 @@ struct OverviewView: View {
     }
 
     private var findingsCard: some View {
-        PanelCard {
+        let stories = StorageNarrator.stories(from: snap, limit: 3)
+        return PanelCard {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Recent findings")
                     .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
-                ForEach(snap.categories.prefix(3)) { cat in
-                    HStack {
-                        Text(cat.title).font(DiskMapType.body).foregroundStyle(DiskMapTheme.ink)
-                        Spacer()
-                        Text(ByteFormat.string(cat.bytes))
-                            .font(.system(size: 12).monospacedDigit())
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                if stories.isEmpty {
+                    ForEach(snap.categories.prefix(3)) { cat in
+                        HStack {
+                            Text(cat.title).font(DiskMapType.body).foregroundStyle(DiskMapTheme.ink)
+                            Spacer()
+                            Text(ByteFormat.string(cat.bytes))
+                                .font(.system(size: 12).monospacedDigit())
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                        }
+                    }
+                } else {
+                    ForEach(stories) { story in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(story.title)
+                                    .font(DiskMapType.body)
+                                    .foregroundStyle(DiskMapTheme.ink)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(ByteFormat.string(story.bytes))
+                                    .font(.system(size: 12).monospacedDigit())
+                                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                            }
+                            Text(story.detail)
+                                .font(DiskMapType.caption)
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                                .lineLimit(2)
+                        }
                     }
                 }
             }

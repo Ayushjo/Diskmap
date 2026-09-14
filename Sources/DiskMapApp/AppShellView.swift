@@ -337,36 +337,64 @@ struct ExplainStorageSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Explain my storage")
-                    .font(DiskMapType.title)
-                Spacer()
-                Button("Done") { dismiss() }
+        let snap = model.analysis
+        let stories = StorageNarrator.stories(from: snap)
+        let recs = StorageNarrator.recommendations(from: snap)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Explain my storage")
+                        .font(DiskMapType.title)
+                    Spacer()
+                    Button("Done") { dismiss() }
+                }
+                if let vol = snap.volume {
+                    Text("Your Mac has \(ByteFormat.string(Int64(vol.freeBytes))) free of \(ByteFormat.string(Int64(vol.totalBytes))) (\(snap.health.title.lowercased())).")
+                        .foregroundStyle(DiskMapTheme.ink)
+                } else {
+                    Text("This explanation covers \(ByteFormat.string(snap.scannedBytes)) from your last local scan.")
+                        .foregroundStyle(DiskMapTheme.ink)
+                }
+                Text("What's going on")
+                    .font(DiskMapType.section)
+                ForEach(stories) { story in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(story.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(DiskMapTheme.ink)
+                        Text(story.detail)
+                            .font(DiskMapType.caption)
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.vertical, 4)
+                }
+                Text("Suggested next steps")
+                    .font(DiskMapType.section)
+                    .padding(.top, 6)
+                ForEach(recs) { rec in
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(rec.title)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(DiskMapTheme.ink)
+                            Text(rec.detail)
+                                .font(DiskMapType.caption)
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                        }
+                        Spacer()
+                        Text(ByteFormat.string(rec.bytes))
+                            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    }
+                }
+                Text("Every figure above comes from your last local scan — nothing was invented.")
+                    .font(DiskMapType.caption)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .padding(.top, 8)
             }
-            let snap = model.analysis
-            if let vol = snap.volume {
-                Text("Your Mac has \(ByteFormat.string(Int64(vol.freeBytes))) free of \(ByteFormat.string(Int64(vol.totalBytes))).")
-                    .foregroundStyle(DiskMapTheme.ink)
-            }
-            Text("Largest storage consumers:")
-                .font(DiskMapType.section)
-            ForEach(Array(snap.categories.prefix(5).enumerated()), id: \.element.id) { idx, cat in
-                Text("\(idx + 1). \(cat.title) — \(ByteFormat.string(cat.bytes))")
-                    .foregroundStyle(DiskMapTheme.ink)
-            }
-            Text("Worth reviewing:")
-                .font(DiskMapType.section)
-                .padding(.top, 6)
-            Text("• \(ByteFormat.string(snap.quickWinBytes)) in known regenerable locations (caches / build artifacts)")
-            Text("• \(ByteFormat.string(snap.forgottenBytes)) in files not modified in over a year")
-            Text("Every figure above comes from your last local scan — nothing was invented.")
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .padding(.top, 8)
-            Spacer()
+            .padding(24)
         }
-        .padding(24)
+        .frame(minWidth: 480, minHeight: 420)
         .background(DiskMapTheme.cream)
     }
 }

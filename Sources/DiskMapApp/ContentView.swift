@@ -196,11 +196,15 @@ final class ScanModel: ObservableObject {
 
     func commitCleanup() async {
         let results = await cleanupQueue.commit()
-        lastCommitLines = results.map { result in
-            if let error = result.error {
-                return "Failed \(result.item.url.path): \(error.localizedDescription)"
+        let log = CleanupPreflight.logEntries(from: results)
+        lastCommitLines = log.map { entry in
+            if entry.succeeded {
+                return "Trashed \(entry.path) (\(ByteFormat.string(entry.bytes))) — \(entry.reason)"
             }
-            return "Moved to Trash \(result.item.url.path)"
+            return "Failed \(entry.path): \(entry.errorDescription ?? "unknown error")"
+        }
+        if lastCommitLines.isEmpty {
+            lastCommitLines = ["Nothing moved."]
         }
         await refreshQueue()
     }

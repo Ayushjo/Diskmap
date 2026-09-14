@@ -18,11 +18,37 @@ public struct SafetyAssessment: Sendable, Equatable {
     public var level: SafetyLevel
     public var reason: String
     public var title: String
+    public var consequences: String
+    public var recommendedAction: String
 
-    public init(level: SafetyLevel, reason: String, title: String) {
+    public init(
+        level: SafetyLevel,
+        reason: String,
+        title: String,
+        consequences: String = "",
+        recommendedAction: String = ""
+    ) {
         self.level = level
         self.reason = reason
         self.title = title
+        self.consequences = consequences.isEmpty ? Self.defaultConsequences(level) : consequences
+        self.recommendedAction = recommendedAction.isEmpty ? Self.defaultAction(level) : recommendedAction
+    }
+
+    private static func defaultConsequences(_ level: SafetyLevel) -> String {
+        switch level {
+        case .safe: return "Apps or tools can usually recreate this data. You may see slower first runs."
+        case .review: return "Removing the wrong item could delete personal files or break a project until you restore it."
+        case .protected: return "Removing this can break macOS or lock you out of critical data."
+        }
+    }
+
+    private static func defaultAction(_ level: SafetyLevel) -> String {
+        switch level {
+        case .safe: return "Add to cleanup review, then Move to Trash when ready."
+        case .review: return "Inspect contents, reveal in Finder, then stage only what you recognize."
+        case .protected: return "Do not remove. Leave system and keychain data alone."
+        }
     }
 }
 
@@ -32,20 +58,64 @@ public enum SafetyClassifier {
         let lower = path.lowercased()
         let n = name.lowercased()
 
-        // Protected system
-        if lower.hasPrefix("/system") || lower.hasPrefix("/library") && !lower.contains("/users/") {
-            return SafetyAssessment(level: .protected, reason: "System location. Removing items here can break macOS.", title: name)
+        // Protected system / secrets
+        if lower.hasPrefix("/system") || (lower.hasPrefix("/library") && !lower.contains("/users/")) {
+            return SafetyAssessment(
+                level: .protected,
+                reason: "System location. Removing items here can break macOS.",
+                title: name,
+                consequences: "macOS may fail to boot or update; SIP may also block the delete.",
+                recommendedAction: "Do not stage. Use System Settings if you need disk space."
+            )
+        }
+        if lower.contains("/library/keychains") || n == "keychains" {
+            return SafetyAssessment(
+                level: .protected,
+                reason: "Keychain stores passwords and certificates.",
+                title: "Keychains",
+                consequences: "You can lose saved passwords and break app logins.",
+                recommendedAction: "Never remove via DiskMap."
+            )
+        }
+        if lower.hasPrefix("/private/var/db") || lower.hasPrefix("/private/var/folders") && lower.contains("com.apple") {
+            return SafetyAssessment(
+                level: .protected,
+                reason: "Private system database / Apple runtime data.",
+                title: name
+            )
         }
         if n == "library" && (lower.hasSuffix("/library") || lower.hasSuffix("/library/")) && lower.contains("/users/") {
-            return SafetyAssessment(level: .review, reason: "User Library holds app data, preferences, and caches. Review carefully before removing anything.", title: "Library")
+            return SafetyAssessment(
+                level: .review,
+                reason: "User Library holds app data, preferences, and caches. Review carefully before removing anything.",
+                title: "Library"
+            )
         }
 
-        // Known regenerable caches
+        // Known regenerable caches / build products
         if n == ".npm" || lower.hasSuffix("/.npm") || lower.contains("/.npm/") {
             return SafetyAssessment(
                 level: .safe,
                 reason: "npm cache stores downloaded packages so installs are faster. npm can recreate it.",
-                title: "npm cache"
+                title: "npm cache",
+                consequences: "Next npm install may re-download packages (slower once).",
+                recommendedAction: "Safe to clear via cleanup review."
+            )
+        }
+        if n == ".pnpm-store" || lower.contains("/.pnpm-store") || n == ".pnpm" {
+            return SafetyAssessment(
+                level: .safe,
+                reason: "pnpm content-addressable store. pnpm can rehydrate packages after a clear.",
+                title: "pnpm store",
+                consequences: "Projects may need `pnpm install` again.",
+                recommendedAction: "Safe to clear if you can reinstall dependencies."
+            )
+        }
+        if n == ".yarn" || lower.contains("/.yarn/cache") || n == "yarn-cache" {
+            return SafetyAssessment(
+                level: .safe,
+                reason: "Yarn package cache. Yarn recreates it on the next install.",
+                title: "Yarn cache"
             )
         }
         if n == "caches" || lower.contains("/library/caches") {
@@ -59,31 +129,57 @@ public enum SafetyClassifier {
             return SafetyAssessment(
                 level: .safe,
                 reason: "Xcode DerivedData holds build products. Xcode regenerates it on the next build.",
-                title: "Xcode DerivedData"
+                title: "Xcode DerivedData",
+                consequences: "Next Xcode build will be slower until DerivedData rebuilds.",
+                recommendedAction: "Safe to clear when you are not mid-build."
+            )
+        }
+        if n == ".cargo" || lower.contains("/.cargo/registry") {
+            return SafetyAssessment(
+                level: .safe,
+                reason: "Cargo registry/cache for Rust crates. Cargo re-downloads as needed.",
+                title: "Cargo cache"
+            )
+        }
+        if n == ".gradle" || lower.contains("/.gradle/caches") {
+            return SafetyAssessment(
+                level: .safe,
+                reason: "Gradle caches. Builds re-download dependencies afterward.",
+                title: "Gradle cache"
+            )
+        }
+        if n == ".pub-cache" {
+            return SafetyAssessment(
+                level: .safe,
+                reason: "Dart/Flutter pub cache. `flutter pub get` restores packages.",
+                title: "Pub cache"
+            )
+        }
+        if n == "cocoapods" || n == ".cocoapods" || lower.contains("/caches/cocoapods") {
+            return SafetyAssessment(
+                level: .safe,
+                reason: "CocoaPods cache. `pod install` can restore specs and downloads.",
+                title: "CocoaPods cache"
             )
         }
         if n == "node_modules" {
             return SafetyAssessment(
                 level: .review,
                 reason: "Project dependencies. Safe to delete if you can reinstall with npm/yarn/pnpm, but the project won't run until you do.",
-                title: "node_modules"
+                title: "node_modules",
+                consequences: "Project won't build or run until you reinstall dependencies.",
+                recommendedAction: "Stage only unused project folders you recognize."
             )
         }
-        if lower.contains("coresimulator") || lower.contains("ios deviceSupport".lowercased()) {
+        if lower.contains("coresimulator") || lower.contains("ios devicesupport") || n == "coresimulator" {
             return SafetyAssessment(
                 level: .review,
-                reason: "Simulator or device support files. Usually regenerable but may force Xcode to re-download.",
-                title: name
+                reason: "iOS Simulator or device support files. Usually regenerable but may force Xcode to re-download.",
+                title: "iOS Simulator / DeviceSupport",
+                consequences: "Xcode may re-download runtimes or device symbols.",
+                recommendedAction: "Review size in Developer Storage before staging."
             )
         }
-        if n == "downloads" {
-            return SafetyAssessment(
-                level: .review,
-                reason: "User Downloads. May contain installers you can remove and unique files you need to keep.",
-                title: "Downloads"
-            )
-        }
-
         if n == ".cursor" || lower.contains("/.cursor") {
             return SafetyAssessment(
                 level: .review,
@@ -98,15 +194,44 @@ public enum SafetyClassifier {
                 title: "Codex data"
             )
         }
-        if n == "coresimulator" || lower.contains("/coresimulator") {
+        if n == ".docker" || lower.contains("/library/containers/com.docker") {
             return SafetyAssessment(
                 level: .review,
-                reason: "iOS Simulator data. Usually regenerable, but Xcode may re-download runtimes.",
-                title: "iOS Simulator data"
+                reason: "Docker images, volumes, or VM data. Removing volumes can delete containerized databases.",
+                title: "Docker data",
+                consequences: "Images and named volumes may need to be pulled or recreated.",
+                recommendedAction: "Prefer Docker Desktop's cleanup UI for volumes; stage only caches you recognize."
             )
         }
-
-        if !isDirectory, n.hasSuffix(".dmg") || n.hasSuffix(".pkg") || n.hasSuffix(".zip") {
+        if n == ".rustup" {
+            return SafetyAssessment(
+                level: .review,
+                reason: "Rust toolchains installed via rustup. Removing them uninstalls compilers until you reinstall.",
+                title: "rustup toolchains"
+            )
+        }
+        if n == "venv" || n == ".venv" || n == "__pycache__" || n == ".mypy_cache" {
+            return SafetyAssessment(
+                level: .review,
+                reason: "Python environment or bytecode cache. Recreatable if you have requirements/lockfiles.",
+                title: name
+            )
+        }
+        if n == "downloads" {
+            return SafetyAssessment(
+                level: .review,
+                reason: "User Downloads. May contain installers you can remove and unique files you need to keep.",
+                title: "Downloads"
+            )
+        }
+        if n == "documents" || n == "desktop" || n == "pictures" || n == "movies" || n == "music" {
+            return SafetyAssessment(
+                level: .review,
+                reason: "User documents folder. Treat contents as personal data until proven otherwise.",
+                title: name
+            )
+        }
+        if !isDirectory, n.hasSuffix(".dmg") || n.hasSuffix(".pkg") || n.hasSuffix(".zip") || n.hasSuffix(".iso") {
             return SafetyAssessment(
                 level: .review,
                 reason: "Installer or archive. Often safe after the software is installed — confirm you don't need it.",
