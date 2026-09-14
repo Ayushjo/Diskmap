@@ -43,6 +43,7 @@ final class ScanModel: ObservableObject {
     @Published var cachedForgottenSummary: ForgottenSummary = .empty
     @Published var cachedReviewables: [ReviewableTarget] = []
     @Published var cachedReviewableSummary: ReviewableSummary = .empty
+    @Published var cachedDeveloper: DeveloperCatalogResult = .empty
 
     let cleanupQueue = CleanupQueue()
     let fileTypeCategories = FileTypeCatalog.loadBundled()
@@ -81,6 +82,7 @@ final class ScanModel: ObservableObject {
         cachedForgottenSummary = .empty
         cachedReviewables = []
         cachedReviewableSummary = .empty
+        cachedDeveloper = .empty
         log("scan start \(url.path)")
 
         let before = ProcessMemory.current()
@@ -153,6 +155,11 @@ final class ScanModel: ObservableObject {
         )
         cachedReviewables = reviewable.targets
         cachedReviewableSummary = reviewable.summary
+        cachedDeveloper = DeveloperCatalog.build(
+            tree: result.tree,
+            root: url,
+            totals: allocated
+        )
         selectedNode = 0
         currentNode = 0
         lastScanSeconds = result.elapsedSeconds
@@ -231,6 +238,18 @@ final class ScanModel: ObservableObject {
         )
         cachedReviewables = built.targets
         cachedReviewableSummary = built.summary
+    }
+
+    func refreshDeveloperCache() {
+        guard let tree, let rootURL, selectedTotals.count == tree.count else {
+            cachedDeveloper = .empty
+            return
+        }
+        cachedDeveloper = DeveloperCatalog.build(
+            tree: tree,
+            root: rootURL,
+            totals: selectedTotals
+        )
     }
 
     func refreshForgottenCache() {

@@ -277,7 +277,11 @@ struct AppShellView: View {
         case .cleanDownloads, .cleanMedia:
             CleanReviewView(model: model, mode: model.destination, showCleanup: $showCleanup, pickFolder: pickFolder)
         case .developerStorage:
-            DeveloperStorageView(model: model, pickFolder: pickFolder)
+            DeveloperStorageView(
+                model: model,
+                pickFolder: pickFolder,
+                onOpenCleanup: { showCleanup = true }
+            )
         case .applications:
             AppsView(model: model)
         case .snapshots:
