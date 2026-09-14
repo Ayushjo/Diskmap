@@ -53,7 +53,9 @@ struct ExploreShellView: View {
         } else if let tree = model.tree, let root = model.rootURL,
                   model.selectedTotals.count == tree.count {
             VStack(spacing: 0) {
+                canvasHeader(tree: tree, root: root)
                 viewPickerRow
+                Divider().overlay(DiskMapTheme.cardStroke)
                 ExploreCanvas(
                     model: model,
                     tree: tree,
@@ -75,30 +77,73 @@ struct ExploreShellView: View {
         }
     }
 
-    private var viewPickerRow: some View {
-        HStack(spacing: 8) {
-            ForEach(ExploreViewMode.allCases) { mode in
-                Button {
-                    model.exploreMode = mode
-                } label: {
-                    Image(systemName: mode.symbol)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(model.exploreMode == mode ? Color.white : DiskMapTheme.mutedLabel)
-                        .frame(width: 30, height: 28)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(model.exploreMode == mode ? DiskMapTheme.ink : Color.clear)
-                        )
-                }
-                .buttonStyle(.plain)
-                .help(mode.rawValue)
-                .accessibilityIdentifier("explore-mode-\(mode.rawValue)")
-            }
-            Text(model.exploreMode.blurb)
+
+    private func canvasHeader(tree: FileTree, root: URL) -> some View {
+        let node = model.currentNode
+        let idx = Int(node)
+        let files = model.descendantFileCounts.indices.contains(idx) ? model.descendantFileCounts[idx] : 0
+        let folders = model.descendantFolderCounts.indices.contains(idx) ? model.descendantFolderCounts[idx] : 0
+        let size = model.selectedTotals.indices.contains(idx) ? model.selectedTotals[idx] : 0
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(tree.name(of: node))
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(DiskMapTheme.ink)
+            Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
+                .foregroundStyle(DiskMapTheme.mutedLabel)
+            Text("·").foregroundStyle(DiskMapTheme.cardStroke)
+            Text("\(files.formatted()) files")
                 .font(.system(size: 12))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
-                .lineLimit(1)
+            Text("·").foregroundStyle(DiskMapTheme.cardStroke)
+            Text("\(folders.formatted()) folders")
+                .font(.system(size: 12))
+                .foregroundStyle(DiskMapTheme.mutedLabel)
             Spacer(minLength: 8)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+    }
+
+    private var viewPickerRow: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 2) {
+                ForEach(ExploreViewMode.allCases) { mode in
+                    Button {
+                        model.exploreMode = mode
+                    } label: {
+                        Image(systemName: mode.symbol)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(model.exploreMode == mode ? Color.white : DiskMapTheme.ink.opacity(0.7))
+                            .frame(width: 32, height: 28)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(model.exploreMode == mode ? DiskMapTheme.ink : Color.clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help(mode.rawValue)
+                    .accessibilityIdentifier("explore-mode-\(mode.rawValue)")
+                }
+            }
+            .padding(3)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(DiskMapTheme.cardFill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
+                    )
+            )
+
+            Text(model.exploreMode.blurb)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
             if model.exploreMode.showsLayoutControls {
                 Picker("", selection: $model.colorMode) {
                     ForEach(ExploreColorMode.allCases) { mode in
@@ -106,18 +151,32 @@ struct ExploreShellView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 280)
-                HStack(spacing: 6) {
+                .frame(maxWidth: 260)
+
+                HStack(spacing: 8) {
+                    Image(systemName: "square.3.layers.3d")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
                     Slider(value: $model.depthLevel, in: 1...12, step: 1)
-                        .frame(width: 100)
+                        .frame(width: 110)
                     Text("\(Int(model.depthLevel))")
-                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                        .font(.system(size: 12, weight: .bold).monospacedDigit())
                         .foregroundStyle(DiskMapTheme.ink)
-                        .frame(width: 20, alignment: .trailing)
+                        .frame(width: 22, alignment: .trailing)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(DiskMapTheme.cardFill)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
+                        )
+                )
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
 }
