@@ -138,20 +138,24 @@ public struct AnalysisSnapshot: Sendable, Equatable {
         return .healthy
     }
 
-    /// Map immediate children of scan root (and known nested developer/cache paths) into Overview categories.
+    /// Exclusive partition of **immediate children** of the scan root.
+    /// One child contributes to exactly one category. Library peels Caches/Logs
+    /// into caches (subtracted from library) so bytes stay exclusive.
+    /// Skips empty Data-volume firmlink twin dirs (size 0 after skip-descend).
     private static func categorize(tree: FileTree, root: URL, totals: [Int64]) -> [StorageCategory] {
         var buckets: [String: (title: String, hint: String, bytes: Int64, node: Int32?)] = [
+            "applications": ("Applications", "apps", 0, nil),
             "library": ("Library", "library", 0, nil),
             "downloads": ("Downloads", "downloads", 0, nil),
+            "documents": ("Personal", "documents", 0, nil),
             "developer": ("Developer", "developer", 0, nil),
             "caches": ("Caches & Logs", "caches", 0, nil),
-            "applications": ("Applications", "apps", 0, nil),
-            "documents": ("Documents", "documents", 0, nil),
+            "system": ("System", "system", 0, nil),
             "other": ("Other", "other", 0, nil),
         ]
 
         func add(_ key: String, bytes: Int64, node: Int32) {
-            guard var b = buckets[key] else { return }
+            guard bytes > 0, var b = buckets[key] else { return }
             b.bytes += bytes
             if b.node == nil { b.node = node }
             buckets[key] = b
@@ -164,25 +168,30 @@ public struct AnalysisSnapshot: Sendable, Equatable {
             let bytes = entry.size
             guard bytes > 0 else { continue }
             let lower = name.lowercased()
+            let path = tree.path(of: child, root: root).path
+
+            // Ignore empty firmlink-twin shells under Data if present.
+            if CanonicalPath.shouldSkipDescend(absolutePath: path, scanRootPath: root.path) {
+                continue
+            }
+
             if lower == "library" {
-                add("library", bytes: bytes, node: child)
-                // Peel caches from Library when present as direct child.
+                var libBytes = bytes
                 for gentry in tree.children(of: child, totals: totals) {
-                    let grand = gentry.id
-                    let gn = tree.name(of: grand).lowercased()
+                    let gn = tree.name(of: gentry.id).lowercased()
                     if gn == "caches" || gn == "logs" {
-                        let gbytes = gentry.size
-                        add("caches", bytes: gbytes, node: grand)
-                        // subtract from library display so bar doesn't double-count visually
-                        if var lib = buckets["library"] {
-                            lib.bytes = max(0, lib.bytes - gbytes)
-                            buckets["library"] = lib
-                        }
+                        add("caches", bytes: gentry.size, node: gentry.id)
+                        libBytes = max(0, libBytes - gentry.size)
+                    } else if gn == "developer" {
+                        // Xcode under ~/Library/Developer
+                        add("developer", bytes: gentry.size, node: gentry.id)
+                        libBytes = max(0, libBytes - gentry.size)
                     }
                 }
+                add("library", bytes: libBytes, node: child)
             } else if lower == "downloads" {
                 add("downloads", bytes: bytes, node: child)
-            } else if lower == "documents" {
+            } else if lower == "documents" || lower == "desktop" || lower == "movies" || lower == "music" || lower == "pictures" {
                 add("documents", bytes: bytes, node: child)
             } else if lower == "applications" || lower == "applications (parallels)" {
                 add("applications", bytes: bytes, node: child)
@@ -192,16 +201,26 @@ public struct AnalysisSnapshot: Sendable, Equatable {
                 add("developer", bytes: bytes, node: child)
             } else if lower == "caches" || lower.hasSuffix(".cache") {
                 add("caches", bytes: bytes, node: child)
+            } else if lower == "system" || lower == "private" || path.hasPrefix("/System") {
+                add("system", bytes: bytes, node: child)
+            } else if lower == "users" {
+                // Whole-disk scan: attribute Users to personal/other breakdown via its children if shallow;
+                // otherwise count as Personal container.
+                add("documents", bytes: bytes, node: child)
             } else {
                 add("other", bytes: bytes, node: child)
             }
         }
 
-        let order = ["library", "downloads", "developer", "caches", "applications", "documents", "other"]
-        return order.compactMap { key in
+        let order = ["applications", "library", "downloads", "documents", "developer", "caches", "system", "other"]
+        let cats = order.compactMap { key -> StorageCategory? in
             guard let b = buckets[key], b.bytes > 0 else { return nil }
             return StorageCategory(key: key, title: b.title, bytes: b.bytes, colorHint: b.hint, nodeID: b.node)
         }
+        // Guarantee sum(categories) == sum of positive root children accounted
+        // (exclusive by construction). Callers must use sum as bar denominator
+        // when comparing to volume used — never inflate Other to fill volume.
+        return cats
     }
 
     private static func relativePath(_ url: URL, under root: URL) -> String {
@@ -231,11 +250,12 @@ public struct AnalysisSnapshot: Sendable, Equatable {
         if ids.count > limit { ids = Array(ids.prefix(limit)) }
         return ids.map { id in
             let i = Int(id)
+            let abs = tree.path(of: id, root: root).path
             return StorageFileHit(
                 nodeID: id,
                 name: tree.name(of: id),
                 bytes: totals[i],
-                relativePath: relativePath(tree.path(of: id, root: root), under: root),
+                relativePath: CanonicalPath.displayPath(absolutePath: abs),
                 modifiedDay: tree.modifiedDay[i]
             )
         }
@@ -252,11 +272,12 @@ public struct AnalysisSnapshot: Sendable, Equatable {
         if ids.count > limit { ids = Array(ids.prefix(limit)) }
         return ids.map { id in
             let i = Int(id)
+            let abs = tree.path(of: id, root: root).path
             return StorageFileHit(
                 nodeID: id,
                 name: tree.name(of: id),
                 bytes: totals[i],
-                relativePath: relativePath(tree.path(of: id, root: root), under: root),
+                relativePath: CanonicalPath.displayPath(absolutePath: abs),
                 modifiedDay: tree.modifiedDay[i]
             )
         }
