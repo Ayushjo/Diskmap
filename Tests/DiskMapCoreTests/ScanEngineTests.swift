@@ -98,7 +98,7 @@ struct ScanDecisionTests {
 
 struct FileTreeStorageTests {
     @Test func packedStrideMatchesStoredFields() {
-        let stride = MemoryLayout<Int32>.stride * 5
+        let stride = MemoryLayout<Int32>.stride * 6
             + MemoryLayout<Int64>.stride * 2
             + MemoryLayout<Bool>.stride
             + MemoryLayout<UInt8>.stride
@@ -226,12 +226,14 @@ struct ScanEngineFixtureTests {
         let visible = try #require(tree.node(named: "visible.txt", parentNamed: fixture.root.lastPathComponent))
         let visibleURL = fixture.root.appendingPathComponent("visible.txt")
         let visibleValues = try visibleURL.resourceValues(forKeys: [
-            .fileSizeKey, .totalFileAllocatedSizeKey, .contentModificationDateKey,
+            .fileSizeKey, .totalFileAllocatedSizeKey, .contentModificationDateKey, .creationDateKey,
         ])
         #expect(tree.logicalSize[Int(visible)] == Int64(visibleValues.fileSize ?? -1))
         #expect(tree.allocatedSize[Int(visible)] == Int64(visibleValues.totalFileAllocatedSize ?? -1))
         let day = Int32((visibleValues.contentModificationDate ?? .distantPast).timeIntervalSince1970 / 86400)
         #expect(tree.modifiedDay[Int(visible)] == day)
+        let createdDay = Int32((visibleValues.creationDate ?? .distantPast).timeIntervalSince1970 / 86400)
+        #expect(tree.createdDay[Int(visible)] == createdDay)
         // A constructed evicted placeholder is not part of this fixture.
         // SF_DATALESS is not settable from userspace, and evictUbiquitousItem
         // on a file this process created failed with NSFileProviderError -2008.
@@ -292,3 +294,149 @@ extension FileTree {
         return nil
     }
 }
+
+
+struct SyntheticScanStressTests {
+    /// Builds a bushy tree that stresses the publisher queue without needing
+    /// a multi-million-file home folder in CI.
+    @Test func bushyTreeScanCompletesWithExpectedNodeCount() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("diskmap-stress-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // 40 dirs × 25 files = 1000 files + 40 dirs + root ≈ 1041 nodes.
+        for d in 0..<40 {
+            let dir = root.appendingPathComponent(String(format: "d%02d", d), isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            for f in 0..<25 {
+                let file = dir.appendingPathComponent(String(format: "f%02d.txt", f))
+                try Data("x".utf8).write(to: file)
+            }
+        }
+
+        let result = await ScanEngine().scan(root: root)
+        #expect(result.itemCount >= 1000)
+        #expect(result.tree.count >= 1041)
+        let both = result.tree.rollUpBoth()
+        #expect(both.logical[0] >= 1000)
+        #expect(both.allocated[0] >= 1000)
+        #expect(result.elapsedSeconds >= 0)
+    }
+}
+
+struct ExternalVolumeScanTests {
+    /// Optional smoke: if /Volumes has a user-mounted volume, scan one level
+    /// deep enough to prove BulkScan does not hang. Skips cleanly otherwise.
+    @Test func mountedVolumeScanDoesNotHangWhenPresent() async throws {
+        let volumes = URL(fileURLWithPath: "/Volumes", isDirectory: true)
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isVolumeKey]
+        guard let kids = try? FileManager.default.contentsOfDirectory(
+            at: volumes,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let candidate = kids.first { url in
+            let name = url.lastPathComponent
+            guard name != "Macintosh HD" else { return false }
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            return values?.isDirectory == true
+        }
+        guard let target = candidate else { return }
+
+        // Bound the walk: scan the volume root only through ScanEngine; if it
+        // takes absurdly long the test runner will surface it. We only assert
+        // the call returns and records the root.
+        let result = await ScanEngine().scan(root: target)
+        #expect(result.tree.count >= 1)
+        #expect(result.itemCount >= 0)
+    }
+}
+
+
+struct EdgeCaseRobustnessTests {
+    /// Builds a disposable tree: combining-Unicode name, deep path, chmod 000
+    /// directory, identical non-clone copies. Confirms scan + CloneDetector
+    /// fallback + DuplicateFinder grouping without hanging.
+    @Test func unicodeDeepDeniedAndIndependentCopies() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("diskmap-edge-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let combining = "cafe\u{0301}.txt"
+        try "combining\n".write(to: root.appendingPathComponent(combining), atomically: true, encoding: .utf8)
+
+        var deep = root.appendingPathComponent("deep", isDirectory: true)
+        for i in 1...25 {
+            deep = deep.appendingPathComponent("d\(i)", isDirectory: true)
+        }
+        try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
+        try "leaf\n".write(to: deep.appendingPathComponent("leaf.txt"), atomically: true, encoding: .utf8)
+
+        let denied = root.appendingPathComponent("denied/secret", isDirectory: true)
+        try FileManager.default.createDirectory(at: denied, withIntermediateDirectories: true)
+        try "secret\n".write(to: denied.appendingPathComponent("hidden.txt"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: denied.path)
+
+        let dups = root.appendingPathComponent("dups", isDirectory: true)
+        try FileManager.default.createDirectory(at: dups, withIntermediateDirectories: true)
+        let payload = Data("same-bytes-payload-for-hash\n".utf8)
+        try payload.write(to: dups.appendingPathComponent("a.bin"))
+        try payload.write(to: dups.appendingPathComponent("b.bin"))
+
+        let a = dups.appendingPathComponent("a.bin").path
+        let b = dups.appendingPathComponent("b.bin").path
+        #expect(CloneDetector.areLikelyClones(a, b) == false)
+
+        let result = await ScanEngine().scan(root: root)
+        #expect(result.itemCount > 20)
+        var sawCombining = false
+        var sawLeaf = false
+        var sawSecret = false
+        for id in 0..<Int32(result.tree.count) {
+            let name = result.tree.name(of: id)
+            if name.unicodeScalars.contains(where: { $0.value == 0x0301 }) { sawCombining = true }
+            if name == "leaf.txt" { sawLeaf = true }
+            if name == "secret" { sawSecret = true }
+        }
+        #expect(sawCombining)
+        #expect(sawLeaf)
+        #expect(sawSecret)
+
+        let groups = await DuplicateFinder.findDuplicates(
+            candidates: DuplicateFinder.candidates(in: result.tree, root: root)
+        )
+        #expect(groups.contains { !$0.sharesStorage && $0.fileIDs.count == 2 })
+    }
+
+    /// Optional: when `/Volumes/DiskMapExFAT` is mounted (see
+    /// `scripts/make-exfat-fixture.sh`), confirm CloneDetector returns false
+    /// and a scan does not hang.
+    @Test func exFATVolumeCloneDetectorFailsCleanlyWhenPresent() async throws {
+        // Prefer RAM-disk fixture from scripts/make-exfat-fixture.sh (/Volumes/DISKMAP).
+        let candidates = [
+            URL(fileURLWithPath: "/Volumes/DISKMAP", isDirectory: true),
+            URL(fileURLWithPath: "/Volumes/DiskMapExFAT", isDirectory: true),
+        ]
+        var vol: URL?
+        for candidate in candidates {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDir), isDir.boolValue {
+                vol = candidate
+                break
+            }
+        }
+        guard let vol else { return } // skip — no fixture volume
+        let a = vol.appendingPathComponent("edge-cases/dups/a.bin")
+        let b = vol.appendingPathComponent("edge-cases/dups/b.bin")
+        if FileManager.default.fileExists(atPath: a.path), FileManager.default.fileExists(atPath: b.path) {
+            #expect(CloneDetector.areLikelyClones(a.path, b.path) == false)
+        }
+        let result = await ScanEngine().scan(root: vol.appendingPathComponent("edge-cases", isDirectory: true))
+        #expect(result.itemCount > 0)
+        #expect(result.elapsedSeconds < 120)
+    }
+}
+

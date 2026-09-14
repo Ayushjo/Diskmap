@@ -51,3 +51,22 @@ an agent.
 - After a session, ask Cursor to check off the `TASKS.md` line it finished
   and update any `UNVERIFIED` comment it resolved — keeps the docs honest
   as the actual source of truth for where the project stands.
+
+
+## Personal-use ad-hoc build (no Apple Developer account)
+
+Paid Developer Program + notarization (TASK-020/021) and auto-update
+(TASK-022) are deferred for single-Mac personal use.
+
+```bash
+./scripts/build-adhoc.sh
+open dist/DiskMap.app   # first time: right-click → Open
+```
+
+This produces `dist/DiskMap.app` — release binary, `Info.plist` with
+bundle id `com.ayushjo.diskmap` (override with `DISKMAP_BUNDLE_ID`),
+Quick Wins resource bundle, ad-hoc codesign (`codesign --sign -`).
+
+Gatekeeper will warn that the developer is unidentified. That is
+expected without notarization. Right-click → Open the first time.
+

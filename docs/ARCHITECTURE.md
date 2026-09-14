@@ -265,11 +265,12 @@ A scan is already packed arrays plus an interned name table. SQLite would
 be a second data model for the same bytes, and a query engine we do not
 need to load a scan or diff two scans by folder path.
 
-The file is little-endian. Magic `DMAP`, version `UInt32` 1, timestamp
-seconds, root path, node count, name-table count, then the packed arrays
-(`nameIndex`, `parent`, `firstChild`, `nextSibling`, `logicalSize`,
-`allocatedSize`, `modifiedDay`, directory flags, node flags) and the name
-table. One file per scan, under Application Support `DiskMap/snapshots`,
+The file is little-endian. Magic `DMAP`, version `UInt32` 2 (v1 still
+loads; missing `createdDay` fills zeros), timestamp seconds, root path,
+node count, name-table count, then the packed arrays (`nameIndex`,
+`parent`, `firstChild`, `nextSibling`, `logicalSize`, `allocatedSize`,
+`modifiedDay`, `createdDay` from v2, directory flags, node flags) and the
+name table. One file per scan, under Application Support `DiskMap/snapshots`,
 named by timestamp. Listing reads that header only, so a saved home scan
 is not decoded just to show a date.
 
@@ -280,8 +281,62 @@ Offline. No networking.
 
 **Status:** implemented (TASK-018, TASK-019).
 
+### Explore is one shell; viz modes are not pages
+
+DiskBuddy’s left chrome (scan actions, Recent, Disk Storage, Current View,
+Quick Wins, File Types) and right Inspector stay put while the center canvas
+swaps among Treemap / Sunburst / Flame / Bubbles / Mind Map / Top Sizes /
+Age Map / Folders. Top nav is Explore | Duplicates | Applications | Monitor
+(stub) | Snapshots — Quick Wins is not a destination. Shared cream
+`#FAF5EC` and ink `#1C1B17` tokens live in `DesignSystem.swift`.
+`VolumeStats` and `FileTypeCatalog` are DiskMapCore; ChartLayout’s
+`otherFraction` is an optional parameter only (depth slider). No birthtime
+on `FileTree`, so Inspector Created is "—" until a deliberate schema task.
+
+**Status:** implemented (TASK-030). Treemap is the skin checkpoint; other
+seven modes reuse existing canvas views inside the same shell.
+
+### createdDay mirrors modifiedDay (birthtime days)
+
+`FileTree.createdDay` stores birthtime as days since epoch, same packing as
+`modifiedDay`. Live scans use `getattrlistbulk` (`BulkScan`), not per-file
+`resourceValues` — so creation is `ATTR_CMN_CRTIME` on the same attribute
+mask / syscall as `ATTR_CMN_MODTIME` (one more attr, same bulk call). Snapshot
+codec is version 2; version 1 files still decode with createdDay zeros.
+
+**Status:** implemented.
+
 ## Adding a new decision
 
 When you make a non-obvious architectural choice, add an entry here:
 what was chosen, what the alternative was, why, and current status. Keeps
 this file the source of truth instead of scattered PR descriptions.
+
+### Scan workers default to eight; paths stay UTF-8 bytes
+
+A dedicated publisher thread owns `FileTree` mutation while N workers run
+`getattrlistbulk`. Warm A/B on a ~1.8M-item home folder (2026-09-14):
+8 workers median 6.038 s, 4 workers 8.861 s, 12 workers 9.911 s. Default
+is therefore `min(CPU, 8)`, overridable with `DISKMAP_SCAN_WORKERS`.
+
+Child directory jobs carry NUL-terminated UTF-8 path bytes for `open(2)`
+instead of `String` joins on the publisher hot path. An `openat` fd-handoff
+design was measured and rejected (flat ~10 s). Per-worker attribute buffers
+default to 4 MB (`DISKMAP_SCAN_BUFFER_MB`). Measurement playbook:
+`docs/PERF.md`.
+
+**Status:** implemented (TASK-024, TASK-025).
+
+### Post-scan rollup is one walk for both size bases
+
+Logical and allocated totals are filled together by `FileTree.rollUpBoth()`.
+ContentView already caches both arrays for the size toggle; this only
+removes a second full tree walk (~30 ms saved on a home scan — small vs
+the walk, free correctness-wise).
+
+**Status:** implemented (TASK-025).
+
+### Name storage (2026-09-13)
+
+Unique names live in a packed UTF-8 `nameBlob` with `nameOffset`/`nameLength` tables. Open-addressed intern compares raw UTF-8; `String` materialization is for UI and Snapshot encode only.
+

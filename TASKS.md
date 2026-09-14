@@ -259,21 +259,119 @@ pages.
 ## Scan speed
 
 The enumerator walk (373 s, 1.65M items) was replaced with
-`getattrlistbulk` and up to eight workers. Release home scan 2026-09-14:
+`getattrlistbulk` and worker threads. Release home scan 2026-09-14:
 1,791,180 items in 7.312 s, 17 not-downloaded. File sizes still match
 `URL` resource values on the scan fixture. Symlinks are still skipped.
 A `chmod 000` directory is still recorded with no children. Excluded-path
 prefixes were not changed.
 
-## Milestone 6 — Ship
+- [x] **TASK-024: Scan pipeline + capacity prep**
+  Done on `perf/scan-and-runtime` (2026-09-14):
+  - Dedicated publisher thread owns all `FileTree` inserts; scan workers
+    only run `getattrlistbulk` and submit batches (no shared insert lock
+    on the hot path).
+  - `FileTree.reserveNodeCapacity(_:uniqueNames:)` pre-sizes packed
+    arrays and the UTF-8 intern table (~2M nodes / ~750k names).
+  - `rollUpSizes` is iterative post-order (no per-node recursion).
+  - `DiskMapScanBench` release home scans (same machine, ~1.80M items):
+    best **6.035 s**, typical band ~8.9–10.9 s (disk cache variance is
+    large — original getattrlistbulk code also spanned ~6.4–9.9 s in
+    back-to-back controls). Walk-peak RSS dropped from ~340 MB class to
+    **~212 MB** steady across five runs.
+  - Tried `openat` fd-handoff for child dirs; it *regressed* wall time
+    (~10 s flat) and was reverted. Path strings stay on the job.
+  - Do not re-run TASK-002c memory experiments as a goal.
 
-- [ ] **TASK-020: Apple Developer account + signing** — see SETUP.md, this
-  one is mostly you, not Cursor.
-- [ ] **TASK-021: Notarization pipeline** — script `xcrun notarytool`
-  submission, wire into the CI workflow once you have a Developer ID cert.
-- [ ] **TASK-022: Update mechanism** — Sparkle is the standard choice
-  outside the App Store; evaluate vs. a simple custom "check GitHub
-  releases" checker given this is a smaller project.
-- [ ] **TASK-023: App icon + visual polish pass** — design decision, do
-  this yourself or commission it; Cursor can implement once you have
-  source assets.
+- [x] **TASK-025: Stable benches, UTF-8 paths, rollUpBoth, worker/buffer defaults**
+  Done on `perf/scan-and-runtime` (2026-09-14). Playbook + raw runs:
+  `docs/PERF.md`, `docs/perf-results/`.
+  - `DiskMapScanBench --repeat/--rollup/--json/--label`
+  - Child jobs carry NUL-terminated UTF-8 paths (no hot-path `String` join)
+  - `FileTree.rollUpBoth()`; ContentView uses it (~30 ms on home tree)
+  - Synthetic bushy-tree + optional `/Volumes` smoke tests (42 tests total)
+  - A/B: workers **8** median 6.038 s (4→8.86 s, 12→9.91 s); buffer **4 MB**
+    median 6.166 s vs 1 MB 9.682 s. Defaults set to match.
+  - Confirm-defaults after the change: see `docs/perf-results/confirm-defaults.txt`
+  - **Cold matrix done** (2026-09-13 post-reboot, ~1.75M items):
+    cold min/median/max **5.878 / 10.506 / 11.866** s;
+    warm follow-up **8.500 / 9.855 / 10.190** s.
+    Raw: `docs/perf-results/cold-home-post-restart.txt`,
+    `warm-home-post-restart.txt`. Details in `docs/PERF.md`.
+  - **Phase 1–4 done** (2026-09-13): packed UTF-8 name blob; publisher
+    sharding no-go (`sample`, no Xcode); MD5 partial + streaming SHA256;
+    `--layout` first-paint stand-in 91 ms (no UI fix). See `docs/PERF.md`.
+
+
+
+## Milestone 6 — Maximize, then ad-hoc build (re-sequenced)
+
+TASK-020/021 (paid Developer Program + notarization) deferred — ad-hoc
+signing needs no Apple account. Revisit only if this goes to more than
+one Mac. TASK-022 (auto-update) deprioritized for the same reason.
+
+- [x] **TASK-026: Feature-completeness audit against docs/PRD.md**
+  Done 2026-09-14: `docs/PRD-AUDIT.md`. Biggest confirmed gap was
+  external/network volume confirmation (addressed in TASK-027 for ExFAT;
+  network share still N/A on this machine).
+
+- [x] **TASK-027: External volumes + edge-case robustness pass**
+  Done 2026-09-14: `docs/EDGE-ROBUSTNESS.md`. RAM ExFAT volume (because
+  `hdiutil create` is TCC-blocked). `F_LOG2PHYS_EXT` → errno 45;
+  CloneDetector false; DuplicateFinder hashes. Unicode / deep path /
+  chmod 000 / 64 MB file OK. Script: `scripts/make-exfat-fixture.sh`.
+
+- [x] **TASK-028: DuplicateFinder memory-at-scale benchmark**
+  Done 2026-09-14 on `~/Downloads` (~23.7k items, 20 080 candidates):
+  dup elapsed **0.331 s**, rss_before **72.4 MB**, rss_peak_sampled /
+  after **140.0 MB**, full_hash_calls **748**, groups **281**.
+  Raw: `docs/perf-results/downloads-duplicates-rss.txt`.
+  Peak is modest; no TaskGroup concurrency throttle added. Home-scale
+  re-run still useful later if Downloads is not representative of large
+  media trees.
+
+- [x] **TASK-029: Ad-hoc build & package script**
+  Done: `scripts/build-adhoc.sh` → `dist/DiskMap.app`, ad-hoc signed
+  (`com.ayushjo.diskmap`). Documented in SETUP.md (right-click → Open).
+
+### Still deferred
+
+- [ ] **TASK-020: Apple Developer account + signing**
+- [ ] **TASK-021: Notarization pipeline**
+- [ ] **TASK-022: Update mechanism**
+- [ ] **TASK-023: App icon + visual polish pass**
+
+- [x] **TASK-030: DiskBuddy-parity Explore shell (Treemap checkpoint + 8 view-modes)**
+  Done 2026-09-13 on `perf/scan-and-runtime`. Supersedes the old TASK-030/031
+  polish split: one Explore screen owns all 8 viz modes; top nav is
+  Explore | Duplicates | Applications | Monitor (stub) | Snapshots.
+  Quick Wins lives as an ambient sidebar panel (not a top-nav page).
+  - Core: `VolumeStats` (`statfs`), `FileTypeCatalog` +
+    `file-type-categories.json`, `ChartLayout.slices(..., otherFraction:)`
+  - App: cream `#FAF5EC` / ink `#1C1B17` in `DesignSystem.swift`;
+    `ExploreShellView` (sidebar + view-picker + canvas + inspector);
+    Treemap with By folder/type/age coloring; depth slider drives
+    `otherFraction` for sunburst/flame/bubbles/mind map
+  - Inspector: DETAILS (Compressed by = logical − on disk), Largest Inside,
+    Reveal / Quick Look / Focus / Copy Path, Add to Cleanup. Created wired to `FileTree.createdDay` (TASK-031).
+  - `swift test`: 46 green. DiskMapCore layout math unchanged beyond the
+    additive `otherFraction` parameter.
+
+
+- [x] **TASK-032: Explore Batch A — Folders / Top Sizes / Age Map**
+  Done 2026-09-14 (`10dc869`): selection sync into Inspector; cream row chrome.
+
+- [x] **TASK-033: Explore Batch B — Sunburst / Flame / Bubbles / Mind Map**
+  Done 2026-09-14 (`61204fb`): shared ExploreColoring; depth → otherFraction.
+
+
+- [x] **TASK-034: Explore cream contrast polish**
+  Done 2026-09-14: force light color scheme; replace semantic `.secondary`/`.primary`
+  on cream with ink/mutedLabel so Inspector/File Types/Quick Wins/Largest Inside
+  labels stay readable under system Dark Mode. Bubbles label threshold raised.
+
+
+- [x] **TASK-035: Explore click lag + Cleanup UX + list/canvas polish**
+  Done 2026-09-14: post-scan `rollUpDescendantCounts` + cached Quick Wins /
+  File Types (no full-tree walk on every selection). Cleanup confirm dialog,
+  toast, disabled when already staged. Folders/Top Sizes denser rows; chart
+  labels use ink on pastels with truncation.

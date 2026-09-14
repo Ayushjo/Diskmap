@@ -22,7 +22,7 @@ public struct SnapshotChange: Sendable, Equatable {
 
 enum SnapshotCodec {
     static let magic = Data("DMAP".utf8)
-    static let version: UInt32 = 1
+    static let version: UInt32 = 2
 
     static func encode(_ snapshot: DiskSnapshot) -> Data {
         var writer = Writer()
@@ -32,7 +32,7 @@ enum SnapshotCodec {
         writer.string(snapshot.rootPath)
         let tree = snapshot.tree
         writer.i32(Int32(tree.count))
-        writer.i32(Int32(tree.nameTable.count))
+        writer.i32(Int32(tree.uniqueNameCount))
         writer.i32s(tree.nameIndex)
         writer.i32s(tree.parent)
         writer.i32s(tree.firstChild)
@@ -40,6 +40,7 @@ enum SnapshotCodec {
         writer.i64s(tree.logicalSize)
         writer.i64s(tree.allocatedSize)
         writer.i32s(tree.modifiedDay)
+        writer.i32s(tree.createdDay)
         writer.flags(tree.isDirectory.map { $0 ? UInt8(1) : 0 })
         writer.flags(tree.flags)
         for name in tree.nameTable { writer.string(name) }
@@ -50,7 +51,8 @@ enum SnapshotCodec {
         var reader = Reader(data)
         let magic = try reader.bytes(4)
         guard magic == self.magic else { throw SnapshotError.badMagic }
-        guard try reader.u32() == version else { throw SnapshotError.badVersion }
+        let fileVersion = try reader.u32()
+        guard fileVersion == 1 || fileVersion == version else { throw SnapshotError.badVersion }
         let capturedAt = Date(timeIntervalSince1970: TimeInterval(try reader.i64()))
         let rootPath = try reader.string()
         let count = Int(try reader.i32())
@@ -65,6 +67,12 @@ enum SnapshotCodec {
         let logicalSize = try reader.i64s(count)
         let allocatedSize = try reader.i64s(count)
         let modifiedDay = try reader.i32s(count)
+        let createdDay: [Int32]
+        if fileVersion >= 2 {
+            createdDay = try reader.i32s(count)
+        } else {
+            createdDay = Array(repeating: 0, count: count)
+        }
         let isDirectory = try reader.flags(count).map { $0 != 0 }
         let flags = try reader.flags(count)
         var nameTable: [String] = []
@@ -80,6 +88,7 @@ enum SnapshotCodec {
             logicalSize: logicalSize,
             allocatedSize: allocatedSize,
             modifiedDay: modifiedDay,
+            createdDay: createdDay,
             isDirectory: isDirectory,
             flags: flags
         ) else { throw SnapshotError.corrupt }
@@ -120,7 +129,8 @@ public enum SnapshotStore {
         var reader = Reader(data)
         let magic = try reader.bytes(4)
         guard magic == SnapshotCodec.magic else { throw SnapshotError.badMagic }
-        guard try reader.u32() == SnapshotCodec.version else { throw SnapshotError.badVersion }
+        let hv = try reader.u32()
+        guard hv == 1 || hv == SnapshotCodec.version else { throw SnapshotError.badVersion }
         let capturedAt = Date(timeIntervalSince1970: TimeInterval(try reader.i64()))
         let rootPath = try reader.string()
         return SnapshotHeader(rootPath: rootPath, capturedAt: capturedAt)

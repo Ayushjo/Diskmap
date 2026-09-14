@@ -41,9 +41,9 @@ public struct DuplicateGroup: Sendable, Equatable {
     }
 }
 
-struct DuplicateScanResult: Sendable, Equatable {
-    var groups: [DuplicateGroup]
-    var fullContentHashCalls: Int
+public struct DuplicateScanResult: Sendable, Equatable {
+    public var groups: [DuplicateGroup]
+    public var fullContentHashCalls: Int
 }
 
 /// Three-phase duplicate detection, cheapest checks first:
@@ -86,7 +86,7 @@ public enum DuplicateFinder {
         return result
     }
 
-    static func scan(
+    public static func scan(
         _ candidates: [(id: Int32, url: URL, size: Int64)]
     ) async -> DuplicateScanResult {
         var bySize: [Int64: [(id: Int32, url: URL)]] = [:]
@@ -182,21 +182,33 @@ public enum DuplicateFinder {
         return (clusters, needsFullHash)
     }
 
+    /// First-pass filter only. MD5 is fine here because colliding files still
+    /// go through streaming SHA256 before they become a duplicate group.
     private static func partialHash(url: URL, bytes: Int) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let data = try? handle.read(upToCount: bytes) else { return nil }
-        return digest(data)
-        // SHA256 stays for Milestone 2. A faster hash is a performance
-        // follow-up after duplicates ship, not a correctness gap.
+        return Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Streaming SHA256 — same digest as hashing a full `Data`, without
+    /// holding the whole file in a contiguous buffer.
     private static func fullHash(url: URL) -> String? {
-        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
-        return digest(data)
-    }
-
-    private static func digest(_ data: Data) -> String {
-        SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        let chunkSize = 1024 * 1024
+        while true {
+            let chunk: Data?
+            do {
+                chunk = try handle.read(upToCount: chunkSize)
+            } catch {
+                return nil
+            }
+            // `read(upToCount:)` returns nil at EOF — that is success, not failure.
+            guard let chunk, !chunk.isEmpty else { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }

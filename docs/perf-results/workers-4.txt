@@ -1,0 +1,7 @@
+DiskMap scan: items=1796705 elapsed=8.722s rss_during_walk_peak=215990272 rss_after_enumerator_release=284704768 not_downloaded=17
+run=1/3 label=workers-4 items=1796705 nodes=1763566 scan=8.722s walk_rss=215990272 after_rss=284704768 names=684852 name_utf8=26329327
+DiskMap scan: items=1796705 elapsed=8.967s rss_during_walk_peak=258883584 rss_after_enumerator_release=313638912 not_downloaded=17
+run=2/3 label=workers-4 items=1796705 nodes=1763566 scan=8.967s walk_rss=258883584 after_rss=313638912 names=684852 name_utf8=26329327
+DiskMap scan: items=1796705 elapsed=8.861s rss_during_walk_peak=313720832 rss_after_enumerator_release=302448640 not_downloaded=17
+run=3/3 label=workers-4 items=1796705 nodes=1763566 scan=8.861s walk_rss=313720832 after_rss=302448640 names=684852 name_utf8=26329327
+summary label=workers-4 n=3 scan_min=8.722 scan_median=8.861 scan_max=8.967 walk_rss_median=258883584

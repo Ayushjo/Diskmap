@@ -1,0 +1,3 @@
+DiskMap scan: items=1769682 elapsed=6.730s rss_during_walk_peak=255541248 rss_after_enumerator_release=318046208 not_downloaded=17
+run=1/1 label=sample-publisher items=1769682 nodes=1736602 scan=6.730s walk_rss=255541248 after_rss=318046208 names=683563 name_utf8=26297013
+summary label=sample-publisher n=1 scan_min=6.730 scan_median=6.730 scan_max=6.730 walk_rss_median=255541248

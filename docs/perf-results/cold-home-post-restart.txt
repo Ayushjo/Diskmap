@@ -1,0 +1,11 @@
+DiskMap scan: items=1749946 elapsed=11.866s rss_during_walk_peak=288555008 rss_after_enumerator_release=348045312 not_downloaded=17
+run=1/5 label=cold-home-post-restart items=1749946 nodes=1716869 scan=11.866s rollup=0.032s walk_rss=288555008 after_rss=348045312 names=681524 name_utf8=26260886
+DiskMap scan: items=1749913 elapsed=11.116s rss_during_walk_peak=313114624 rss_after_enumerator_release=374964224 not_downloaded=17
+run=2/5 label=cold-home-post-restart items=1749913 nodes=1716834 scan=11.116s rollup=0.030s walk_rss=313114624 after_rss=374964224 names=681506 name_utf8=26260143
+DiskMap scan: items=1749942 elapsed=9.612s rss_during_walk_peak=383090688 rss_after_enumerator_release=385679360 not_downloaded=17
+run=3/5 label=cold-home-post-restart items=1749942 nodes=1716867 scan=9.612s rollup=0.030s walk_rss=383090688 after_rss=385679360 names=681526 name_utf8=26261031
+DiskMap scan: items=1749928 elapsed=10.506s rss_during_walk_peak=392216576 rss_after_enumerator_release=391397376 not_downloaded=17
+run=4/5 label=cold-home-post-restart items=1749928 nodes=1716849 scan=10.506s rollup=0.029s walk_rss=392216576 after_rss=391397376 names=681508 name_utf8=26260275
+DiskMap scan: items=1749949 elapsed=5.878s rss_during_walk_peak=391479296 rss_after_enumerator_release=391036928 not_downloaded=17
+run=5/5 label=cold-home-post-restart items=1749949 nodes=1716870 scan=5.878s rollup=0.021s walk_rss=391479296 after_rss=391036928 names=681528 name_utf8=26261079
+summary label=cold-home-post-restart n=5 scan_min=5.878 scan_median=10.506 scan_max=11.866 walk_rss_median=383090688

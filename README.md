@@ -12,6 +12,8 @@
 - **Want the feature target / what "done" means?** `docs/PRD.md`.
 - **Want the design rationale / why things are built this way?**
   `docs/ARCHITECTURE.md`.
+- **Want scan timing / how to bench?** `docs/PERF.md` (raw runs in
+  `docs/perf-results/`).
 
 ---
 

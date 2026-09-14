@@ -22,8 +22,21 @@ final class ScanModel: ObservableObject {
     @Published var lastCommitLines: [String] = []
     @Published var sizeBasis: SizeBasis = .allocated
     @Published var currentNode: Int32 = 0
+    @Published var selectedNode: Int32 = 0
+    @Published var recentRoots: [URL] = ScanModel.loadRecentRoots()
+    @Published var lastScanSeconds: Double?
+    @Published var descendantFileCounts: [Int] = []
+    @Published var descendantFolderCounts: [Int] = []
+    @Published var cachedQuickWins: [QuickWins.Hit] = []
+    @Published var cachedFileTypes: [FileTypeTotals] = []
+    @Published var toastMessage: String?
+    @Published var exploreMode: ExploreViewMode = .treemap
+    @Published var colorMode: ExploreColorMode = .folder
+    @Published var depthLevel: Double = 7
+    @Published var topNav: TopNavTab = .explore
 
     let cleanupQueue = CleanupQueue()
+    let fileTypeCategories = FileTypeCatalog.loadBundled()
 
     var selectedTotals: [Int64] {
         sizeBasis == .logical ? logicalTotals : allocatedTotals
@@ -49,6 +62,10 @@ final class ScanModel: ObservableObject {
         currentNode = 0
         allocatedTotals = []
         logicalTotals = []
+        descendantFileCounts = []
+        descendantFolderCounts = []
+        cachedQuickWins = []
+        cachedFileTypes = []
         duplicateGroups = []
         log("scan start \(url.path)")
 
@@ -81,14 +98,60 @@ final class ScanModel: ObservableObject {
         fflush(stdout)
         log(summary)
 
-        let allocated = result.tree.rollUpSizes(basis: .allocated)
-        let logical = result.tree.rollUpSizes(basis: .logical)
+        let both = result.tree.rollUpBoth()
+        let allocated = both.allocated
+        let logical = both.logical
         logNotDownloadedContrast(tree: result.tree, logical: logical, allocated: allocated)
         tree = result.tree
         allocatedTotals = allocated
         logicalTotals = logical
+        let counts = result.tree.rollUpDescendantCounts()
+        descendantFileCounts = counts.files
+        descendantFolderCounts = counts.folders
+        let patterns = QuickWins.bundledPatterns()
+        cachedQuickWins = QuickWins.find(in: result.tree, root: url, patterns: patterns)
+        cachedFileTypes = FileTypeCatalog.totals(
+            in: result.tree,
+            sizes: allocated,
+            categories: fileTypeCategories
+        )
+        selectedNode = 0
+        currentNode = 0
+        lastScanSeconds = result.elapsedSeconds
+        rememberRecent(url)
         isScanning = false
         log("scan finished items=\(result.itemCount)")
+    }
+
+    func isStaged(_ url: URL) -> Bool {
+        stagedItems.contains { $0.url.standardizedFileURL == url.standardizedFileURL }
+    }
+
+    func showToast(_ message: String) {
+        toastMessage = message
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            if toastMessage == message { toastMessage = nil }
+        }
+    }
+
+    private func rememberRecent(_ url: URL) {
+        var next = recentRoots.filter { $0.standardizedFileURL != url.standardizedFileURL }
+        next.insert(url, at: 0)
+        if next.count > 8 { next = Array(next.prefix(8)) }
+        recentRoots = next
+        Self.saveRecentRoots(next)
+    }
+
+    private static let recentKey = "diskmap.recentRoots"
+
+    static func loadRecentRoots() -> [URL] {
+        let paths = UserDefaults.standard.stringArray(forKey: recentKey) ?? []
+        return paths.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    }
+
+    static func saveRecentRoots(_ urls: [URL]) {
+        UserDefaults.standard.set(urls.map(\.path), forKey: recentKey)
     }
 
     func findDuplicates() async {
@@ -178,168 +241,144 @@ final class ScanModel: ObservableObject {
     }
 }
 
-private enum WorkspacePage: String, CaseIterable, Identifiable {
-    case map = "Map"
-    case topSizes = "Top Sizes"
-    case folders = "Folders"
-    case ageMap = "Age Map"
+enum TopNavTab: String, CaseIterable, Identifiable {
+    case explore = "Explore"
+    case duplicates = "Duplicates"
+    case applications = "Applications"
+    case monitor = "Monitor"
+    case snapshots = "Snapshots"
+    var id: String { rawValue }
+}
+
+enum ExploreViewMode: String, CaseIterable, Identifiable {
+    case treemap = "Treemap"
     case sunburst = "Sunburst"
     case flame = "Flame"
     case bubbles = "Bubbles"
     case mindMap = "Mind Map"
-    case snapshots = "Snapshots"
-    case duplicates = "Duplicates"
-    case quickWins = "Quick Wins"
-    case apps = "Apps"
-    case cleanup = "Cleanup"
-
+    case topSizes = "Top Sizes"
+    case ageMap = "Age Map"
+    case folders = "Folders"
     var id: String { rawValue }
 
     var symbol: String {
         switch self {
-        case .map: return "square.grid.3x3.fill"
-        case .topSizes: return "list.number"
-        case .folders: return "folder"
-        case .ageMap: return "calendar"
+        case .treemap: return "square.grid.3x3.fill"
         case .sunburst: return "sun.max"
         case .flame: return "chart.bar.xaxis"
         case .bubbles: return "circle.grid.2x2"
         case .mindMap: return "point.3.connected.trianglepath.dotted"
-        case .snapshots: return "clock.arrow.circlepath"
-        case .duplicates: return "doc.on.doc"
-        case .quickWins: return "bolt"
-        case .apps: return "app"
-        case .cleanup: return "trash"
+        case .topSizes: return "list.number"
+        case .ageMap: return "calendar"
+        case .folders: return "folder"
+        }
+    }
+
+    var blurb: String {
+        switch self {
+        case .treemap: return "Every file as a rectangle, sized by bytes"
+        case .sunburst: return "Rings radiating out from the scan root"
+        case .flame: return "Depth top to bottom, size left to right"
+        case .bubbles: return "Nested bubbles, one per folder"
+        case .folders: return "Browse folder by folder, sized as you go"
+        case .ageMap: return "Where your bytes sit on a timeline"
+        case .topSizes: return "The biggest items, ranked"
+        case .mindMap: return "Branches from the root, sized by weight"
+        }
+    }
+
+    var showsLayoutControls: Bool {
+        switch self {
+        case .treemap, .sunburst, .flame, .bubbles, .mindMap: return true
+        default: return false
         }
     }
 }
 
+enum ExploreColorMode: String, CaseIterable, Identifiable {
+    case type = "By type"
+    case folder = "By folder"
+    case age = "By age"
+    var id: String { rawValue }
+}
+
 struct ContentView: View {
     @ObservedObject private var model = ScanModel.shared
-    @State private var page: WorkspacePage = .map
 
     var body: some View {
-        NavigationSplitView {
-            List(WorkspacePage.allCases, selection: $page) { item in
-                Label(item.rawValue, systemImage: item.symbol)
-                    .tag(item)
-            }
-            .navigationSplitViewColumnWidth(min: 168, ideal: 188, max: 240)
-        } detail: {
-            VStack(spacing: 0) {
-                HStack {
-                    if model.tree != nil {
-                        Picker("Size", selection: $model.sizeBasis) {
-                            Text("Logical").tag(SizeBasis.logical)
-                            Text("On Disk").tag(SizeBasis.allocated)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(width: 180)
-                        .accessibilityIdentifier("size-basis")
-                    }
-                    Spacer()
-                    Button("Choose Folder…") { pickFolder() }
+        VStack(spacing: 0) {
+            topNav
+            Divider()
+            tabBody
+        }
+        .background(DiskMapTheme.cream)
+        .preferredColorScheme(.light)
+        .frame(minWidth: 1100, minHeight: 720)
+    }
+
+    private var topNav: some View {
+        HStack(spacing: 4) {
+            ForEach(TopNavTab.allCases) { tab in
+                Button {
+                    if tab != .monitor { model.topNav = tab }
+                } label: {
+                    Text(tab.rawValue)
+                        .font(.system(size: 13, weight: model.topNav == tab ? .semibold : .regular))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .foregroundStyle(tab == .monitor ? DiskMapTheme.mutedLabel.opacity(0.5) : (model.topNav == tab ? .white : DiskMapTheme.ink))
+                        .background(
+                            Capsule().fill(model.topNav == tab ? DiskMapTheme.ink : Color.clear)
+                        )
                 }
-                .padding(8)
-                pageContent
+                .buttonStyle(.plain)
+                .disabled(tab == .monitor)
+                .help(tab == .monitor ? "Monitor is not in this build" : tab.rawValue)
+            }
+            Spacer()
+            if model.tree != nil {
+                Picker("Size", selection: $model.sizeBasis) {
+                    Text("Logical").tag(SizeBasis.logical)
+                    Text("On Disk").tag(SizeBasis.allocated)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 180)
+                .accessibilityIdentifier("size-basis")
             }
         }
-        .frame(minWidth: 900, minHeight: 640)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(DiskMapTheme.cream)
     }
 
     @ViewBuilder
-    private var pageContent: some View {
-        switch page {
-        case .map:
-            mapPage
-        case .topSizes:
-            scannedPage { tree, totals, root in
-                TopSizesView(tree: tree, totals: totals, rootURL: root)
-            }
-        case .folders:
-            scannedPage { tree, totals, root in
-                FoldersView(tree: tree, totals: totals, rootURL: root, currentNode: $model.currentNode)
-            }
-        case .ageMap:
-            scannedPage { tree, totals, root in
-                AgeMapView(model: model, tree: tree, totals: totals, rootURL: root)
-            }
-        case .sunburst:
-            chartPage(.sunburst)
-        case .flame:
-            chartPage(.flame)
-        case .bubbles:
-            chartPage(.bubbles)
-        case .mindMap:
-            chartPage(.mindMap)
-        case .snapshots:
-            scannedPage { tree, _, root in
-                SnapshotDiffView(tree: tree, rootURL: root, basis: model.sizeBasis)
-            }
+    private var tabBody: some View {
+        switch model.topNav {
+        case .explore:
+            ExploreShellView(model: model, pickFolder: pickFolder)
         case .duplicates:
-            if let tree = model.tree, let rootURL = model.rootURL {
-                DuplicatesView(model: model, tree: tree, rootURL: rootURL)
-            } else {
-                needsScan
-            }
-        case .quickWins:
-            if let tree = model.tree, let rootURL = model.rootURL,
-               model.allocatedTotals.count == tree.count {
-                QuickWinsView(model: model, tree: tree, totals: model.allocatedTotals, rootURL: rootURL)
-            } else {
-                needsScan
-            }
-        case .apps:
+            if let tree = model.tree, let root = model.rootURL {
+                DuplicatesView(model: model, tree: tree, rootURL: root)
+            } else { needsScan }
+        case .applications:
             AppsView(model: model)
-        case .cleanup:
-            CleanupQueueView(model: model)
+        case .monitor:
+            Text("Monitor is not in this build")
+                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .snapshots:
+            if let tree = model.tree, let root = model.rootURL {
+                SnapshotDiffView(tree: tree, rootURL: root, basis: model.sizeBasis)
+            } else { needsScan }
         }
     }
 
-    @ViewBuilder
-    private var mapPage: some View {
-        if let tree = model.tree,
-           model.selectedTotals.count == tree.count,
-           tree.count > 0 {
-            TreemapContainerView(
-                tree: tree,
-                totals: model.selectedTotals,
-                currentNode: $model.currentNode
-            )
-        } else if model.isScanning {
-            scanning
-        } else {
-            needsScan
-        }
-    }
-
-    @ViewBuilder
-    private func scannedPage<Content: View>(
-        @ViewBuilder content: (FileTree, [Int64], URL) -> Content
-    ) -> some View {
-        if let tree = model.tree, let rootURL = model.rootURL,
-           model.selectedTotals.count == tree.count, tree.count > 0 {
-            content(tree, model.selectedTotals, rootURL)
-        } else if model.isScanning {
-            scanning
-        } else {
-            needsScan
-        }
-    }
-
-    @ViewBuilder
-    private func chartPage(_ kind: LayoutChartKind) -> some View {
-        scannedPage { tree, totals, _ in
-            LayoutChartView(kind: kind, tree: tree, totals: totals, currentNode: $model.currentNode)
-        }
-    }
 
     private var scanning: some View {
         VStack(spacing: 12) {
             ProgressView()
             Text("Scanning… \(model.scannedCount) items")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DiskMapTheme.mutedLabel)
                 .accessibilityIdentifier("scan-progress")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -347,7 +386,7 @@ struct ContentView: View {
 
     private var needsScan: some View {
         Text("Pick a folder to see what's using space")
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DiskMapTheme.mutedLabel)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -359,95 +398,5 @@ struct ContentView: View {
         panel.prompt = "Scan"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { await model.scan(url) }
-    }
-}
-
-/// Single-level treemap of `currentNode`'s direct children. Tap a
-/// directory to drill in; the breadcrumb jumps back to any ancestor.
-struct TreemapContainerView: View {
-    let tree: FileTree
-    let totals: [Int64]
-    @Binding var currentNode: Int32
-
-    @State private var layoutRects: [TreemapRect] = []
-    @State private var canvasSize: CGSize = .zero
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 4) {
-                BreadcrumbBar(tree: tree, currentNode: currentNode) { id in
-                    currentNode = id
-                    cacheLayout()
-                }
-                Spacer(minLength: 8)
-                Text(byteString(currentSize))
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("current-size")
-            }
-            .padding(8)
-
-            Canvas { context, size in
-                let items = tree.children(of: currentNode, totals: totals)
-                let rects = SquarifiedTreemap.layout(items: items, in: CGRect(origin: .zero, size: size))
-
-                for r in rects {
-                    let inset = r.rect.insetBy(dx: 1, dy: 1)
-                    let path = Path(inset)
-                    context.fill(path, with: .color(colorFor(id: r.id)))
-                    context.stroke(path, with: .color(.black.opacity(0.25)), lineWidth: 1)
-
-                    if inset.width > 40 && inset.height > 16 {
-                        context.draw(
-                            Text(tree.name(of: r.id)).font(.caption).foregroundStyle(.white),
-                            at: CGPoint(x: inset.minX + 4, y: inset.minY + 4),
-                            anchor: .topLeading
-                        )
-                    }
-                }
-            }
-            .background {
-                GeometryReader { proxy in
-                    Color.clear
-                        .onAppear { cacheLayout(in: proxy.size) }
-                        .onChange(of: proxy.size) { _, newSize in
-                            cacheLayout(in: newSize)
-                        }
-                }
-            }
-            .onTapGesture { location in
-                guard let hit = SquarifiedTreemap.hitTest(layoutRects, at: location) else { return }
-                guard tree.isDirectory[Int(hit)] else { return }
-                currentNode = hit
-                cacheLayout()
-            }
-        }
-        .onChange(of: currentNode) { _, _ in cacheLayout() }
-        .onChange(of: totals) { _, _ in cacheLayout() }
-    }
-
-    private var currentSize: Int64 {
-        guard currentNode >= 0, Int(currentNode) < totals.count else { return 0 }
-        return totals[Int(currentNode)]
-    }
-
-    private func cacheLayout(in size: CGSize? = nil) {
-        if let size, size.width > 0, size.height > 0 {
-            canvasSize = size
-        }
-        guard canvasSize.width > 0, canvasSize.height > 0 else {
-            layoutRects = []
-            return
-        }
-        let items = tree.children(of: currentNode, totals: totals)
-        layoutRects = SquarifiedTreemap.layout(items: items, in: CGRect(origin: .zero, size: canvasSize))
-    }
-
-    private func colorFor(id: Int32) -> Color {
-        // Hash-to-hue only. Semantic coloring is still TASK-023.
-        nodeColor(id: id)
-    }
-
-    private func byteString(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }

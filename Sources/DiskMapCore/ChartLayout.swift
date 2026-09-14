@@ -27,9 +27,22 @@ public struct ChartSlice: Sendable, Equatable, Identifiable {
 public enum ChartLayout {
     public static let otherFraction = 0.005
 
-    public static func slices(of node: Int32, in tree: FileTree, totals: [Int64]) -> [ChartSlice] {
+    public static func slices(
+        of node: Int32,
+        in tree: FileTree,
+        totals: [Int64],
+        otherFraction fraction: Double = otherFraction
+    ) -> [ChartSlice] {
         guard node >= 0, node < tree.count, totals.count == tree.count else { return [] }
-        return collapse(tree.children(of: node, totals: totals), parentSize: totals[Int(node)], tree: tree, totals: totals, includeChildren: true, idPrefix: "\(node)")
+        return collapse(
+            tree.children(of: node, totals: totals),
+            parentSize: totals[Int(node)],
+            tree: tree,
+            totals: totals,
+            includeChildren: true,
+            idPrefix: "\(node)",
+            otherFraction: fraction
+        )
     }
 
     private static func collapse(
@@ -38,7 +51,8 @@ public enum ChartLayout {
         tree: FileTree,
         totals: [Int64],
         includeChildren: Bool,
-        idPrefix: String
+        idPrefix: String,
+        otherFraction: Double
     ) -> [ChartSlice] {
         let threshold = Double(parentSize) * otherFraction
         var visible: [(id: Int32, size: Int64)] = []
@@ -62,7 +76,8 @@ public enum ChartLayout {
                     tree: tree,
                     totals: totals,
                     includeChildren: false,
-                    idPrefix: "\(idPrefix).\(item.id)"
+                    idPrefix: "\(idPrefix).\(item.id)",
+                    otherFraction: otherFraction
                 )
             } else {
                 nested = []
