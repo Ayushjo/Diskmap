@@ -212,17 +212,16 @@ struct AppShellView: View {
                 onOpenVisualize: { model.destination = .visualize },
                 onSelectFile: { id in
                     model.selectedNode = id
-                    model.currentNode = model.tree?.parent[Int(id)] ?? 0
-                    model.destination = .visualize
-                    model.exploreMode = .treemap
-                }
+                    model.destination = .biggestFiles
+                },
+                onOpenBiggestFiles: { model.destination = .biggestFiles }
             )
         case .visualize, .fileBrowser:
             ExploreShellView(model: model, pickFolder: pickFolder)
         case .biggestFiles:
-            findWrapper(title: "Biggest Files", blurb: "Largest items in this scan. Select one to inspect or review.") { tree, root in
-                TopSizesView(tree: tree, totals: model.selectedTotals, rootURL: root, selectedNode: $model.selectedNode)
-            }
+            if let tree = model.tree, let root = model.rootURL {
+                BiggestFilesView(model: model, tree: tree, rootURL: root)
+            } else { needsScan }
         case .biggestFolders:
             findWrapper(title: "Biggest Folders", blurb: "Browse the largest folders. Click to drill in.") { tree, root in
                 FoldersView(tree: tree, totals: model.selectedTotals, rootURL: root, currentNode: $model.currentNode, selectedNode: $model.selectedNode)

@@ -50,6 +50,7 @@ enum DiskMapTheme {
         case "caches": return folderPastels[3]
         case "apps": return folderPastels[4]
         case "documents": return folderPastels[5]
+        case "system": return Color(red: 0.45, green: 0.47, blue: 0.52)
         default: return folderPastels[6]
         }
     }
@@ -148,25 +149,29 @@ struct SegmentedStorageBar: View {
 
 struct InkButtonStyle: ButtonStyle {
     var filled: Bool = true
+    var fullWidth: Bool = false
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
+            .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.vertical, 10)
             .foregroundStyle(filled ? Color.white : DiskMapTheme.ink)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(filled ? DiskMapTheme.ink.opacity(configuration.isPressed ? 0.85 : 1) : DiskMapTheme.navSelected)
             )
     }
 }
 
 struct PrimaryCTAStyle: ButtonStyle {
+    var fullWidth: Bool = false
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
+            .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.vertical, 11)
             .foregroundStyle(Color.white)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
