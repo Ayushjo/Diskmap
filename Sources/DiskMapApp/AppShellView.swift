@@ -9,6 +9,7 @@ struct AppShellView: View {
     @State private var showExplain = false
     @State private var showPalette = false
     @State private var searchText = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,11 +38,14 @@ struct AppShellView: View {
         .overlay {
             if showPalette {
                 ZStack {
-                    Color.black.opacity(0.25)
+                    Color.black.opacity(reduceMotion ? 0.35 : 0.25)
                         .ignoresSafeArea()
                         .onTapGesture { showPalette = false }
-                    CommandPalette(model: model, isPresented: $showPalette, onReviewCleanup: { showPalette = false; showCleanup = true })
+                        .accessibilityLabel("Dismiss command palette")
+                        .accessibilityAddTraits(.isButton)
+                    CommandPalette(model: model, isPresented: $showPalette, initialQuery: searchText, onReviewCleanup: { showPalette = false; showCleanup = true })
                 }
+                .transition(reduceMotion ? .identity : .opacity)
             }
         }
     }
@@ -53,6 +57,7 @@ struct AppShellView: View {
             TextField("Search files, folders or ask anything… (⌘K)", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
+                .accessibilityLabel("Search storage")
                 .onSubmit { showPalette = true }
             Button {
                 showPalette = true
@@ -159,6 +164,8 @@ struct AppShellView: View {
             .padding(.horizontal, 8)
         }
         .buttonStyle(.plain)
+            .accessibilityLabel(dest.label)
+            .accessibilityAddTraits(model.destination == dest ? .isSelected : [])
     }
 
     private var volumeChip: some View {

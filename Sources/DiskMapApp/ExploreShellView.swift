@@ -5,6 +5,7 @@ import SwiftUI
 /// Persistent 3-panel Explore shell. View-modes swap only the center canvas.
 struct ExploreShellView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var pickFolder: () -> Void
     @State private var showCleanup = false
 
@@ -32,7 +33,7 @@ struct ExploreShellView: View {
                     .zIndex(10)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: model.toastMessage)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.toastMessage)
         .background(DiskMapTheme.cream)
         .sheet(isPresented: $showCleanup) {
             CleanupQueueView(model: model)

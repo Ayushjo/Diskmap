@@ -1,13 +1,21 @@
 import SwiftUI
+import DiskMapCore
 
 struct CommandPalette: View {
     @ObservedObject var model: ScanModel
     @Binding var isPresented: Bool
-    @State private var query = ""
+    @State private var query: String
     var onReviewCleanup: () -> Void
 
+    init(model: ScanModel, isPresented: Binding<Bool>, initialQuery: String = "", onReviewCleanup: @escaping () -> Void) {
+        self.model = model
+        self._isPresented = isPresented
+        self._query = State(initialValue: initialQuery)
+        self.onReviewCleanup = onReviewCleanup
+    }
+
     private struct Command: Identifiable {
-        var id: String { title }
+        var id: String { title + subtitle }
         var title: String
         var subtitle: String
         var symbol: String
@@ -15,7 +23,7 @@ struct CommandPalette: View {
     }
 
     private var commands: [Command] {
-        [
+        var list: [Command] = [
             Command(title: "Go to Overview", subtitle: "Home", symbol: "square.grid.2x2") {
                 model.destination = .overview
             },
@@ -41,6 +49,9 @@ struct CommandPalette: View {
                 model.destination = .visualize
                 model.exploreMode = .treemap
             },
+            Command(title: "Explain my storage", subtitle: "Structured summary from scan facts", symbol: "sparkles") {
+                model.destination = .overview
+            },
             Command(title: "Review cleanup", subtitle: "Opens review queue — never deletes directly", symbol: "leaf") {
                 onReviewCleanup()
             },
@@ -50,11 +61,39 @@ struct CommandPalette: View {
                 }
             },
         ]
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !q.isEmpty {
+            for file in model.analysis.topFiles where file.name.lowercased().contains(q) || file.relativePath.lowercased().contains(q) {
+                let hit = file
+                list.append(Command(
+                    title: hit.name,
+                    subtitle: "File · \(hit.relativePath)",
+                    symbol: "doc"
+                ) {
+                    model.destination = .visualize
+                    model.selectedNode = hit.nodeID
+                    model.currentNode = hit.nodeID
+                })
+            }
+            for folder in model.analysis.topFolders where folder.name.lowercased().contains(q) || folder.relativePath.lowercased().contains(q) {
+                let hit = folder
+                list.append(Command(
+                    title: hit.name,
+                    subtitle: "Folder · \(hit.relativePath)",
+                    symbol: "folder"
+                ) {
+                    model.destination = .visualize
+                    model.selectedNode = hit.nodeID
+                    model.currentNode = hit.nodeID
+                })
+            }
+        }
+        return list
     }
 
     private var filtered: [Command] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return commands }
+        guard !q.isEmpty else { return commands.filter { !$0.subtitle.hasPrefix("File ·") && !$0.subtitle.hasPrefix("Folder ·") } }
         return commands.filter {
             $0.title.lowercased().contains(q) || $0.subtitle.lowercased().contains(q)
         }
@@ -65,12 +104,15 @@ struct CommandPalette: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(DiskMapTheme.mutedLabel)
-                TextField("Type a command…", text: $query)
+                    .accessibilityHidden(true)
+                TextField("Type a command or file name…", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
+                    .accessibilityLabel("Command palette search")
                 Button("Esc") { isPresented = false }
                     .buttonStyle(.plain)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .accessibilityLabel("Close command palette")
             }
             .padding(14)
             Divider()
@@ -85,6 +127,7 @@ struct CommandPalette: View {
                                 Image(systemName: cmd.symbol)
                                     .frame(width: 22)
                                     .foregroundStyle(DiskMapTheme.ink)
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(cmd.title)
                                         .font(.system(size: 13, weight: .medium))
@@ -100,6 +143,7 @@ struct CommandPalette: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("\(cmd.title). \(cmd.subtitle)")
                     }
                 }
                 .padding(8)
@@ -108,10 +152,13 @@ struct CommandPalette: View {
                 .font(.system(size: 10))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .padding(10)
+                .accessibilityLabel("Safety note: destructive actions never run from the command palette")
         }
         .frame(width: 520, height: 420)
         .background(DiskMapTheme.cardFill)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: .black.opacity(0.2), radius: 24, y: 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Command palette")
     }
 }

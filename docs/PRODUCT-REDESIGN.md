@@ -44,3 +44,28 @@ See Notion: *Implementation Plan: DiskMap Product Redesign* (and prompt phases 0
 - Tip at branch cut: see `git log -1 --oneline` on this branch.
 - Engine: `Sources/DiskMapCore/{BulkScan,FileTree,ScanEngine}.swift`
 - UI shell today: Explore-first in `ExploreShellView.swift` (to be re-homed under task IA).
+
+## Status (2026-09-14)
+
+Branch tip tracks incremental delivery on `feature/product-redesign`.
+
+| Phase | Status |
+|------|--------|
+| 0 Audit + branch | Done |
+| 1 Design system + shell | Done |
+| 2 Overview | Done |
+| 3 Inspector + breadcrumbs | Done |
+| 4–5 Biggest + explorer strip | Done |
+| 6–8 Viz blurbs + Forgotten | Done |
+| 9 Safety engine | Done (rules + consequences + preflight) |
+| 10 Cleanup workflows | Done (Trash-first + preflight + commit log) |
+| 11 Duplicates review UI | Done (review-first; CloneDetector unchanged) |
+| 12 Developer storage | Done (grouped + stage) |
+| 13 Stories / recommendations | Done (`StorageNarrator`) |
+| 14 Explain My Storage | Done (sheet from scan facts) |
+| 15 ⌘K / search | Done (commands + top file/folder hits) |
+| 16 Accessibility | Partial (labels, Reduce Motion on toast, VO identifiers) |
+| 17 Perf regression | Gate: keep `docs/PERF.md` baselines; no engine rewrite on this branch |
+| 18 Pixel polish vs DiskMap1/2 | Ongoing (density/empty states; run ad-hoc app) |
+
+Hard constraints still hold: BulkScan/FileTree preserved; AI never invents filesystem facts.
