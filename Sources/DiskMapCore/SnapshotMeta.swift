@@ -69,6 +69,14 @@ public struct SnapshotRecord: Sendable, Equatable, Identifiable {
 
     public var displayName: String { meta.name.isEmpty ? SnapshotMeta.defaultName(for: header.capturedAt) : meta.name }
 
+    /// Short label for compare pickers (avoids truncating to "Curre…").
+    public var pickerLabel: String {
+        let size = ByteCountFormatter.string(fromByteCount: usedBytes, countStyle: .file)
+        let name = isCurrent ? "Current" : displayName
+        let clipped = name.count > 22 ? String(name.prefix(20)) + "…" : name
+        return "\(clipped) · \(size)"
+    }
+
     public var usedBytes: Int64 {
         if let u = meta.usedBytes { return Int64(u) }
         return meta.scannedBytes ?? 0

@@ -107,11 +107,7 @@ public enum AppLeftoverFinder {
 
             for item in contents {
                 let itemName = item.lastPathComponent
-
-                if let bid = bundleID, itemName.localizedCaseInsensitiveContains(bid) {
-                    matches.append(item)
-                } else if bundleID == nil, appName.count > 3,
-                          itemName.localizedCaseInsensitiveContains(appName) {
+                if matchesApp(itemName: itemName, bundleID: bundleID, appName: appName) {
                     matches.append(item)
                 }
             }
@@ -139,6 +135,23 @@ public enum AppLeftoverFinder {
             leftoverEntries: entries,
             leftoverSize: leftoverSize
         )
+    }
+
+
+    /// Prefer exact / prefix bundle-ID matches. Name fallback only when no
+    /// bundle ID, and only for reasonably specific names (avoids "Mail").
+    private static func matchesApp(itemName: String, bundleID: String?, appName: String) -> Bool {
+        let item = itemName.lowercased()
+        if let bid = bundleID?.lowercased(), !bid.isEmpty {
+            if item == bid { return true }
+            if item.hasPrefix(bid + ".") || item.hasPrefix(bid + "-") { return true }
+            // Containers sometimes use the reverse-DNS alone with a UUID suffix
+            if item.hasPrefix(bid) { return true }
+            return false
+        }
+        let name = appName.lowercased()
+        guard name.count >= 5 else { return false }
+        return item == name || item.hasPrefix(name + ".") || item.hasPrefix(name + "-")
     }
 
     public static func allocatedSize(of url: URL) -> Int64 {
