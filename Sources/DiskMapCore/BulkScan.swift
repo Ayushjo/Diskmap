@@ -38,6 +38,7 @@ enum BulkScan {
             modifiedDaysSinceEpoch: 0
         )
         let state = State(tree: tree, progress: progress)
+        state.scanRootPath = root.path
         state.enqueue(pathUTF8: nulTerminatedUTF8(root.path), nodeID: rootID)
         state.startPublisher()
 
@@ -186,6 +187,11 @@ enum BulkScan {
         buffer.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: type) }
     }
 
+    static func pathString(fromNULTerminated utf8: [UInt8]) -> String {
+        let count = max(0, utf8.count - 1)
+        return String(decoding: utf8.prefix(count), as: UTF8.self)
+    }
+
     /// Parent path is NUL-terminated. Name bytes are not. Result is NUL-terminated.
     private static func joinPathUTF8(parentPathUTF8: [UInt8], name: UnsafeBufferPointer<UInt8>) -> [UInt8] {
         let parentCount = max(0, parentPathUTF8.count - 1) // drop trailing NUL
@@ -210,6 +216,7 @@ enum BulkScan {
     }
 
     private final class State: @unchecked Sendable {
+        var scanRootPath: String = "/"
         private let condition = NSCondition()
         private var jobs: [Job] = []
         private var batches: [Batch] = []
@@ -314,13 +321,18 @@ enum BulkScan {
                         flags: flags
                     )
                     if entry.descend {
-                        children.append(Job(
-                            pathUTF8: BulkScan.joinPathUTF8(
-                                parentPathUTF8: batch.parentPathUTF8,
-                                name: bytes
-                            ),
-                            nodeID: id
-                        ))
+                        let childPathUTF8 = BulkScan.joinPathUTF8(
+                            parentPathUTF8: batch.parentPathUTF8,
+                            name: bytes
+                        )
+                        let childPath = BulkScan.pathString(fromNULTerminated: childPathUTF8)
+                        if CanonicalPath.shouldSkipDescend(absolutePath: childPath, scanRootPath: self.scanRootPath) {
+                            // Record the directory node for navigation, but do not
+                            // walk the Data-volume twin of a firmlink already reachable
+                            // via /Users, /Applications, etc.
+                        } else {
+                            children.append(Job(pathUTF8: childPathUTF8, nodeID: id))
+                        }
                     }
                 }
             }

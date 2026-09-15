@@ -143,7 +143,7 @@ for run in 1...args.repeats {
             }
         }
         let started = ContinuousClock.now
-        let dupResult = await DuplicateFinder.scan(cands)
+        let dupResult = try await DuplicateFinder.scan(cands)
         let dupSeconds = durationSeconds(from: started)
         sampler.cancel()
         let after = ProcessMemory.current()

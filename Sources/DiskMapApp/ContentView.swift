@@ -17,6 +17,12 @@ final class ScanModel: ObservableObject {
     @Published var rootURL: URL?
     @Published var duplicateGroups: [DuplicateGroup] = []
     @Published var isFindingDuplicates = false
+    @Published var duplicatePhase: DuplicateScanPhase = .idle
+    @Published var duplicateProgressDone = 0
+    @Published var duplicateProgressTotal = 0
+    @Published var duplicateError: String?
+    @Published var duplicateDidRun = false
+    private var duplicateTask: Task<Void, Never>?
     @Published var stagedItems: [CleanupQueue.StagedItem] = []
     @Published var reclaimableBytes: Int64 = 0
     @Published var lastCommitLines: [String] = []
@@ -34,6 +40,18 @@ final class ScanModel: ObservableObject {
     @Published var colorMode: ExploreColorMode = .folder
     @Published var depthLevel: Double = 7
     @Published var topNav: TopNavTab = .explore
+    @Published var destination: AppDestination = .overview
+    @Published var analysis: AnalysisSnapshot = .empty
+    /// When set, Biggest Files filters to files under this absolute path prefix.
+    @Published var folderFilterPath: String? = nil
+    /// Precomputed after scan — Forgotten Files must not re-walk the tree on every click.
+    @Published var cachedForgotten: [ForgottenCandidate] = []
+    @Published var cachedForgottenSummary: ForgottenSummary = .empty
+    @Published var cachedReviewables: [ReviewableTarget] = []
+    @Published var cachedReviewableSummary: ReviewableSummary = .empty
+    @Published var cachedDeveloper: DeveloperCatalogResult = .empty
+    @Published var cachedOldDownloads: OldDownloadsCatalogResult = .empty
+    @Published var cachedLargeMedia: MediaCatalogResult = .empty
 
     let cleanupQueue = CleanupQueue()
     let fileTypeCategories = FileTypeCatalog.loadBundled()
@@ -44,6 +62,8 @@ final class ScanModel: ObservableObject {
 
     private var didStartLaunchScan = false
     private let logURL = URL(fileURLWithPath: "/tmp/diskmap-scan.log")
+    /// Bumped on cancel / new scan so a finished walk can discard stale results.
+    private var scanGeneration = 0
 
     func startIfRequested() {
         guard !didStartLaunchScan else { return }
@@ -55,7 +75,19 @@ final class ScanModel: ObservableObject {
         Task { await scan(url) }
     }
 
+    func cancelScan() {
+        scanGeneration += 1
+        isScanning = false
+        if tree == nil {
+            rootURL = nil
+            scannedCount = 0
+        }
+        log("scan cancelled")
+    }
+
     func scan(_ url: URL) async {
+        scanGeneration += 1
+        let generation = scanGeneration
         rootURL = url
         isScanning = true
         scannedCount = 0
@@ -67,6 +99,20 @@ final class ScanModel: ObservableObject {
         cachedQuickWins = []
         cachedFileTypes = []
         duplicateGroups = []
+        duplicatePhase = .idle
+        duplicateProgressDone = 0
+        duplicateProgressTotal = 0
+        duplicateError = nil
+        duplicateDidRun = false
+        cancelDuplicateSearch()
+        folderFilterPath = nil
+        cachedForgotten = []
+        cachedForgottenSummary = .empty
+        cachedReviewables = []
+        cachedReviewableSummary = .empty
+        cachedDeveloper = .empty
+        cachedOldDownloads = .empty
+        cachedLargeMedia = .empty
         log("scan start \(url.path)")
 
         let before = ProcessMemory.current()
@@ -77,7 +123,14 @@ final class ScanModel: ObservableObject {
             ScanModel.appendLog("scannedCount=\(count)")
             print("scannedCount=\(count)")
             fflush(stdout)
-            Task { @MainActor in ScanModel.shared.scannedCount = count }
+            Task { @MainActor in
+                guard ScanModel.shared.scanGeneration == generation else { return }
+                ScanModel.shared.scannedCount = count
+            }
+        }
+        guard generation == scanGeneration else {
+            log("scan discarded (cancelled) path=\(url.path)")
+            return
         }
         // Immediately after scan() returns: tree is retained, the
         // enumerator is not. Do this before rollUpSizes, which allocates
@@ -114,6 +167,45 @@ final class ScanModel: ObservableObject {
             in: result.tree,
             sizes: allocated,
             categories: fileTypeCategories
+        )
+        analysis = AnalysisSnapshot.build(
+            tree: result.tree,
+            root: url,
+            allocated: allocated,
+            logical: logical,
+            basis: sizeBasis,
+            quickWins: cachedQuickWins
+        )
+        let forgotten = ForgottenFiles.candidates(
+            tree: result.tree,
+            root: url,
+            totals: allocated,
+            limit: 400
+        )
+        cachedForgotten = forgotten
+        cachedForgottenSummary = ForgottenFiles.summary(from: forgotten)
+        let reviewable = ReviewableCatalog.build(
+            tree: result.tree,
+            root: url,
+            totals: allocated,
+            quickWins: cachedQuickWins
+        )
+        cachedReviewables = reviewable.targets
+        cachedReviewableSummary = reviewable.summary
+        cachedDeveloper = DeveloperCatalog.build(
+            tree: result.tree,
+            root: url,
+            totals: allocated
+        )
+        cachedOldDownloads = OldDownloadsCatalog.build(
+            tree: result.tree,
+            root: url,
+            totals: allocated
+        )
+        cachedLargeMedia = MediaCatalog.build(
+            tree: result.tree,
+            root: url,
+            totals: allocated
         )
         selectedNode = 0
         currentNode = 0
@@ -155,11 +247,147 @@ final class ScanModel: ObservableObject {
     }
 
     func findDuplicates() async {
-        guard let tree, let rootURL else { return }
+        guard tree != nil, rootURL != nil else { return }
+        cancelDuplicateSearch()
+        duplicateError = nil
+        duplicateDidRun = false
         isFindingDuplicates = true
-        let files = DuplicateFinder.candidates(in: tree, root: rootURL)
-        duplicateGroups = await DuplicateFinder.findDuplicates(candidates: files)
-        isFindingDuplicates = false
+        duplicatePhase = .collecting
+        duplicateProgressDone = 0
+        duplicateProgressTotal = 0
+
+        let task = Task { @MainActor in
+            guard let tree = self.tree, let rootURL = self.rootURL else {
+                self.isFindingDuplicates = false
+                self.duplicatePhase = .idle
+                return
+            }
+            do {
+                self.duplicatePhase = .collecting
+                let files = DuplicateFinder.candidates(in: tree, root: rootURL)
+                try Task.checkCancellation()
+                self.duplicatePhase = .grouping
+                let groups = try await DuplicateFinder.findDuplicates(candidates: files) { phase, done, total in
+                    Task { @MainActor in
+                        self.duplicatePhase = phase
+                        self.duplicateProgressDone = done
+                        self.duplicateProgressTotal = total
+                    }
+                }
+                try Task.checkCancellation()
+                self.duplicateGroups = groups
+                self.duplicatePhase = .complete
+                self.duplicateDidRun = true
+                self.isFindingDuplicates = false
+            } catch is CancellationError {
+                self.duplicatePhase = .cancelled
+                self.isFindingDuplicates = false
+                self.duplicateDidRun = true
+            } catch {
+                self.duplicateError = error.localizedDescription
+                self.duplicatePhase = .failed
+                self.isFindingDuplicates = false
+                self.duplicateDidRun = true
+            }
+        }
+        duplicateTask = task
+        await task.value
+    }
+
+    func cancelDuplicateSearch() {
+        duplicateTask?.cancel()
+        duplicateTask = nil
+        if isFindingDuplicates {
+            isFindingDuplicates = false
+            duplicatePhase = .cancelled
+            duplicateDidRun = true
+        }
+    }
+
+    func rebuildAnalysis() {
+        guard let tree, let rootURL,
+              allocatedTotals.count == tree.count,
+              logicalTotals.count == tree.count else {
+            analysis = .empty
+            return
+        }
+        analysis = AnalysisSnapshot.build(
+            tree: tree,
+            root: rootURL,
+            allocated: allocatedTotals,
+            logical: logicalTotals,
+            basis: sizeBasis,
+            quickWins: cachedQuickWins
+        )
+    }
+
+    func refreshReviewableCache() {
+        guard let tree, let rootURL, selectedTotals.count == tree.count else {
+            cachedReviewables = []
+            cachedReviewableSummary = .empty
+            return
+        }
+        let built = ReviewableCatalog.build(
+            tree: tree,
+            root: rootURL,
+            totals: selectedTotals,
+            quickWins: cachedQuickWins
+        )
+        cachedReviewables = built.targets
+        cachedReviewableSummary = built.summary
+    }
+
+    func refreshOldDownloadsCache() {
+        guard let tree, let rootURL, selectedTotals.count == tree.count else {
+            cachedOldDownloads = .empty
+            return
+        }
+        cachedOldDownloads = OldDownloadsCatalog.build(
+            tree: tree,
+            root: rootURL,
+            totals: selectedTotals
+        )
+    }
+
+    func refreshLargeMediaCache() {
+        guard let tree, let rootURL, selectedTotals.count == tree.count else {
+            cachedLargeMedia = .empty
+            return
+        }
+        cachedLargeMedia = MediaCatalog.build(
+            tree: tree,
+            root: rootURL,
+            totals: selectedTotals
+        )
+    }
+
+    func refreshDeveloperCache() {
+        guard let tree, let rootURL, selectedTotals.count == tree.count else {
+            cachedDeveloper = .empty
+        cachedOldDownloads = .empty
+            return
+        }
+        cachedDeveloper = DeveloperCatalog.build(
+            tree: tree,
+            root: rootURL,
+            totals: selectedTotals
+        )
+    }
+
+    func refreshForgottenCache() {
+        guard let tree, let rootURL, selectedTotals.count == tree.count else {
+            cachedForgotten = []
+            cachedForgottenSummary = .empty
+            return
+        }
+        let forgotten = ForgottenFiles.candidates(
+            tree: tree,
+            root: rootURL,
+            totals: selectedTotals,
+            limit: 400
+        )
+        cachedForgotten = forgotten
+        cachedForgottenSummary = ForgottenFiles.summary(from: forgotten)
     }
 
     func refreshQueue() async {
@@ -169,11 +397,15 @@ final class ScanModel: ObservableObject {
 
     func commitCleanup() async {
         let results = await cleanupQueue.commit()
-        lastCommitLines = results.map { result in
-            if let error = result.error {
-                return "Failed \(result.item.url.path): \(error.localizedDescription)"
+        let log = CleanupPreflight.logEntries(from: results)
+        lastCommitLines = log.map { entry in
+            if entry.succeeded {
+                return "Trashed \(entry.path) (\(ByteFormat.string(entry.bytes))) — \(entry.reason)"
             }
-            return "Moved to Trash \(result.item.url.path)"
+            return "Failed \(entry.path): \(entry.errorDescription ?? "unknown error")"
+        }
+        if lastCommitLines.isEmpty {
+            lastCommitLines = ["Nothing moved."]
         }
         await refreshQueue()
     }
@@ -276,14 +508,14 @@ enum ExploreViewMode: String, CaseIterable, Identifiable {
 
     var blurb: String {
         switch self {
-        case .treemap: return "Every file as a rectangle, sized by bytes"
-        case .sunburst: return "Rings radiating out from the scan root"
-        case .flame: return "Depth top to bottom, size left to right"
-        case .bubbles: return "Nested bubbles, one per folder"
-        case .folders: return "Browse folder by folder, sized as you go"
-        case .ageMap: return "Where your bytes sit on a timeline"
+        case .treemap: return "Compare storage by size"
+        case .sunburst: return "See nested folder hierarchy"
+        case .flame: return "Find deep storage-heavy paths"
+        case .bubbles: return "Large items as proportional bubbles"
+        case .folders: return "Browse folder by folder"
+        case .ageMap: return "See storage by age"
         case .topSizes: return "The biggest items, ranked"
-        case .mindMap: return "Branches from the root, sized by weight"
+        case .mindMap: return "Explore folder relationships"
         }
     }
 
@@ -292,6 +524,11 @@ enum ExploreViewMode: String, CaseIterable, Identifiable {
         case .treemap, .sunburst, .flame, .bubbles, .mindMap: return true
         default: return false
         }
+    }
+
+    /// Modes shown in the Visualize workspace picker (not File Browser / Find lists).
+    static var visualizeModes: [ExploreViewMode] {
+        [.treemap, .sunburst, .flame, .bubbles, .mindMap, .ageMap]
     }
 }
 
@@ -306,97 +543,11 @@ struct ContentView: View {
     @ObservedObject private var model = ScanModel.shared
 
     var body: some View {
-        VStack(spacing: 0) {
-            topNav
-            Divider()
-            tabBody
-        }
-        .background(DiskMapTheme.cream)
-        .preferredColorScheme(.light)
-        .frame(minWidth: 1100, minHeight: 720)
-    }
-
-    private var topNav: some View {
-        HStack(spacing: 4) {
-            ForEach(TopNavTab.allCases) { tab in
-                Button {
-                    if tab != .monitor { model.topNav = tab }
-                } label: {
-                    Text(tab.rawValue)
-                        .font(.system(size: 13, weight: model.topNav == tab ? .semibold : .regular))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .foregroundStyle(tab == .monitor ? DiskMapTheme.mutedLabel.opacity(0.5) : (model.topNav == tab ? .white : DiskMapTheme.ink))
-                        .background(
-                            Capsule().fill(model.topNav == tab ? DiskMapTheme.ink : Color.clear)
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(tab == .monitor)
-                .help(tab == .monitor ? "Monitor is not in this build" : tab.rawValue)
+        AppShellView(model: model)
+            .onChange(of: model.sizeBasis) { _, _ in
+                model.rebuildAnalysis()
+                model.refreshForgottenCache()
+                model.refreshReviewableCache()
             }
-            Spacer()
-            if model.tree != nil {
-                Picker("Size", selection: $model.sizeBasis) {
-                    Text("Logical").tag(SizeBasis.logical)
-                    Text("On Disk").tag(SizeBasis.allocated)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 180)
-                .accessibilityIdentifier("size-basis")
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(DiskMapTheme.cream)
-    }
-
-    @ViewBuilder
-    private var tabBody: some View {
-        switch model.topNav {
-        case .explore:
-            ExploreShellView(model: model, pickFolder: pickFolder)
-        case .duplicates:
-            if let tree = model.tree, let root = model.rootURL {
-                DuplicatesView(model: model, tree: tree, rootURL: root)
-            } else { needsScan }
-        case .applications:
-            AppsView(model: model)
-        case .monitor:
-            Text("Monitor is not in this build")
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .snapshots:
-            if let tree = model.tree, let root = model.rootURL {
-                SnapshotDiffView(tree: tree, rootURL: root, basis: model.sizeBasis)
-            } else { needsScan }
-        }
-    }
-
-
-    private var scanning: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-            Text("Scanning… \(model.scannedCount) items")
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .accessibilityIdentifier("scan-progress")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var needsScan: some View {
-        Text("Pick a folder to see what's using space")
-            .foregroundStyle(DiskMapTheme.mutedLabel)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func pickFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Scan"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task { await model.scan(url) }
     }
 }

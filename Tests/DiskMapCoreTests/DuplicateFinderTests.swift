@@ -7,7 +7,7 @@ struct DuplicateFinderTests {
         let fixture = try DuplicateFixture()
         defer { fixture.tearDown() }
 
-        let clones = await DuplicateFinder.scan([
+        let clones = try await DuplicateFinder.scan([
             (0, URL(fileURLWithPath: fixture.original), fixture.byteCount),
             (1, URL(fileURLWithPath: fixture.clone), fixture.byteCount),
         ])
@@ -18,7 +18,7 @@ struct DuplicateFinderTests {
         #expect(clones.groups[0].reclaimableBytes(deleting: [0]) == 0)
         #expect(clones.groups[0].reclaimableBytes(deleting: [0, 1]) == fixture.byteCount)
 
-        let copies = await DuplicateFinder.scan([
+        let copies = try await DuplicateFinder.scan([
             (2, URL(fileURLWithPath: fixture.original), fixture.byteCount),
             (3, URL(fileURLWithPath: fixture.unrelated), fixture.byteCount),
         ])
@@ -38,7 +38,7 @@ struct DuplicateFinderTests {
         try handle.write(contentsOf: Data(repeating: 0x22, count: 4096))
         try handle.close()
 
-        let result = await DuplicateFinder.scan([
+        let result = try await DuplicateFinder.scan([
             (0, URL(fileURLWithPath: fixture.original), fixture.byteCount),
             (1, URL(fileURLWithPath: fixture.clone), fixture.byteCount),
         ])

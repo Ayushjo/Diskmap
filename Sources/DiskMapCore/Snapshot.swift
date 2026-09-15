@@ -17,6 +17,12 @@ public struct SnapshotChange: Sendable, Equatable {
     public var before: Int64
     public var after: Int64
 
+    public init(path: String, before: Int64, after: Int64) {
+        self.path = path
+        self.before = before
+        self.after = after
+    }
+
     public var delta: Int64 { after - before }
 }
 
@@ -99,6 +105,11 @@ enum SnapshotCodec {
 public struct SnapshotHeader: Sendable, Equatable {
     public var rootPath: String
     public var capturedAt: Date
+
+    public init(rootPath: String, capturedAt: Date) {
+        self.rootPath = rootPath
+        self.capturedAt = capturedAt
+    }
 }
 
 public enum SnapshotStore {
@@ -147,6 +158,58 @@ public enum SnapshotStore {
             .sorted { $0.1.capturedAt < $1.1.capturedAt }
     }
 
+
+    public static func metaURL(for snapshotURL: URL) -> URL {
+        snapshotURL.deletingPathExtension().appendingPathExtension("meta.json")
+    }
+
+    public static func loadMeta(for snapshotURL: URL) -> SnapshotMeta {
+        let url = metaURL(for: snapshotURL)
+        guard let data = try? Data(contentsOf: url),
+              let meta = try? JSONDecoder().decode(SnapshotMeta.self, from: data) else {
+            if let header = try? readHeader(from: snapshotURL) {
+                return SnapshotMeta(name: SnapshotMeta.defaultName(for: header.capturedAt))
+            }
+            return SnapshotMeta(name: "Snapshot")
+        }
+        return meta
+    }
+
+    public static func saveMeta(_ meta: SnapshotMeta, for snapshotURL: URL) throws {
+        let data = try JSONEncoder().encode(meta)
+        try data.write(to: metaURL(for: snapshotURL), options: .atomic)
+    }
+
+    public static func save(
+        _ snapshot: DiskSnapshot,
+        meta: SnapshotMeta,
+        in directory: URL
+    ) throws -> URL {
+        let url = try save(snapshot, in: directory)
+        try saveMeta(meta, for: url)
+        return url
+    }
+
+    public static func delete(_ snapshotURL: URL) throws {
+        try FileManager.default.removeItem(at: snapshotURL)
+        let meta = metaURL(for: snapshotURL)
+        if FileManager.default.fileExists(atPath: meta.path) {
+            try FileManager.default.removeItem(at: meta)
+        }
+    }
+
+    public static func records(in directory: URL, rootPath: String) -> [SnapshotRecord] {
+        summaries(in: directory, rootPath: rootPath).map { pair in
+            SnapshotRecord(
+                url: pair.url,
+                header: pair.header,
+                meta: loadMeta(for: pair.url),
+                isCurrent: false
+            )
+        }
+        .sorted { $0.header.capturedAt > $1.header.capturedAt }
+    }
+
     public static func list(in directory: URL, rootPath: String) -> [URL] {
         summaries(in: directory, rootPath: rootPath).map(\.url)
     }
@@ -175,7 +238,8 @@ public enum SnapshotDiff {
         var sizes: [String: Int64] = [:]
         guard snapshot.tree.count == totals.count else { return sizes }
         for id in 0..<Int32(snapshot.tree.count) where snapshot.tree.isDirectory[Int(id)] {
-            sizes[snapshot.tree.path(of: id, root: root).standardizedFileURL.path] = totals[Int(id)]
+            let absolute = snapshot.tree.path(of: id, root: root).standardizedFileURL.path
+            sizes[CanonicalPath.displayPath(absolutePath: absolute)] = totals[Int(id)]
         }
         return sizes
     }
