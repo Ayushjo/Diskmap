@@ -14,7 +14,7 @@ let package = Package(
         .executableTarget(
             name: "DiskMapApp",
             dependencies: ["DiskMapCore"],
-            linkerSettings: [.linkedFramework("Quartz")]
+            linkerSettings: [.linkedFramework("Quartz"), .linkedFramework("QuickLookThumbnailing")]
         ),
         .testTarget(name: "DiskMapCoreTests", dependencies: ["DiskMapCore"]),
         .executableTarget(name: "DiskMapScanBench", dependencies: ["DiskMapCore"]),

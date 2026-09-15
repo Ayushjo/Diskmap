@@ -5,6 +5,7 @@ import SwiftUI
 /// Clean → Caches: app-grouped cache cleanup (reference DiskMap-SafeToReview).
 struct CachesReviewView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     var onOpenCleanup: () -> Void
     var onBack: () -> Void
 
@@ -75,7 +76,7 @@ struct CachesReviewView: View {
             mainColumn
             Divider().overlay(DiskMapTheme.cardStroke)
             inspector
-                .frame(width: 320)
+                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
         }
         .background(DiskMapTheme.cream)
         .task {

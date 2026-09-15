@@ -5,6 +5,7 @@ import SwiftUI
 /// Explore → Snapshots: storage history and comparison workspace.
 struct SnapshotsView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
 
     @State private var records: [SnapshotRecord] = []
     @State private var selectedID: String?
@@ -126,7 +127,7 @@ struct SnapshotsView: View {
                     mainColumn
                     Divider().overlay(DiskMapTheme.cardStroke)
                     inspector
-                        .frame(width: 320)
+                        .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
                 }
             }
         }

@@ -5,6 +5,7 @@ import SwiftUI
 /// Find → Biggest Folders: storage-area investigation with select vs drill + inspector.
 struct BiggestFoldersView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     let tree: FileTree
     let rootURL: URL
     var onOpenCleanup: () -> Void = {}
@@ -74,7 +75,7 @@ struct BiggestFoldersView: View {
             mainColumn
             Divider().overlay(DiskMapTheme.cardStroke)
             inspector
-                .frame(width: 320)
+                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
         }
         .background(DiskMapTheme.cream)
         .onAppear {
@@ -451,21 +452,7 @@ private struct FolderInspectorPanel: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Why is it large?")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Text(insight.whyLarge)
-                        .font(.system(size: 12))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(red: 0.93, green: 0.95, blue: 0.99))
-                )
+                WhyCard(title: "Why is it large?", bodyText: insight.whyLarge)
 
                 if insight.reviewableBytes > 0 {
                     VStack(alignment: .leading, spacing: 4) {
@@ -486,15 +473,7 @@ private struct FolderInspectorPanel: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(insight.safety.level.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(safetyColor(insight.safety.level))
-                    Text(insight.safety.reason)
-                        .font(.system(size: 12))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                SafetyCard(assessment: insight.safety)
 
                 if !insight.largestFiles.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {

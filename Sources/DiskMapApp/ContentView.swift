@@ -487,14 +487,14 @@ enum ExploreViewMode: String, CaseIterable, Identifiable {
 
     var blurb: String {
         switch self {
-        case .treemap: return "See what's taking space"
-        case .sunburst: return "See how it's nested"
-        case .flame: return "Trace folder depth"
-        case .bubbles: return "Compare visually"
+        case .treemap: return "Compare storage by size"
+        case .sunburst: return "See nested folder hierarchy"
+        case .flame: return "Find deep storage-heavy paths"
+        case .bubbles: return "Large items as proportional bubbles"
         case .folders: return "Browse folder by folder"
-        case .ageMap: return "Find old data"
+        case .ageMap: return "See storage by age"
         case .topSizes: return "The biggest items, ranked"
-        case .mindMap: return "Explore structure"
+        case .mindMap: return "Explore folder relationships"
         }
     }
 

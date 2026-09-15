@@ -5,6 +5,7 @@ import SwiftUI
 /// Clean → Safe to Review: categorized, selectable cleanup opportunities.
 struct SafeToReviewView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     var onOpenCleanup: () -> Void
     var onOpenCaches: () -> Void
 
@@ -40,7 +41,7 @@ struct SafeToReviewView: View {
             mainColumn
             Divider().overlay(DiskMapTheme.cardStroke)
             inspector
-                .frame(width: 320)
+                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
         }
         .background(DiskMapTheme.cream)
         .task {

@@ -5,6 +5,7 @@ import SwiftUI
 /// Explore → Developer Storage: taxonomy, ecosystems, projects, reclaimability.
 struct DeveloperStorageView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     var pickFolder: () -> Void
     var onOpenCleanup: () -> Void
 
@@ -51,7 +52,7 @@ struct DeveloperStorageView: View {
                     mainColumn
                     Divider().overlay(DiskMapTheme.cardStroke)
                     inspector
-                        .frame(width: 320)
+                        .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
                 }
             }
         }
@@ -621,19 +622,8 @@ private struct DeveloperInspector: View {
                     StatRow(label: "Reclaimability", value: reclaimTitle)
                 }
 
-                section("Why is it large?") {
-                    Text(item.whyLarge)
-                        .font(.system(size: 12))
-                        .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                section("Can I remove it?") {
-                    Text(item.safety.reason)
-                        .font(.system(size: 12))
-                        .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                WhyCard(title: "Why is it large?", bodyText: item.whyLarge)
+                SafetyCard(assessment: item.safety)
 
                 section("What happens if I remove it?") {
                     Text(item.safety.consequences)

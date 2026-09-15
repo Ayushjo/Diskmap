@@ -127,15 +127,15 @@ Keep canvas implementations; redesign chrome only.
 | Phase | Focus | Status |
 |-------|--------|--------|
 | 0 | Audit + branch | **Done** |
-| 1 | Design tokens + shared Empty/Loading/Badge/SelectionToolbar + Duplicates states | **Done (SharedChrome + Duplicates progress/cancel)** |
-| 2 | AppShell responsive + consistent top bar / cleanup badge | |
-| 3 | Pass Overview → Biggest Files/Folders for shared components | |
-| 4 | Forgotten + Safe/Caches badge/footer consistency | |
-| 5 | Old Downloads + Large Media (thumbnails P1) | |
-| 6 | File Browser + Visualize chrome | |
-| 7 | Developer + Applications + Snapshots polish | |
-| 8 | **Duplicates** loading/cancel/error/empty architecture | |
-| 9 | Global a11y, long names, narrow windows, visual QA | |
-| 10 | PR onto `perf` (or merge stack) with logical commits | |
+| 1 | Design tokens + shared Empty/Loading/Badge/SelectionToolbar + Duplicates states | **Done** |
+| 2 | AppShell responsive content width + cleanup reclaim badge + lower min window | **Done** |
+| 3 | Biggest Files/Folders → WhyCard / SafetyCard | **Done** |
+| 4 | Forgotten/Safe/Caches keep custom selection bars (Select visible / generally safe) | Deferred intentional |
+| 5 | Old Downloads + Large Media SelectionToolbar, WhyCard, badges, **lazy QL thumbnails** | **Done** |
+| 6 | Visualize mode blurbs + tooltips | **Done** |
+| 7 | Developer WhyCard/SafetyCard; adaptive inspector widths across Explore pages | **Done** |
+| 8 | Duplicates progress/cancel/error/empty | **Done** |
+| 9 | Global a11y/long-name polish | Ongoing with page work |
+| 10 | PR #15 onto `perf` | Open — continue commits |
 
 **Success:** one native macOS storage-intelligence app; explain → investigate → review → Cleanup → Trash; no invented facts; scanner/runtime preserved.

@@ -1,4 +1,6 @@
+import AppKit
 import DiskMapCore
+import QuickLookThumbnailing
 import SwiftUI
 
 // MARK: - Spacing scale (4…32)
@@ -255,5 +257,124 @@ struct SafetyCard: View {
                         .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
                 )
         )
+    }
+}
+
+
+// MARK: - Layout helpers
+
+private struct DiskMapContentWidthKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1280
+}
+
+extension EnvironmentValues {
+    var diskMapContentWidth: CGFloat {
+        get { self[DiskMapContentWidthKey.self] }
+        set { self[DiskMapContentWidthKey.self] = newValue }
+    }
+}
+
+enum DiskMapLayout {
+    static func inspectorWidth(for container: CGFloat) -> CGFloat {
+        if container < 1080 { return 280 }
+        if container < 1440 { return 320 }
+        return 360
+    }
+
+    static func showsSideInspector(for container: CGFloat) -> Bool {
+        container >= 980
+    }
+}
+
+// MARK: - Page header
+
+struct DiskMapPageHeader: View {
+    var title: String
+    var subtitle: String
+    var symbol: String? = nil
+    var symbolTint: Color = DiskMapTheme.info
+
+    var body: some View {
+        HStack(alignment: .top, spacing: DiskMapSpace.sm) {
+            if let symbol {
+                Image(systemName: symbol)
+                    .font(.system(size: 28))
+                    .foregroundStyle(symbolTint)
+                    .frame(width: 48, height: 48)
+                    .background(symbolTint.opacity(0.12), in: Circle())
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: DiskMapSpace.xxs) {
+                Text(title)
+                    .font(DiskMapType.title)
+                    .foregroundStyle(DiskMapTheme.ink)
+                Text(subtitle)
+                    .font(DiskMapType.body)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: DiskMapSpace.xs)
+        }
+    }
+}
+
+// MARK: - Lazy media / file thumbnail (Quick Look)
+
+
+struct MediaThumbnailView: View {
+    let url: URL
+    var size: CGSize = CGSize(width: 160, height: 90)
+    var fallbackSymbol: String = "doc"
+    var showPlayBadge: Bool = false
+
+    @State private var image: NSImage?
+    @State private var failed = false
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(DiskMapTheme.navSelected)
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            } else {
+                Image(systemName: fallbackSymbol)
+                    .font(.system(size: min(size.height, size.width) * 0.28))
+                    .foregroundStyle(DiskMapTheme.info)
+            }
+            if showPlayBadge {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .shadow(radius: 2)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .task(id: url.path) { await load() }
+    }
+
+    @MainActor
+    private func load() async {
+        failed = false
+        image = nil
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let request = QLThumbnailGenerator.Request(
+            fileAt: url,
+            size: size,
+            scale: scale,
+            representationTypes: .thumbnail
+        )
+        do {
+            let rep = try await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
+            image = rep.nsImage
+        } catch {
+            failed = true
+            // Fallback: NSWorkspace icon
+            image = NSWorkspace.shared.icon(forFile: url.path)
+        }
     }
 }

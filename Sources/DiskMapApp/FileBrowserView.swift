@@ -6,6 +6,7 @@ import SwiftUI
 /// Performance: never walk the full subtree on the main thread for selection.
 struct FileBrowserView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     let tree: FileTree
     let rootURL: URL
     var onOpenCleanup: () -> Void = {}

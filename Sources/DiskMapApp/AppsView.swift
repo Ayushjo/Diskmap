@@ -6,6 +6,7 @@ import SwiftUI
 /// Explore → Applications: storage intelligence for installed apps.
 struct AppsView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     var onOpenCleanup: () -> Void = {}
 
     @State private var apps: [ApplicationEntry] = []
@@ -67,7 +68,7 @@ struct AppsView: View {
             mainColumn
             Divider().overlay(DiskMapTheme.cardStroke)
             inspector
-                .frame(width: 320)
+                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
         }
         .background(DiskMapTheme.cream)
         .task { await reloadCatalog() }

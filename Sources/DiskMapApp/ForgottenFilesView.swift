@@ -5,6 +5,7 @@ import SwiftUI
 /// Find → Forgotten Files. Uses ScanModel.cachedForgotten (computed once per scan).
 struct ForgottenFilesView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     let tree: FileTree
     let rootURL: URL
     var onOpenCleanup: () -> Void = {}
@@ -100,7 +101,7 @@ struct ForgottenFilesView: View {
             mainColumn
             Divider().overlay(DiskMapTheme.cardStroke)
             inspectorColumn
-                .frame(width: 320)
+                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
         }
         .background(DiskMapTheme.cream)
         .task {

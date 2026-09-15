@@ -5,6 +5,7 @@ import SwiftUI
 /// Find → Biggest Files: files only, ranked by size, with inspector matching DiskMap-BiggestFiles ref.
 struct BiggestFilesView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     let tree: FileTree
     let rootURL: URL
     var onOpenCleanup: () -> Void = {}
@@ -93,7 +94,7 @@ struct BiggestFilesView: View {
             mainColumn
             Divider().overlay(DiskMapTheme.cardStroke)
             inspector
-                .frame(width: 320)
+                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
         }
         .background(DiskMapTheme.cream)
         .onAppear {
@@ -471,36 +472,14 @@ private struct FileInspectorPanel: View {
                     metaBlock(label: "Modified", value: modified)
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Why is it large?")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Text(FileKind.whyLarge(kind: kind, name: name))
-                        .font(.system(size: 12))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(red: 0.93, green: 0.95, blue: 0.99))
-                )
+                WhyCard(title: "Why is it large?", bodyText: FileKind.whyLarge(kind: kind, name: name))
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(safety.level.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(safetyColor(safety.level))
-                    Text(safety.reason)
-                        .font(.system(size: 12))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                SafetyCard(assessment: safety)
+                if kind == FileKind.virtualDisk || name.lowercased().hasSuffix(".raw") {
+                    Text("Do not delete this file directly — manage storage in the owning app.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DiskMapTheme.danger)
                         .fixedSize(horizontal: false, vertical: true)
-                    if kind == FileKind.virtualDisk || name.lowercased().hasSuffix(".raw") {
-                        Text("Do not delete this file directly — manage storage in the owning app.")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(DiskMapTheme.danger)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
                 }
 
                 VStack(spacing: 8) {

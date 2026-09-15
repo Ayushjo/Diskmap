@@ -6,6 +6,7 @@ import SwiftUI
 /// No Explore secondary sidebar — viz is the hero.
 struct VisualizeView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     var pickFolder: () -> Void
     var onOpenCleanup: () -> Void = {}
 
@@ -68,7 +69,7 @@ struct VisualizeView: View {
             if showInspector {
                 Divider().overlay(DiskMapTheme.cardStroke)
                 inspector
-                    .frame(width: 300)
+                    .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
             }
         }
         .background(DiskMapTheme.cream)
@@ -264,6 +265,7 @@ struct VisualizeView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .help("\(mode.rawValue): \(mode.blurb)")
                 }
             }
             .padding(.horizontal, 16)

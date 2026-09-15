@@ -20,7 +20,11 @@ struct AppShellView: View {
                     sidebar
                         .frame(width: 220)
                     Divider().overlay(DiskMapTheme.cardStroke)
-                    destinationBody
+                    GeometryReader { geo in
+                        destinationBody
+                            .environment(\.diskMapContentWidth, geo.size.width)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                    }
                 }
             }
             if let toast = model.toastMessage {
@@ -38,7 +42,7 @@ struct AppShellView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.toastMessage)
         .background(DiskMapTheme.cream)
         .preferredColorScheme(.light)
-        .frame(minWidth: 1180, minHeight: 740)
+        .frame(minWidth: 1024, minHeight: 680)
         .sheet(isPresented: $showCleanup) {
             CleanupQueueView(model: model)
                 .frame(minWidth: 640, minHeight: 480)
@@ -90,12 +94,23 @@ struct AppShellView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "trash")
-                    Text(model.stagedItems.isEmpty ? "Cleanup" : "Cleanup (\(model.stagedItems.count))")
+                    if model.stagedItems.isEmpty {
+                        Text("Cleanup")
+                    } else {
+                        Text("Cleanup (\(model.stagedItems.count))")
+                        if model.reclaimableBytes > 0 {
+                            Text("· \(ByteFormat.string(model.reclaimableBytes))")
+                                .foregroundStyle(DiskMapTheme.safe)
+                        }
+                    }
                 }
                 .font(.system(size: 12, weight: .medium))
             }
             .buttonStyle(InkButtonStyle(filled: !model.stagedItems.isEmpty))
-            .help("Review items staged for Trash")
+            .help(model.stagedItems.isEmpty
+                  ? "Review items staged for Trash"
+                  : "\(model.stagedItems.count) items · \(ByteFormat.string(model.reclaimableBytes)) reclaimable")
+            .accessibilityLabel(model.stagedItems.isEmpty ? "Cleanup" : "Cleanup, \(model.stagedItems.count) items")
             Button {
                 if let root = model.rootURL {
                     Task { await model.scan(root) }

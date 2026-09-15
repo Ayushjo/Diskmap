@@ -5,6 +5,7 @@ import SwiftUI
 /// Clean → Large Media: media-storage intelligence workspace (not Biggest Files).
 struct LargeMediaView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     var onOpenCleanup: () -> Void
     var pickFolder: () -> Void
 
@@ -59,7 +60,7 @@ struct LargeMediaView: View {
                     if active != nil {
                         Divider().overlay(DiskMapTheme.cardStroke)
                         inspector
-                            .frame(width: 320)
+                            .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
                     }
                 }
             }
@@ -294,20 +295,12 @@ struct LargeMediaView: View {
             typeFilter = .all
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(DiskMapTheme.navSelected)
-                        .frame(width: 160, height: 90)
-                    Image(systemName: item.kind.symbolName)
-                        .font(.system(size: 28))
-                        .foregroundStyle(DiskMapTheme.info)
-                    if item.kind == .video {
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 22))
-                            .foregroundStyle(.white.opacity(0.9))
-                            .offset(x: 50, y: 28)
-                    }
-                }
+                MediaThumbnailView(
+                    url: URL(fileURLWithPath: item.absolutePath),
+                    size: CGSize(width: 160, height: 90),
+                    fallbackSymbol: item.kind.symbolName,
+                    showPlayBadge: item.kind == .video
+                )
                 Text(item.name)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DiskMapTheme.ink)
@@ -440,11 +433,12 @@ struct LargeMediaView: View {
             .buttonStyle(.plain)
             .frame(width: 22)
 
-            Image(systemName: item.kind.symbolName)
-                .font(.system(size: 13))
-                .foregroundStyle(DiskMapTheme.info)
-                .frame(width: 36, height: 28)
-                .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            MediaThumbnailView(
+                url: URL(fileURLWithPath: item.absolutePath),
+                size: CGSize(width: 36, height: 28),
+                fallbackSymbol: item.kind.symbolName,
+                showPlayBadge: false
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
@@ -509,14 +503,7 @@ struct LargeMediaView: View {
     }
 
     private func statusPill(_ status: MediaStatus) -> some View {
-        Text(status.title)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(status == .reviewFirst ? DiskMapTheme.review : DiskMapTheme.safe)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(
-                Capsule().fill((status == .reviewFirst ? DiskMapTheme.review : DiskMapTheme.safe).opacity(0.14))
-            )
+        ClassificationBadge(kind: status == .reviewFirst ? .review : .safe)
     }
 
     private var emptyResults: some View {
@@ -546,25 +533,15 @@ struct LargeMediaView: View {
     }
 
     private var selectionBar: some View {
-        HStack {
-            Text("\(checkedItems.count) selected · \(ByteFormat.string(checkedBytes))")
-                .font(.system(size: 12, weight: .semibold))
-            Spacer()
-            Button("Clear") { checked.removeAll() }
-                .buttonStyle(InkButtonStyle(filled: false))
-            Button("Reveal") {
+        SelectionToolbar(
+            selectedCount: checkedItems.count,
+            selectedBytes: checkedBytes,
+            onPrimary: { Task { await stage(checkedItems) } },
+            onClear: { checked.removeAll() },
+            onReveal: {
                 NSWorkspace.shared.activateFileViewerSelecting(checkedItems.map { URL(fileURLWithPath: $0.absolutePath) })
             }
-            .buttonStyle(InkButtonStyle(filled: false))
-            Button("Add to Cleanup Review") {
-                Task { await stage(checkedItems) }
-            }
-            .buttonStyle(PrimaryCTAStyle())
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(DiskMapTheme.cardFill)
-        .overlay(alignment: .top) { Divider().overlay(DiskMapTheme.cardStroke) }
+        )
     }
 
     private var footerBar: some View {
@@ -599,19 +576,13 @@ struct LargeMediaView: View {
             if let item = active {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(DiskMapTheme.navSelected)
-                                .frame(height: 160)
-                            Image(systemName: item.kind.symbolName)
-                                .font(.system(size: 40))
-                                .foregroundStyle(DiskMapTheme.info)
-                            if item.kind == .video {
-                                Image(systemName: "play.circle.fill")
-                                    .font(.system(size: 36))
-                                    .foregroundStyle(.white.opacity(0.95))
-                            }
-                        }
+                        MediaThumbnailView(
+                            url: URL(fileURLWithPath: item.absolutePath),
+                            size: CGSize(width: 288, height: 160),
+                            fallbackSymbol: item.kind.symbolName,
+                            showPlayBadge: item.kind == .video
+                        )
+                        .frame(maxWidth: .infinity)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.name)
@@ -654,24 +625,7 @@ struct LargeMediaView: View {
                         .padding(12)
                         .background(cardBG)
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Why is this here?")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                            Text(item.whyHere)
-                                .font(.system(size: 12))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(DiskMapTheme.info.opacity(0.08))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(DiskMapTheme.info.opacity(0.2), lineWidth: 1)
-                                )
-                        )
+                        WhyCard(title: "Why is this here?", bodyText: item.whyHere)
 
                         VStack(alignment: .leading, spacing: 6) {
                             Text(item.status.title)

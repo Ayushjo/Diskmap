@@ -5,6 +5,7 @@ import SwiftUI
 /// Clean → Old Downloads: curated review of large/older Downloads files.
 struct OldDownloadsView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     var onOpenCleanup: () -> Void
     var pickFolder: () -> Void
 
@@ -55,7 +56,7 @@ struct OldDownloadsView: View {
                     mainColumn
                     Divider().overlay(DiskMapTheme.cardStroke)
                     inspector
-                        .frame(width: 320)
+                        .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
                 }
             }
         }
@@ -433,14 +434,9 @@ struct OldDownloadsView: View {
     }
 
     private func statusPill(_ status: OldDownloadsStatus) -> some View {
-        let color: Color = status == .likelyDisposable ? DiskMapTheme.safe : DiskMapTheme.review
-        return Text(status.title)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12), in: Capsule())
+        ClassificationBadge(kind: status == .reviewFirst ? .review : .safe)
     }
+
 
     private var emptyResults: some View {
         VStack(spacing: 8) {
@@ -464,25 +460,15 @@ struct OldDownloadsView: View {
     }
 
     private var selectionBar: some View {
-        HStack {
-            Text("\(checkedItems.count) selected · \(ByteFormat.string(checkedBytes))")
-                .font(.system(size: 12, weight: .semibold))
-            Spacer()
-            Button("Clear") { checked.removeAll() }
-                .buttonStyle(InkButtonStyle(filled: false))
-            Button("Reveal") {
+        SelectionToolbar(
+            selectedCount: checkedItems.count,
+            selectedBytes: checkedBytes,
+            onPrimary: { Task { await stage(checkedItems) } },
+            onClear: { checked.removeAll() },
+            onReveal: {
                 NSWorkspace.shared.activateFileViewerSelecting(checkedItems.map { URL(fileURLWithPath: $0.absolutePath) })
             }
-            .buttonStyle(InkButtonStyle(filled: false))
-            Button("Add to Cleanup Review") {
-                Task { await stage(checkedItems) }
-            }
-            .buttonStyle(PrimaryCTAStyle())
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(DiskMapTheme.cardFill)
-        .overlay(alignment: .top) { Divider().overlay(DiskMapTheme.cardStroke) }
+        )
     }
 
     private var footerBar: some View {
@@ -549,25 +535,7 @@ struct OldDownloadsView: View {
                         .padding(12)
                         .background(cardBG)
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Why is this here?")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                            Text(item.whyHere)
-                                .font(.system(size: 12))
-                                .foregroundStyle(DiskMapTheme.ink.opacity(0.9))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(DiskMapTheme.info.opacity(0.08))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(DiskMapTheme.info.opacity(0.2), lineWidth: 1)
-                                )
-                        )
+                        WhyCard(title: "Why is this here?", bodyText: item.whyHere)
 
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Cleanup recommendation")
