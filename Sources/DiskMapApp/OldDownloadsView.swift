@@ -129,7 +129,7 @@ struct OldDownloadsView: View {
             metricCard(icon: "folder.fill", tint: DiskMapTheme.info,
                        value: ByteFormat.string(summary.totalBytes),
                        title: "Old downloads",
-                       subtitle: "in \(summary.totalCount) files")
+                       subtitle: "all candidates · \(summary.totalCount) files")
             metricCard(icon: "calendar", tint: DiskMapTheme.danger,
                        value: ByteFormat.string(summary.bytes30),
                        title: "30+ days old",
@@ -322,15 +322,17 @@ struct OldDownloadsView: View {
 
     private var tableHeader: some View {
         HStack(spacing: 8) {
-            Toggle("", isOn: Binding(
-                get: { !visible.isEmpty && visible.allSatisfy { checked.contains($0.nodeID) } },
-                set: { on in
-                    if on { checked.formUnion(visible.map(\.nodeID)) }
-                    else { checked.subtract(visible.map(\.nodeID)) }
-                }
-            ))
-            .toggleStyle(.checkbox)
-            .labelsHidden()
+            Button {
+                let allOn = !visible.isEmpty && visible.allSatisfy { checked.contains($0.nodeID) }
+                if allOn { checked.subtract(visible.map(\.nodeID)) }
+                else { checked.formUnion(visible.map(\.nodeID)) }
+            } label: {
+                let allOn = !visible.isEmpty && visible.allSatisfy { checked.contains($0.nodeID) }
+                Image(systemName: allOn ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 16))
+                    .foregroundStyle(allOn ? DiskMapTheme.info : DiskMapTheme.mutedLabel)
+            }
+            .buttonStyle(.plain)
             .frame(width: 22)
             Text("NAME").frame(maxWidth: .infinity, alignment: .leading)
             Text("SIZE").frame(width: 80, alignment: .trailing)
@@ -357,15 +359,21 @@ struct OldDownloadsView: View {
     private func row(_ item: OldDownloadsCandidate) -> some View {
         let selected = selectedID == item.nodeID
         return HStack(spacing: 8) {
-            Toggle("", isOn: Binding(
-                get: { checked.contains(item.nodeID) },
-                set: { on in
-                    if on { checked.insert(item.nodeID) } else { checked.remove(item.nodeID) }
+            Button {
+                if checked.contains(item.nodeID) {
+                    checked.remove(item.nodeID)
+                } else {
+                    checked.insert(item.nodeID)
+                    selectedID = item.nodeID
                 }
-            ))
-            .toggleStyle(.checkbox)
-            .labelsHidden()
+            } label: {
+                Image(systemName: checked.contains(item.nodeID) ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 16))
+                    .foregroundStyle(checked.contains(item.nodeID) ? DiskMapTheme.info : DiskMapTheme.mutedLabel)
+            }
+            .buttonStyle(.plain)
             .frame(width: 22)
+            .contentShape(Rectangle())
 
             HStack(spacing: 10) {
                 Image(systemName: item.kind.symbolName)
@@ -479,11 +487,21 @@ struct OldDownloadsView: View {
 
     private var footerBar: some View {
         HStack {
-            Text("0 selected · 0 B")
+            Group {
+                if checked.isEmpty {
+                    if active != nil {
+                        Text("Inspecting · check boxes to multi-select")
+                    } else {
+                        Text("Check boxes to select for Cleanup")
+                    }
+                } else {
+                    Text("\(checkedItems.count) selected · \(ByteFormat.string(checkedBytes))")
+                }
+            }
                 .font(.system(size: 11))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Spacer()
-            Text("\(visible.count) files · \(ByteFormat.string(visible.reduce(Int64(0)) { $0 + $1.bytes }))")
+            Text("Showing \(visible.count) of \(catalog.candidates.count) · \(ByteFormat.string(visible.reduce(Int64(0)) { $0 + $1.bytes }))")
                 .font(.system(size: 11))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Button("Rescan") {

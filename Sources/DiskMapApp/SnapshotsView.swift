@@ -68,7 +68,7 @@ struct SnapshotsView: View {
     private var visibleRecords: [SnapshotRecord] {
         switch listFilter {
         case .all: return allRecords
-        case .favorites: return allRecords.filter { $0.meta.favorite || $0.isCurrent }
+        case .favorites: return allRecords.filter { $0.meta.favorite }
         }
     }
 
@@ -173,7 +173,7 @@ struct SnapshotsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
                 if records.isEmpty && currentRecord != nil {
-                    firstUseBanner
+                    compactFirstUseTip
                 }
                 HStack(alignment: .top, spacing: 14) {
                     historyPanel
@@ -207,6 +207,27 @@ struct SnapshotsView: View {
         }
     }
 
+    private var compactFirstUseTip: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "info.circle")
+                .foregroundStyle(DiskMapTheme.info)
+            Text("Save a snapshot to start history. Comparing later shows what grew or shrank — snapshots are analytical, not backups.")
+                .font(.system(size: 12))
+                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(DiskMapTheme.info.opacity(0.07))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(DiskMapTheme.info.opacity(0.2), lineWidth: 1)
+                )
+        )
+    }
+
     private var firstUseBanner: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Storage History")
@@ -234,7 +255,7 @@ struct SnapshotsView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 ForEach(ListFilter.allCases) { f in
-                    let count = f == .all ? allRecords.count : allRecords.filter { $0.meta.favorite || $0.isCurrent }.count
+                    let count = f == .all ? allRecords.count : allRecords.filter { $0.meta.favorite }.count
                     Button {
                         listFilter = f
                     } label: {
@@ -372,10 +393,11 @@ struct SnapshotsView: View {
                     Picker("", selection: $beforeID) {
                         Text("Select…").tag(String?.none)
                         ForEach(records) { rec in
-                            Text("\(rec.displayName) · \(ByteFormat.string(rec.usedBytes))").tag(Optional(rec.id))
+                            Text(rec.pickerLabel).tag(Optional(rec.id))
                         }
                     }
                     .labelsHidden()
+                    .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
                 }
                 Image(systemName: "arrow.right")
                     .foregroundStyle(DiskMapTheme.mutedLabel)
@@ -386,13 +408,14 @@ struct SnapshotsView: View {
                     Picker("", selection: $afterID) {
                         Text("Select…").tag(String?.none)
                         ForEach(records) { rec in
-                            Text("\(rec.displayName) · \(ByteFormat.string(rec.usedBytes))").tag(Optional(rec.id))
+                            Text(rec.pickerLabel).tag(Optional(rec.id))
                         }
                         if let current = currentRecord {
-                            Text("Current scan · \(ByteFormat.string(current.usedBytes))").tag(Optional(current.id))
+                            Text(current.pickerLabel).tag(Optional(current.id))
                         }
                     }
                     .labelsHidden()
+                    .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
                 }
                 Button("Compare") { Task { await runCompare() } }
                     .buttonStyle(PrimaryCTAStyle())
@@ -585,7 +608,7 @@ struct SnapshotsView: View {
                     Divider().overlay(DiskMapTheme.cardStroke.opacity(0.5))
                 }
                 if report.folderChanges.count > 80 {
-                    Text("Showing top matches — \(report.folderChanges.count.formatted()) folder changes total.")
+                    Text("Showing top matches — \(Self.formatCount(report.folderChanges.count)) folder changes total.")
                         .font(.system(size: 11))
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
@@ -638,10 +661,10 @@ struct SnapshotsView: View {
                     StatRow(label: "Capacity", value: ByteFormat.string(rec.totalBytes))
                 }
                 if let files = rec.meta.fileCount {
-                    StatRow(label: "Files", value: files.formatted())
+                    StatRow(label: "Files", value: Self.formatCount(files))
                 }
                 if let folders = rec.meta.folderCount {
-                    StatRow(label: "Folders", value: folders.formatted())
+                    StatRow(label: "Folders", value: Self.formatCount(folders))
                 }
                 if let secs = rec.meta.scanSeconds {
                     StatRow(label: "Scan time", value: String(format: "%.1fs", secs))
@@ -882,6 +905,18 @@ struct SnapshotsView: View {
     private func signed(_ delta: Int64) -> String {
         let sign = delta >= 0 ? "+" : "−"
         return "\(sign)\(ByteFormat.string(abs(delta)))"
+    }
+}
+
+
+private extension SnapshotsView {
+    static func formatCount(_ n: Int) -> String {
+        let f = NumberFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.numberStyle = .decimal
+        f.groupingSeparator = ","
+        f.usesGroupingSeparator = true
+        return f.string(from: NSNumber(value: n)) ?? "\(n)"
     }
 }
 

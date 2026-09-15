@@ -119,10 +119,12 @@ struct AppsView: View {
             Spacer(minLength: 12)
             if checked.isEmpty {
                 HStack(spacing: 8) {
-                    if selectedID != nil {
-                        Text("1 application selected")
-                            .font(.system(size: 11))
+                    if let active {
+                        Text(active.name)
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(DiskMapTheme.mutedLabel)
+                            .lineLimit(1)
+                            .frame(maxWidth: 140)
                     }
                     Button("Open") { openSelected() }
                         .buttonStyle(InkButtonStyle(filled: false))
@@ -311,14 +313,20 @@ struct AppsView: View {
     private func appRow(_ app: ApplicationEntry, index: Int) -> some View {
         let selected = selectedID == app.id
         return HStack(spacing: 8) {
-            Toggle("", isOn: Binding(
-                get: { checked.contains(app.id) },
-                set: { on in
-                    if on { checked.insert(app.id) } else { checked.remove(app.id) }
+            Button {
+                if checked.contains(app.id) {
+                    checked.remove(app.id)
+                } else {
+                    checked.insert(app.id)
+                    selectedID = app.id
+                    inspectorTab = .overview
                 }
-            ))
-            .toggleStyle(.checkbox)
-            .labelsHidden()
+            } label: {
+                Image(systemName: checked.contains(app.id) ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 16))
+                    .foregroundStyle(checked.contains(app.id) ? DiskMapTheme.info : DiskMapTheme.mutedLabel)
+            }
+            .buttonStyle(.plain)
             .frame(width: 22)
 
             Text("\(index)")
@@ -645,7 +653,7 @@ struct AppsView: View {
             GeometryReader { geo in
                 HStack(spacing: 2) {
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(DiskMapTheme.info)
+                        .fill(Color(red: 0.30, green: 0.55, blue: 0.95))
                         .frame(width: max(app.bundleBytes > 0 ? 4 : 0, geo.size.width * bundleFrac))
                     RoundedRectangle(cornerRadius: 3)
                         .fill(DiskMapTheme.review)
@@ -777,8 +785,10 @@ struct AppsView: View {
             )
             stubs.append(entry)
         }
-        apps = ApplicationsCatalog.sorted(stubs, by: .nameAsc)
-        selectedID = apps.first?.id
+        apps = ApplicationsCatalog.sorted(stubs, by: sort)
+        if selectedID == nil || !apps.contains(where: { $0.id == selectedID }) {
+            selectedID = apps.first?.id
+        }
         isLoading = false
 
         loadTask?.cancel()
@@ -960,10 +970,12 @@ private enum AppMetadata {
         let name = (bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
             ?? (bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String)
             ?? url.deletingPathExtension().lastPathComponent
-        let publisher = bundle?.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String
         let shortPublisher: String? = {
-            if let p = publisher, p.count < 80 { return p }
-            return bundle?.object(forInfoDictionaryKey: "CFBundleGetInfoString") as? String
+            if let team = bundle?.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String {
+                let cleaned = cleanPublisher(team)
+                if let cleaned, !cleaned.isEmpty { return cleaned }
+            }
+            return nil
         }()
         let version = bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         var lastUsed: Date?
@@ -985,5 +997,16 @@ private enum AppMetadata {
             lastUsed: lastUsed,
             installed: installed
         )
+    }
+
+    private static func cleanPublisher(_ raw: String) -> String? {
+        var s = raw
+        // Strip "Copyright © 2024 Company." boilerplate
+        if let r = try? NSRegularExpression(pattern: #"(?i)copyright\s*(©|\(c\))?\s*\d{4}\s*"#) {
+            s = r.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "")
+        }
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+        if s.count > 48 { s = String(s.prefix(45)) + "…" }
+        return s.isEmpty ? nil : s
     }
 }
