@@ -288,9 +288,7 @@ struct AppShellView: View {
                 onOpenCleanup: { showCleanup = true }
             )
         case .snapshots:
-            if let tree = model.tree, let root = model.rootURL {
-                SnapshotDiffView(tree: tree, rootURL: root, basis: model.sizeBasis)
-            } else { needsScan }
+            SnapshotsView(model: model)
         }
     }
 
