@@ -41,6 +41,29 @@ public struct DuplicateGroup: Sendable, Equatable {
     }
 }
 
+
+public enum DuplicateScanPhase: String, Sendable, Equatable {
+    case idle
+    case collecting
+    case grouping
+    case hashing
+    case complete
+    case cancelled
+    case failed
+
+    public var title: String {
+        switch self {
+        case .idle: return "Ready"
+        case .collecting: return "Collecting candidate files…"
+        case .grouping: return "Grouping by size…"
+        case .hashing: return "Hashing colliding files…"
+        case .complete: return "Finished"
+        case .cancelled: return "Cancelled"
+        case .failed: return "Failed"
+        }
+    }
+}
+
 public struct DuplicateScanResult: Sendable, Equatable {
     public var groups: [DuplicateGroup]
     public var fullContentHashCalls: Int
@@ -59,9 +82,10 @@ public struct DuplicateScanResult: Sendable, Equatable {
 public enum DuplicateFinder {
 
     public static func findDuplicates(
-        candidates: [(id: Int32, url: URL, size: Int64)]
-    ) async -> [DuplicateGroup] {
-        await scan(candidates).groups
+        candidates: [(id: Int32, url: URL, size: Int64)],
+        progress: (@Sendable (DuplicateScanPhase, Int, Int) -> Void)? = nil
+    ) async throws -> [DuplicateGroup] {
+        try await scan(candidates, progress: progress).groups
     }
 
     /// Regular files under `root`, skipping directories, empty files, and
@@ -87,28 +111,41 @@ public enum DuplicateFinder {
     }
 
     public static func scan(
-        _ candidates: [(id: Int32, url: URL, size: Int64)]
-    ) async -> DuplicateScanResult {
+        _ candidates: [(id: Int32, url: URL, size: Int64)],
+        progress: (@Sendable (DuplicateScanPhase, Int, Int) -> Void)? = nil
+    ) async throws -> DuplicateScanResult {
+        progress?(.grouping, 0, 0)
         var bySize: [Int64: [(id: Int32, url: URL)]] = [:]
         for candidate in candidates where candidate.size > 0 {
+            try Task.checkCancellation()
             bySize[candidate.size, default: []].append((candidate.id, candidate.url))
         }
 
+        let colliding = bySize.filter { $0.value.count > 1 }
+        let totalBuckets = colliding.count
+        progress?(.hashing, 0, totalBuckets)
+
         var groups: [DuplicateGroup] = []
         var fullContentHashCalls = 0
+        var done = 0
 
-        await withTaskGroup(of: DuplicateScanResult.self) { taskGroup in
-            for (size, files) in bySize where files.count > 1 {
+        try await withThrowingTaskGroup(of: DuplicateScanResult.self) { taskGroup in
+            for (size, files) in colliding {
                 taskGroup.addTask {
-                    hashAndGroup(files: files, size: size)
+                    try Task.checkCancellation()
+                    return hashAndGroup(files: files, size: size)
                 }
             }
-            for await partial in taskGroup {
+            for try await partial in taskGroup {
+                try Task.checkCancellation()
                 groups.append(contentsOf: partial.groups)
                 fullContentHashCalls += partial.fullContentHashCalls
+                done += 1
+                progress?(.hashing, done, totalBuckets)
             }
         }
 
+        progress?(.complete, totalBuckets, totalBuckets)
         return DuplicateScanResult(groups: groups, fullContentHashCalls: fullContentHashCalls)
     }
 

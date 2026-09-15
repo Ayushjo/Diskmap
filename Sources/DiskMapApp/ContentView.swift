@@ -17,6 +17,12 @@ final class ScanModel: ObservableObject {
     @Published var rootURL: URL?
     @Published var duplicateGroups: [DuplicateGroup] = []
     @Published var isFindingDuplicates = false
+    @Published var duplicatePhase: DuplicateScanPhase = .idle
+    @Published var duplicateProgressDone = 0
+    @Published var duplicateProgressTotal = 0
+    @Published var duplicateError: String?
+    @Published var duplicateDidRun = false
+    private var duplicateTask: Task<Void, Never>?
     @Published var stagedItems: [CleanupQueue.StagedItem] = []
     @Published var reclaimableBytes: Int64 = 0
     @Published var lastCommitLines: [String] = []
@@ -79,6 +85,12 @@ final class ScanModel: ObservableObject {
         cachedQuickWins = []
         cachedFileTypes = []
         duplicateGroups = []
+        duplicatePhase = .idle
+        duplicateProgressDone = 0
+        duplicateProgressTotal = 0
+        duplicateError = nil
+        duplicateDidRun = false
+        cancelDuplicateSearch()
         folderFilterPath = nil
         cachedForgotten = []
         cachedForgottenSummary = .empty
@@ -214,11 +226,61 @@ final class ScanModel: ObservableObject {
     }
 
     func findDuplicates() async {
-        guard let tree, let rootURL else { return }
+        guard tree != nil, rootURL != nil else { return }
+        cancelDuplicateSearch()
+        duplicateError = nil
+        duplicateDidRun = false
         isFindingDuplicates = true
-        let files = DuplicateFinder.candidates(in: tree, root: rootURL)
-        duplicateGroups = await DuplicateFinder.findDuplicates(candidates: files)
-        isFindingDuplicates = false
+        duplicatePhase = .collecting
+        duplicateProgressDone = 0
+        duplicateProgressTotal = 0
+
+        let task = Task { @MainActor in
+            guard let tree = self.tree, let rootURL = self.rootURL else {
+                self.isFindingDuplicates = false
+                self.duplicatePhase = .idle
+                return
+            }
+            do {
+                self.duplicatePhase = .collecting
+                let files = DuplicateFinder.candidates(in: tree, root: rootURL)
+                try Task.checkCancellation()
+                self.duplicatePhase = .grouping
+                let groups = try await DuplicateFinder.findDuplicates(candidates: files) { phase, done, total in
+                    Task { @MainActor in
+                        self.duplicatePhase = phase
+                        self.duplicateProgressDone = done
+                        self.duplicateProgressTotal = total
+                    }
+                }
+                try Task.checkCancellation()
+                self.duplicateGroups = groups
+                self.duplicatePhase = .complete
+                self.duplicateDidRun = true
+                self.isFindingDuplicates = false
+            } catch is CancellationError {
+                self.duplicatePhase = .cancelled
+                self.isFindingDuplicates = false
+                self.duplicateDidRun = true
+            } catch {
+                self.duplicateError = error.localizedDescription
+                self.duplicatePhase = .failed
+                self.isFindingDuplicates = false
+                self.duplicateDidRun = true
+            }
+        }
+        duplicateTask = task
+        await task.value
+    }
+
+    func cancelDuplicateSearch() {
+        duplicateTask?.cancel()
+        duplicateTask = nil
+        if isFindingDuplicates {
+            isFindingDuplicates = false
+            duplicatePhase = .cancelled
+            duplicateDidRun = true
+        }
     }
 
     func rebuildAnalysis() {

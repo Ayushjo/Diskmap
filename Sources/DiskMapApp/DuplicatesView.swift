@@ -15,8 +15,28 @@ struct DuplicatesView: View {
             Divider().overlay(DiskMapTheme.cardStroke)
 
             if model.isFindingDuplicates {
-                ProgressView("Hashing files that are not shared clones…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                loadingState
+            } else if let err = model.duplicateError {
+                DiskMapEmptyState(
+                    symbol: "exclamationmark.triangle",
+                    title: "Couldn’t finish duplicate search",
+                    message: err,
+                    primaryTitle: "Try again",
+                    primaryAction: { Task { await model.findDuplicates() } },
+                    secondaryTitle: "Clear",
+                    secondaryAction: {
+                        model.duplicateError = nil
+                        model.duplicatePhase = .idle
+                    }
+                )
+            } else if model.duplicatePhase == .cancelled && model.duplicateGroups.isEmpty {
+                DiskMapEmptyState(
+                    symbol: "stop.circle",
+                    title: "Search cancelled",
+                    message: "No duplicate groups were kept from the cancelled run. Start again when you’re ready.",
+                    primaryTitle: "Find Duplicates",
+                    primaryAction: { Task { await model.findDuplicates() } }
+                )
             } else if model.duplicateGroups.isEmpty {
                 emptyState
             } else {
@@ -28,6 +48,16 @@ struct DuplicatesView: View {
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
                 .background(DiskMapTheme.cream)
+
+                if !checked.isEmpty {
+                    SelectionToolbar(
+                        selectedCount: checked.count,
+                        selectedBytes: reclaimable,
+                        primaryTitle: "Stage selected",
+                        onPrimary: { Task { await stageSelected() } },
+                        onClear: { checked.removeAll() }
+                    )
+                }
             }
         }
         .background(DiskMapTheme.cream)
@@ -37,9 +67,9 @@ struct DuplicatesView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DiskMapSpace.sm) {
             HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DiskMapSpace.xxs) {
                     Text("Duplicates")
                         .font(DiskMapType.title)
                         .foregroundStyle(DiskMapTheme.ink)
@@ -48,7 +78,7 @@ struct DuplicatesView: View {
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
                 Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: DiskMapSpace.xxs) {
                     Text("Will free \(diskByteString(reclaimable))")
                         .font(.system(size: 13, weight: .semibold).monospacedDigit())
                         .foregroundStyle(DiskMapTheme.ink)
@@ -57,15 +87,19 @@ struct DuplicatesView: View {
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
             }
-            HStack(spacing: 8) {
-                Button(model.isFindingDuplicates ? "Searching…" : "Find Duplicates") {
-                    Task { await model.findDuplicates() }
+            HStack(spacing: DiskMapSpace.xs) {
+                if model.isFindingDuplicates {
+                    Button("Cancel") { model.cancelDuplicateSearch() }
+                        .buttonStyle(InkButtonStyle(filled: false))
+                } else {
+                    Button("Find Duplicates") {
+                        Task { await model.findDuplicates() }
+                    }
+                    .buttonStyle(InkButtonStyle())
                 }
-                .buttonStyle(InkButtonStyle())
-                .disabled(model.isFindingDuplicates)
                 Button("Stage selected") { Task { await stageSelected() } }
                     .buttonStyle(PrimaryCTAStyle())
-                    .disabled(checked.isEmpty)
+                    .disabled(checked.isEmpty || model.isFindingDuplicates)
                 if model.duplicateGroups.contains(where: { $0.fileIDs.contains(model.selectedNode) }) {
                     Button("Show in Explore") {
                         model.exploreMode = .treemap
@@ -75,30 +109,46 @@ struct DuplicatesView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(DiskMapSpace.md)
+    }
+
+    private var loadingState: some View {
+        let total = model.duplicateProgressTotal
+        let done = model.duplicateProgressDone
+        let fraction: Double? = total > 0 ? Double(done) / Double(total) : nil
+        return DiskMapLoadingState(
+            title: model.duplicatePhase.title,
+            detail: loadingDetail,
+            fraction: fraction,
+            processed: total > 0 ? done : nil,
+            total: total > 0 ? total : nil,
+            onCancel: { model.cancelDuplicateSearch() }
+        )
+    }
+
+    private var loadingDetail: String {
+        switch model.duplicatePhase {
+        case .collecting:
+            return "Listing local files from the last scan. Cloud-only placeholders are skipped so they aren’t downloaded."
+        case .grouping:
+            return "Looking for files that share the same size — the cheap first filter."
+        case .hashing:
+            return "Hashing colliding files. Shared APFS clones are detected without a full content hash when possible."
+        default:
+            return "Working…"
+        }
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "doc.on.doc")
-                .font(.system(size: 28, weight: .light))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text("No duplicate groups yet")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(DiskMapTheme.ink)
-            Text("Find Duplicates reads local file contents. Cloud-only files are skipped so they are not downloaded. Shared APFS clones are labeled separately.")
-                .font(DiskMapType.body)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
-            Button("Find Duplicates") {
-                Task { await model.findDuplicates() }
-            }
-            .buttonStyle(InkButtonStyle())
-            .disabled(model.isFindingDuplicates)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        DiskMapEmptyState(
+            symbol: "doc.on.doc",
+            title: model.duplicateDidRun ? "No duplicate groups found" : "No duplicate groups yet",
+            message: model.duplicateDidRun
+                ? "DiskMap didn’t find content-identical groups in this scan. Shared APFS clones and unique files won’t appear here."
+                : "Find Duplicates reads local file contents. Cloud-only files are skipped so they are not downloaded. Shared APFS clones are labeled separately.",
+            primaryTitle: "Find Duplicates",
+            primaryAction: { Task { await model.findDuplicates() } }
+        )
     }
 
     private var reclaimable: Int64 {
@@ -130,7 +180,7 @@ struct DuplicatesView: View {
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(DiskMapTheme.ink)
                                 .lineLimit(1)
-                            Text(tree.path(of: id, root: rootURL).path)
+                            Text(CanonicalPath.displayPath(absolutePath: tree.path(of: id, root: rootURL).path))
                                 .font(.system(size: 11).monospaced())
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .lineLimit(1)
@@ -144,11 +194,16 @@ struct DuplicatesView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .listRowBackground(id == model.selectedNode ? DiskMapTheme.ink.opacity(0.08) : Color.clear)
+                .listRowBackground(id == model.selectedNode ? DiskMapTheme.navSelected : Color.clear)
             }
         } header: {
-            Text(group.sharesStorage ? "Shared clone · \(diskByteString(group.sizeEach)) each" : "Same contents · \(diskByteString(group.sizeEach)) each")
-                .foregroundStyle(DiskMapTheme.ink)
+            HStack {
+                Text(group.sharesStorage ? "Shared clone · \(diskByteString(group.sizeEach)) each" : "Same contents · \(diskByteString(group.sizeEach)) each")
+                    .foregroundStyle(DiskMapTheme.ink)
+                if group.sharesStorage {
+                    ClassificationBadge(kind: .custom(title: "APFS clone", tint: DiskMapTheme.info))
+                }
+            }
         }
     }
 

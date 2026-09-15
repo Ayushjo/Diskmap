@@ -126,8 +126,8 @@ Keep canvas implementations; redesign chrome only.
 
 | Phase | Focus | Status |
 |-------|--------|--------|
-| 0 | Audit + branch | **Done (this doc)** |
-| 1 | Design tokens + shared Inspector / FileRow / SelectionToolbar / Empty+Loading | Next |
+| 0 | Audit + branch | **Done** |
+| 1 | Design tokens + shared Empty/Loading/Badge/SelectionToolbar + Duplicates states | **Done (SharedChrome + Duplicates progress/cancel)** |
 | 2 | AppShell responsive + consistent top bar / cleanup badge | |
 | 3 | Pass Overview → Biggest Files/Folders for shared components | |
 | 4 | Forgotten + Safe/Caches badge/footer consistency | |
