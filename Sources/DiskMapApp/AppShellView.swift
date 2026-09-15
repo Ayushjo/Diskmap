@@ -281,7 +281,11 @@ struct AppShellView: View {
                 pickFolder: pickFolder
             )
         case .cleanMedia:
-            CleanReviewView(model: model, mode: model.destination, showCleanup: $showCleanup, pickFolder: pickFolder)
+            LargeMediaView(
+                model: model,
+                onOpenCleanup: { showCleanup = true },
+                pickFolder: pickFolder
+            )
         case .developerStorage:
             DeveloperStorageView(
                 model: model,

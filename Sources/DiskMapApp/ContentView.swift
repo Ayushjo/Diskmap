@@ -45,6 +45,7 @@ final class ScanModel: ObservableObject {
     @Published var cachedReviewableSummary: ReviewableSummary = .empty
     @Published var cachedDeveloper: DeveloperCatalogResult = .empty
     @Published var cachedOldDownloads: OldDownloadsCatalogResult = .empty
+    @Published var cachedLargeMedia: MediaCatalogResult = .empty
 
     let cleanupQueue = CleanupQueue()
     let fileTypeCategories = FileTypeCatalog.loadBundled()
@@ -85,6 +86,7 @@ final class ScanModel: ObservableObject {
         cachedReviewableSummary = .empty
         cachedDeveloper = .empty
         cachedOldDownloads = .empty
+        cachedLargeMedia = .empty
         log("scan start \(url.path)")
 
         let before = ProcessMemory.current()
@@ -163,6 +165,11 @@ final class ScanModel: ObservableObject {
             totals: allocated
         )
         cachedOldDownloads = OldDownloadsCatalog.build(
+            tree: result.tree,
+            root: url,
+            totals: allocated
+        )
+        cachedLargeMedia = MediaCatalog.build(
             tree: result.tree,
             root: url,
             totals: allocated
@@ -253,6 +260,18 @@ final class ScanModel: ObservableObject {
             return
         }
         cachedOldDownloads = OldDownloadsCatalog.build(
+            tree: tree,
+            root: rootURL,
+            totals: selectedTotals
+        )
+    }
+
+    func refreshLargeMediaCache() {
+        guard let tree, let rootURL, selectedTotals.count == tree.count else {
+            cachedLargeMedia = .empty
+            return
+        }
+        cachedLargeMedia = MediaCatalog.build(
             tree: tree,
             root: rootURL,
             totals: selectedTotals
