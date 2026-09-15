@@ -689,26 +689,7 @@ private struct ForgottenInspectorPanel: View {
                 meta("Type", candidate.kind.title)
                 meta("Size", "\(candidate.bytes.formatted()) bytes")
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Why was this flagged?")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(DiskMapTheme.ink)
-                    ForEach(candidate.reasons, id: \.self) { reason in
-                        HStack(alignment: .top, spacing: 6) {
-                            Text("•").foregroundStyle(DiskMapTheme.mutedLabel)
-                            Text(reason)
-                                .font(.system(size: 12))
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(red: 0.93, green: 0.95, blue: 0.99))
-                )
+                WhyCard(title: "Why was this flagged?", bodyText: candidate.reasons.map { "• \($0)" }.joined(separator: "\n"))
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Our recommendation")

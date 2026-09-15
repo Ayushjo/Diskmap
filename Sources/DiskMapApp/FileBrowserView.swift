@@ -131,7 +131,7 @@ struct FileBrowserView: View {
             if showInspector {
                 Divider().overlay(DiskMapTheme.cardStroke)
                 inspector
-                    .frame(width: 312)
+                    .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
             }
         }
         .background(DiskMapTheme.cream)

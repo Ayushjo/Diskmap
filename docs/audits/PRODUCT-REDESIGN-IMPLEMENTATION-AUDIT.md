@@ -139,3 +139,17 @@ Keep canvas implementations; redesign chrome only.
 | 10 | PR #15 onto `perf` | Open — continue commits |
 
 **Success:** one native macOS storage-intelligence app; explain → investigate → review → Cleanup → Trash; no invented facts; scanner/runtime preserved.
+
+
+## Status (2026-09-15 consolidation)
+
+Shipped on `feat/diskmap-product-redesign` / PR #15:
+
+- Shared chrome kit + Duplicates terminal states
+- WhyCard / SafetyCard / SelectionToolbar / badges rolled through major Find/Clean/Explore pages
+- Large Media Quick Look thumbnails (lazy)
+- Adaptive inspector width from shell content GeometryReader
+- Cleanup badge shows reclaimable bytes
+- Visualize mode purpose blurbs + help
+
+**Intentionally deferred (not blockers):** unified Cmd/Shift multi-select model across every table; pixel-perfect QA vs every reference PNG; collapsing inspector to sheet under ~980px (width scales today); Forgotten/Safe custom selection bars kept for “Select visible / generally safe”.
