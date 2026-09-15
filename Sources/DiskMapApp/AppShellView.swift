@@ -9,7 +9,10 @@ struct AppShellView: View {
     @State private var showExplain = false
     @State private var showPalette = false
     @State private var searchText = ""
+    @State private var needsScanReady = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var hasCompletedScan: Bool { model.tree != nil }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -76,8 +79,14 @@ struct AppShellView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .accessibilityLabel("Search storage")
-                .onSubmit { showPalette = true }
+                .disabled(!hasCompletedScan)
+                .opacity(hasCompletedScan ? 1 : 0.45)
+                .onSubmit {
+                    guard hasCompletedScan else { return }
+                    showPalette = true
+                }
             Button {
+                guard hasCompletedScan else { return }
                 showPalette = true
             } label: {
                 Text("⌘K")
@@ -88,6 +97,9 @@ struct AppShellView: View {
             }
             .buttonStyle(.plain)
             .keyboardShortcut("k", modifiers: .command)
+            .disabled(!hasCompletedScan)
+            .opacity(hasCompletedScan ? 1 : 0.45)
+            .help(hasCompletedScan ? "Command palette" : "Scan first to search")
             Spacer()
             Button {
                 showCleanup = true
@@ -107,22 +119,28 @@ struct AppShellView: View {
                 .font(.system(size: 12, weight: .medium))
             }
             .buttonStyle(InkButtonStyle(filled: !model.stagedItems.isEmpty))
-            .help(model.stagedItems.isEmpty
-                  ? "Review items staged for Trash"
-                  : "\(model.stagedItems.count) items · \(ByteFormat.string(model.reclaimableBytes)) reclaimable")
+            .disabled(!hasCompletedScan)
+            .opacity(hasCompletedScan ? 1 : 0.4)
+            .help(!hasCompletedScan
+                  ? "Scan first to stage cleanup"
+                  : (model.stagedItems.isEmpty
+                     ? "Review items staged for Trash"
+                     : "\(model.stagedItems.count) items · \(ByteFormat.string(model.reclaimableBytes)) reclaimable"))
             .accessibilityLabel(model.stagedItems.isEmpty ? "Cleanup" : "Cleanup, \(model.stagedItems.count) items")
-            Button {
-                if let root = model.rootURL {
-                    Task { await model.scan(root) }
-                } else {
-                    pickFolder()
+            if hasCompletedScan {
+                Button {
+                    if let root = model.rootURL {
+                        Task { await model.scan(root) }
+                    } else {
+                        pickFolder()
+                    }
+                } label: {
+                    Label("Rescan", systemImage: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .medium))
                 }
-            } label: {
-                Label("Rescan", systemImage: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
+                .buttonStyle(InkButtonStyle(filled: false))
+                .disabled(model.isScanning)
             }
-            .buttonStyle(InkButtonStyle(filled: false))
-            .disabled(model.isScanning)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -175,7 +193,9 @@ struct AppShellView: View {
     }
 
     private func navRow(_ dest: AppDestination) -> some View {
-        Button {
+        let locked = dest.requiresScan && !hasCompletedScan
+        return Button {
+            guard !locked else { return }
             model.destination = dest
             if dest == .visualize { model.topNav = .explore }
             if dest == .duplicates { model.topNav = .duplicates }
@@ -193,18 +213,20 @@ struct AppShellView: View {
                     .font(.system(size: 13, weight: model.destination == dest ? .semibold : .regular))
                 Spacer()
             }
-            .foregroundStyle(DiskMapTheme.ink)
+            .foregroundStyle(locked ? DiskMapTheme.mutedLabel.opacity(0.55) : DiskMapTheme.ink)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(model.destination == dest ? DiskMapTheme.navSelected : Color.clear)
+                    .fill(model.destination == dest && !locked ? DiskMapTheme.navSelected : Color.clear)
             )
             .padding(.horizontal, 8)
         }
         .buttonStyle(.plain)
-            .accessibilityLabel(dest.label)
-            .accessibilityAddTraits(model.destination == dest ? .isSelected : [])
+        .disabled(locked)
+        .help(locked ? "Scan first" : dest.label)
+        .accessibilityLabel(locked ? "\(dest.label), scan first" : dest.label)
+        .accessibilityAddTraits(model.destination == dest ? .isSelected : [])
     }
 
     private var volumeChip: some View {
@@ -213,7 +235,7 @@ struct AppShellView: View {
             HStack(spacing: 8) {
                 Image(systemName: "internaldrive.fill")
                     .foregroundStyle(DiskMapTheme.mutedLabel)
-                Text(vol?.volumeName ?? "No volume")
+                Text(vol?.volumeName ?? "Macintosh HD")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DiskMapTheme.ink)
             }
@@ -223,12 +245,14 @@ struct AppShellView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
-                Text("Scan to see capacity")
+                ProportionBar(fraction: 0, tint: DiskMapTheme.ink.opacity(0.12))
+                Text("Capacity appears after you scan")
                     .font(.system(size: 10))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
         }
         .padding(10)
+        .opacity(hasCompletedScan ? 1 : 0.72)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(DiskMapTheme.cardFill)
@@ -237,6 +261,7 @@ struct AppShellView: View {
                         .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
                 )
         )
+        .accessibilityLabel(vol.map { "Volume \($0.volumeName)" } ?? "Volume capacity unavailable until scan")
     }
 
     @ViewBuilder
@@ -382,19 +407,16 @@ struct AppShellView: View {
     }
 
     private var needsScan: some View {
-        VStack(spacing: 12) {
-            Text("Scan first to see what's using space")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DiskMapTheme.ink)
-            Text("Pick a folder (or your home directory) — DiskMap never invents filesystem facts.")
-                .font(DiskMapType.body)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
-            Button("Choose Folder…", action: pickFolder)
-                .buttonStyle(InkButtonStyle())
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        FirstScanHero(
+            model: model,
+            pickFolder: pickFolder,
+            onScanMac: {
+                model.destination = .overview
+                let home = FileManager.default.homeDirectoryForCurrentUser
+                Task { await model.scan(home) }
+            },
+            showReady: $needsScanReady
+        )
     }
 
     private func pickFolder() {

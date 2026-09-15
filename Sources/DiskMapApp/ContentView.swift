@@ -62,6 +62,8 @@ final class ScanModel: ObservableObject {
 
     private var didStartLaunchScan = false
     private let logURL = URL(fileURLWithPath: "/tmp/diskmap-scan.log")
+    /// Bumped on cancel / new scan so a finished walk can discard stale results.
+    private var scanGeneration = 0
 
     func startIfRequested() {
         guard !didStartLaunchScan else { return }
@@ -73,7 +75,19 @@ final class ScanModel: ObservableObject {
         Task { await scan(url) }
     }
 
+    func cancelScan() {
+        scanGeneration += 1
+        isScanning = false
+        if tree == nil {
+            rootURL = nil
+            scannedCount = 0
+        }
+        log("scan cancelled")
+    }
+
     func scan(_ url: URL) async {
+        scanGeneration += 1
+        let generation = scanGeneration
         rootURL = url
         isScanning = true
         scannedCount = 0
@@ -109,7 +123,14 @@ final class ScanModel: ObservableObject {
             ScanModel.appendLog("scannedCount=\(count)")
             print("scannedCount=\(count)")
             fflush(stdout)
-            Task { @MainActor in ScanModel.shared.scannedCount = count }
+            Task { @MainActor in
+                guard ScanModel.shared.scanGeneration == generation else { return }
+                ScanModel.shared.scannedCount = count
+            }
+        }
+        guard generation == scanGeneration else {
+            log("scan discarded (cancelled) path=\(url.path)")
+            return
         }
         // Immediately after scan() returns: tree is retained, the
         // enumerator is not. Do this before rollUpSizes, which allocates

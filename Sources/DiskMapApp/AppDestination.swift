@@ -18,6 +18,11 @@ enum AppDestination: Hashable, Identifiable {
 
     var id: String { label }
 
+    /// Destinations that need a completed scan before they show useful content.
+    var requiresScan: Bool {
+        self != .overview
+    }
+
     var label: String {
         switch self {
         case .overview: return "Overview"

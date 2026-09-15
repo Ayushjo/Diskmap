@@ -11,55 +11,40 @@ struct OverviewView: View {
     var onSelectFile: (Int32) -> Void
     var onOpenBiggestFiles: () -> Void = {}
 
+    @State private var showScanReady = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         Group {
-            if model.isScanning {
-                scanning
-            } else if model.tree == nil {
-                empty
+            if model.isScanning || model.tree == nil || showScanReady {
+                FirstScanHero(
+                    model: model,
+                    pickFolder: pickFolder,
+                    onScanMac: {
+                        let home = FileManager.default.homeDirectoryForCurrentUser
+                        Task { await model.scan(home) }
+                    },
+                    showReady: $showScanReady
+                )
             } else {
                 loaded
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DiskMapTheme.cream)
-    }
-
-    private var empty: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "internaldrive")
-                .font(.system(size: 36))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text("Scan your Mac to understand where your storage is going.")
-                .font(DiskMapType.section)
-                .foregroundStyle(DiskMapTheme.ink)
-            Text("Fast. Local. Private.")
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            HStack(spacing: 12) {
-                Button("Scan This Mac") {
-                    Task { await model.scan(URL(fileURLWithPath: "/", isDirectory: true)) }
+        .onChange(of: model.isScanning) { wasScanning, nowScanning in
+            if wasScanning, !nowScanning, model.tree != nil {
+                showScanReady = true
+                if reduceMotion {
+                    showScanReady = false
+                    return
                 }
-                .buttonStyle(InkButtonStyle())
-                Button("Choose Folder…", action: pickFolder)
-                    .buttonStyle(InkButtonStyle(filled: false))
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    await MainActor.run { showScanReady = false }
+                }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var scanning: some View {
-        VStack(spacing: 14) {
-            ProgressView()
-            Text("Analyzing your Mac")
-                .font(DiskMapType.section)
-                .foregroundStyle(DiskMapTheme.ink)
-            Text("Reading filesystem… \(model.scannedCount.formatted()) items")
-                .font(DiskMapType.body)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .accessibilityIdentifier("scan-progress")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var snap: AnalysisSnapshot { model.analysis }
