@@ -83,3 +83,13 @@ available and are flagged `UNVERIFIED` in comments. When you touch one:
   preference here — see the memory-layout rationale in
   `docs/ARCHITECTURE.md` for why per-node object overhead is the specific
   bug this project exists partly to avoid repeating.
+
+## Windows port (`windows/`)
+
+A sibling C#/.NET 10 port lives under `windows/` (`src/DiskMap.Core`,
+`app/DiskMap.App` WPF, `tests/DiskMap.Core.Tests` xUnit). Same rules apply:
+no direct deletion (Recycle Bin via `SHFileOperation(FOF_ALLOWUNDO)` only,
+in `CleanupQueue`), no networking, `windows/src/DiskMap.Core/CleanupQueue.cs`
+holds the Windows excluded-paths list — changes to it get called out.
+Files marked `UNVERIFIED` follow the same verify-then-unflag rule.
+Build/test: `dotnet build windows\DiskMap.Win.slnx`, `dotnet test windows\DiskMap.Win.slnx`.
