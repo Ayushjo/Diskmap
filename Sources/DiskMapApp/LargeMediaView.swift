@@ -55,14 +55,7 @@ struct LargeMediaView: View {
             if model.tree == nil {
                 emptyScan
             } else {
-                HStack(spacing: 0) {
-                    mainColumn
-                    if active != nil {
-                        Divider().overlay(DiskMapTheme.cardStroke)
-                        inspector
-                            .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
-                    }
-                }
+                AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init), main: mainColumn, inspector: inspector)
             }
         }
         .background(DiskMapTheme.cream)
@@ -70,7 +63,6 @@ struct LargeMediaView: View {
             if model.cachedLargeMedia.candidates.isEmpty, model.tree != nil {
                 model.refreshLargeMediaCache()
             }
-            if selectedID == nil { selectedID = visible.first?.nodeID }
         }
     }
 
@@ -93,10 +85,7 @@ struct LargeMediaView: View {
                     opportunities
                     filters
                     tableHeader
-                    if model.isScanning {
-                        ProgressView("Analyzing media…")
-                            .frame(maxWidth: .infinity, minHeight: 120)
-                    } else if visible.isEmpty {
+                    if visible.isEmpty {
                         emptyResults
                     } else {
                         fileRows
@@ -140,18 +129,14 @@ struct LargeMediaView: View {
                        value: ByteFormat.string(summary.totalBytes),
                        title: "Media storage",
                        subtitle: "\(summary.totalCount) files")
-            metricCard(icon: "film", tint: DiskMapTheme.danger,
-                       value: ByteFormat.string(summary.videoBytes),
-                       title: "Video files",
-                       subtitle: "\(summary.videoCount) files")
-            metricCard(icon: "photo", tint: DiskMapTheme.review,
-                       value: ByteFormat.string(summary.imageBytes),
-                       title: "Images & photos",
-                       subtitle: "\(summary.imageCount) files")
-            metricCard(icon: "waveform", tint: DiskMapTheme.developer,
-                       value: ByteFormat.string(summary.audioBytes),
-                       title: "Audio files",
-                       subtitle: "\(summary.audioCount) files")
+            metricCard(icon: "line.3.horizontal.decrease.circle", tint: DiskMapTheme.review,
+                       value: ByteFormat.string(visible.reduce(0) { $0 + $1.bytes }),
+                       title: "Matching media",
+                       subtitle: "Current filters")
+            metricCard(icon: "photo.on.rectangle.angled", tint: DiskMapTheme.developer,
+                       value: "\(visible.count.formatted())",
+                       title: "Files shown",
+                       subtitle: "Videos, images, audio and projects")
         }
     }
 
@@ -181,14 +166,18 @@ struct LargeMediaView: View {
     }
 
     private var breakdowns: some View {
-        HStack(alignment: .top, spacing: 12) {
-            breakdownPanel(title: "Media storage by type", buckets: summary.typeBuckets) { bucket in
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Media overview")
+                .font(DiskMapType.section)
+                .foregroundStyle(DiskMapTheme.ink)
+            HStack(alignment: .top, spacing: 18) {
+            breakdownPanel(title: "By type", buckets: summary.typeBuckets) { bucket in
                 if let t = MediaTypeFilter(rawValue: bucket.id) { typeFilter = t }
             }
-            breakdownPanel(title: "Where is your media?", buckets: summary.locationBuckets) { bucket in
+            breakdownPanel(title: "By location", buckets: summary.locationBuckets) { bucket in
                 if let loc = MediaLocationFilter(rawValue: bucket.id) { locationFilter = loc }
             }
-            breakdownPanel(title: "Age distribution", buckets: summary.ageBuckets) { bucket in
+            breakdownPanel(title: "By age", buckets: summary.ageBuckets) { bucket in
                 switch bucket.id {
                 case "a30": ageFilter = .all; sizeFilter = .any
                 case "a90": ageFilter = .days30
@@ -197,7 +186,10 @@ struct LargeMediaView: View {
                 default: break
                 }
             }
+            }
         }
+        .padding(12)
+        .background(cardBG)
     }
 
     private func breakdownPanel(title: String, buckets: [MediaBucket], onSelect: @escaping (MediaBucket) -> Void) -> some View {
@@ -245,9 +237,7 @@ struct LargeMediaView: View {
                 }
             }
         }
-        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBG)
     }
 
     private func barTint(for id: String) -> Color {
@@ -304,7 +294,8 @@ struct LargeMediaView: View {
                 Text(item.name)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DiskMapTheme.ink)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .frame(height: 30, alignment: .topLeading)
                     .frame(width: 160, alignment: .leading)
                 Text("\(ByteFormat.string(item.bytes)) · \(item.location.title)")
                     .font(.system(size: 10))
@@ -321,53 +312,15 @@ struct LargeMediaView: View {
 
     private var filters: some View {
         HStack(spacing: 8) {
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                TextField("Search media…", text: $query)
-                    .textFieldStyle(.plain)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(DiskMapTheme.cardFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(DiskMapTheme.cardStroke))
+            DiskMapSearchField(placeholder: "Search media…", text: $query)
             .frame(maxWidth: 220)
-
-            Menu {
-                ForEach(MediaTypeFilter.allCases) { t in Button(t.title) { typeFilter = t } }
-            } label: { filterLabel("Type") }
-            Menu {
-                ForEach(MediaSizeFilter.allCases) { t in Button(t.title) { sizeFilter = t } }
-            } label: { filterLabel("Size") }
-            Menu {
-                ForEach(MediaAgeFilter.allCases) { t in Button(t.title) { ageFilter = t } }
-            } label: { filterLabel("Age") }
-            Menu {
-                ForEach(MediaLocationFilter.allCases) { t in Button(t.title) { locationFilter = t } }
-            } label: { filterLabel("Location") }
+            DiskMapMenu(label: "Type", options: MediaTypeFilter.allCases, selection: $typeFilter, title: { $0.title })
+            DiskMapMenu(label: "Size", options: MediaSizeFilter.allCases, selection: $sizeFilter, title: { $0.title })
+            DiskMapMenu(label: "Age", options: MediaAgeFilter.allCases, selection: $ageFilter, title: { $0.title })
+            DiskMapMenu(label: "Location", options: MediaLocationFilter.allCases, selection: $locationFilter, title: { $0.title })
             Spacer()
-            Menu {
-                ForEach(MediaSort.allCases) { s in
-                    Button(s.title) { sort = s }
-                }
-            } label: {
-                Text("Sort: \(sort.title)")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
+            DiskMapMenu(label: "Sort", options: MediaSort.allCases, selection: $sort, title: { $0.title })
         }
-    }
-
-    private func filterLabel(_ title: String) -> some View {
-        Text("\(title) ▾")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(DiskMapTheme.ink)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var tableHeader: some View {
@@ -480,7 +433,7 @@ struct LargeMediaView: View {
                 Button("Open containing folder") {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: (item.absolutePath as NSString).deletingLastPathComponent)
                 }
-                Button("Add to Cleanup Review") { Task { await stage([item]) } }
+                Button("Add to Cleanup") { Task { await stage([item]) } }
                 Button("View in Visualize") {
                     model.folderFilterPath = (item.absolutePath as NSString).deletingLastPathComponent
                     model.destination = .visualize
@@ -552,7 +505,7 @@ struct LargeMediaView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Spacer()
-            Button("Add to Cleanup Review") {
+            Button("Add to Cleanup") {
                 if let active { Task { await stage([active]) } }
             }
             .buttonStyle(PrimaryCTAStyle())
@@ -566,7 +519,7 @@ struct LargeMediaView: View {
                 .buttonStyle(.plain)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 10)
+        .frame(height: DiskMapMetric.statusBarHeight)
         .background(DiskMapTheme.cardFill)
         .overlay(alignment: .top) { Divider().overlay(DiskMapTheme.cardStroke) }
     }
@@ -578,7 +531,7 @@ struct LargeMediaView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         MediaThumbnailView(
                             url: URL(fileURLWithPath: item.absolutePath),
-                            size: CGSize(width: 288, height: 160),
+                            size: CGSize(width: 244, height: 138),
                             fallbackSymbol: item.kind.symbolName,
                             showPlayBadge: item.kind == .video
                         )
@@ -622,54 +575,43 @@ struct LargeMediaView: View {
                             if let d = item.durationLabel { StatRow(label: "Duration", value: d) }
                             if let d = item.dimensionsLabel { StatRow(label: "Dimensions", value: d) }
                         }
-                        .padding(12)
-                        .background(cardBG)
 
                         WhyCard(title: "Why is this here?", bodyText: item.whyHere)
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(item.status.title)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(item.status == .reviewFirst ? DiskMapTheme.review : DiskMapTheme.safe)
-                            Text(item.recommendation)
-                                .font(.system(size: 12))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(12)
-                        .background(cardBG)
+                        SafetyCard(assessment: item.safety)
 
                         VStack(spacing: 8) {
-                            Button("Play with Quick Look") { quickLook(item) }
-                                .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                            Button("Reveal in Finder") { reveal(item) }
-                                .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                            Button("Open containing folder") {
-                                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: (item.absolutePath as NSString).deletingLastPathComponent)
-                            }
-                            .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
                             let staged = model.isStaged(URL(fileURLWithPath: item.absolutePath))
-                            Button(staged ? "In Cleanup Review" : "Add to Cleanup Review") {
+                            Button(staged ? "In Cleanup" : "Add to Cleanup") {
                                 if staged { onOpenCleanup() }
                                 else { Task { await stage([item]) } }
                             }
                             .buttonStyle(PrimaryCTAStyle(fullWidth: true))
-                            Button("Find duplicates") {
-                                model.destination = .duplicates
+                            HStack(spacing: 8) {
+                                Button("Quick Look") { quickLook(item) }
+                                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
+                                Button("Reveal") { reveal(item) }
+                                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
                             }
-                            .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                            Button("View in Visualize") {
-                                model.folderFilterPath = (item.absolutePath as NSString).deletingLastPathComponent
-                                model.destination = .visualize
+                            Menu("More") {
+                                Button("Open containing folder") {
+                                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: (item.absolutePath as NSString).deletingLastPathComponent)
+                                }
+                                Button("Find duplicates") { model.destination = .duplicates }
+                                Button("View in Visualize") {
+                                    model.folderFilterPath = (item.absolutePath as NSString).deletingLastPathComponent
+                                    model.destination = .visualize
+                                }
+                                Button("Copy Path") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(item.absolutePath, forType: .string)
+                                    model.showToast("Path copied")
+                                }
                             }
-                            .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                            Button("Move to Trash…") {
-                                Task { await trash(item) }
-                            }
-                            .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                            .foregroundStyle(DiskMapTheme.danger)
+                            .menuStyle(.borderlessButton)
                         }
                     }
-                    .padding(16)
+                    .padding(DiskMapMetric.inspectorPadding)
                 }
             }
         }
@@ -703,33 +645,20 @@ struct LargeMediaView: View {
 
     private func quickLook(_ item: MediaCandidate) {
         let url = URL(fileURLWithPath: item.absolutePath)
-        NSWorkspace.shared.open(url)
+        DiskMapQuickLook.shared.show(url)
     }
 
     private func stage(_ items: [MediaCandidate]) async {
-        var ok = 0
-        for item in items {
-            let url = URL(fileURLWithPath: item.absolutePath)
-            let success = await model.cleanupQueue.stage(
-                url,
-                size: item.bytes,
-                reason: "Large media: \(item.kind.shortTitle)"
+        let result = await model.stageForCleanup(items.map {
+            CleanupStageRequest(
+                url: URL(fileURLWithPath: $0.absolutePath),
+                size: $0.bytes,
+                reason: "Large media: \($0.kind.shortTitle)"
             )
-            if success { ok += 1 }
-        }
-        model.showToast(ok > 0 ? "Added \(ok) to cleanup review" : "Nothing new staged")
-        if ok > 0 { checked.removeAll() }
+        })
+        let rejected = Set(result.rejectedURLs.map(\.path))
+        checked = Set(items.filter { rejected.contains($0.absolutePath) }.map(\.nodeID))
+        model.showToast(result.added > 0 ? "Added \(result.added) to Cleanup" : "Nothing new added")
     }
 
-    private func trash(_ item: MediaCandidate) async {
-        let url = URL(fileURLWithPath: item.absolutePath)
-        do {
-            var resulting: NSURL?
-            try FileManager.default.trashItem(at: url, resultingItemURL: &resulting)
-            model.showToast("Moved to Trash")
-            model.refreshLargeMediaCache()
-        } catch {
-            model.showToast("Couldn’t move to Trash")
-        }
-    }
 }

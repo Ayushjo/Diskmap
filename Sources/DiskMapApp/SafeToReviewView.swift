@@ -37,18 +37,12 @@ struct SafeToReviewView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            mainColumn
-            Divider().overlay(DiskMapTheme.cardStroke)
-            inspector
-                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
-        }
+        AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID, main: mainColumn, inspector: inspector)
         .background(DiskMapTheme.cream)
         .task {
             if model.cachedReviewables.isEmpty, model.tree != nil {
                 model.refreshReviewableCache()
             }
-            if selectedID == nil { selectedID = visible.first?.id }
         }
     }
 
@@ -64,10 +58,7 @@ struct SafeToReviewView: View {
             listControls
             VStack(alignment: .leading, spacing: 0) {
                 Divider().overlay(DiskMapTheme.cardStroke)
-                if model.isScanning {
-                    ProgressView("Analyzing cleanup opportunities…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if visible.isEmpty {
+                if visible.isEmpty {
                     emptyState
                 } else {
                     list
@@ -403,14 +394,14 @@ struct SafeToReviewView: View {
             ok += await stageTarget(t) ? 1 : 0
         }
         await model.refreshQueue()
-        model.showToast(ok > 0 ? "Added \(ok) to cleanup review" : "Nothing staged")
+        model.showToast(ok > 0 ? "Added \(ok) to Cleanup" : "Nothing added")
         if ok > 0 { onOpenCleanup() }
     }
 
     private func stageOne(_ t: ReviewableTarget) async {
         let ok = await stageTarget(t)
         await model.refreshQueue()
-        model.showToast(ok ? "Added to cleanup review" : "Blocked or already staged")
+        model.showToast(ok ? "Added to Cleanup" : "Blocked or already added")
         if ok { onOpenCleanup() }
     }
 

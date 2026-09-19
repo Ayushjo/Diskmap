@@ -1,6 +1,7 @@
 import AppKit
 import DiskMapCore
 import QuickLookThumbnailing
+import Quartz
 import SwiftUI
 
 // MARK: - Spacing scale (4…32)
@@ -18,6 +19,98 @@ enum DiskMapSpace {
     static let page: CGFloat = 20
     /// Compact list row height target.
     static let rowMin: CGFloat = 44
+}
+
+// MARK: - Shared compact controls
+
+struct DiskMapSearchField: View {
+    var placeholder: String
+    @Binding var text: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: DiskMapSpace.xs) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .accessibilityHidden(true)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(DiskMapType.body)
+                .focused($focused)
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                }
+                .buttonStyle(.plain)
+                .help("Clear search")
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: DiskMapMetric.searchHeight)
+        .background(
+            RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                .fill(DiskMapTheme.cardFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                        .stroke(focused ? DiskMapTheme.focus.opacity(0.75) : DiskMapTheme.cardStroke, lineWidth: 1)
+                )
+        )
+        .shadow(color: focused ? DiskMapTheme.focus.opacity(0.10) : .clear, radius: 3)
+    }
+}
+
+struct DiskMapMenu<Option: Hashable>: View {
+    var label: String
+    var options: [Option]
+    @Binding var selection: Option
+    var title: (Option) -> String
+    var width: CGFloat? = nil
+
+    var body: some View {
+        Menu {
+            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                Button {
+                    selection = option
+                } label: {
+                    if option == selection {
+                        Label(title(option), systemImage: "checkmark")
+                    } else {
+                        Text(title(option))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(label.isEmpty ? title(selection) : "\(label): \(title(selection))")
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(DiskMapTheme.ink)
+            .padding(.horizontal, 10)
+            .frame(width: width, height: DiskMapMetric.controlHeight)
+            .background(
+                RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                    .fill(DiskMapTheme.cardFill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
+                    )
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize(horizontal: width == nil, vertical: true)
+    }
+}
+
+struct DiskMapColumnSpacer: View {
+    var width: CGFloat = DiskMapMetric.checkboxColumnWidth
+    var body: some View { Color.clear.frame(width: width, height: 1) }
 }
 
 // MARK: - Classification badge (color + text — never color alone)
@@ -167,7 +260,7 @@ struct DiskMapLoadingState: View {
 struct SelectionToolbar: View {
     var selectedCount: Int
     var selectedBytes: Int64
-    var primaryTitle: String = "Add to Cleanup Review"
+    var primaryTitle: String = "Add to Cleanup"
     var primaryEnabled: Bool = true
     var onPrimary: () -> Void
     var onClear: () -> Void
@@ -275,14 +368,84 @@ extension EnvironmentValues {
 }
 
 enum DiskMapLayout {
-    static func inspectorWidth(for container: CGFloat) -> CGFloat {
-        if container < 1080 { return 280 }
-        if container < 1440 { return 320 }
-        return 360
+    static func inspectorWidth(for windowWidth: CGFloat) -> CGFloat {
+        windowWidth >= 1450 ? 310 : 280
     }
 
-    static func showsSideInspector(for container: CGFloat) -> Bool {
-        container >= 980
+    static func showsSideInspector(for windowWidth: CGFloat) -> Bool {
+        windowWidth >= 1200
+    }
+}
+
+struct AdaptiveInspectorSplit<Main: View, Inspector: View>: View {
+    var windowWidth: CGFloat
+    var inspectionToken: String?
+    var mainContent: Main
+    var inspectorContent: Inspector
+    @State private var showsDrawer = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(windowWidth: CGFloat, inspectionToken: String? = nil, main: Main, inspector: Inspector) {
+        self.windowWidth = windowWidth
+        self.inspectionToken = inspectionToken
+        self.mainContent = main
+        self.inspectorContent = inspector
+    }
+
+    var body: some View {
+        Group {
+            if DiskMapLayout.showsSideInspector(for: windowWidth) {
+                HStack(spacing: 0) {
+                    mainContent
+                    Divider().overlay(DiskMapTheme.cardStroke)
+                    inspectorContent
+                        .frame(width: DiskMapLayout.inspectorWidth(for: windowWidth))
+                }
+            } else {
+                ZStack(alignment: .trailing) {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Spacer(minLength: 0)
+                            if !showsDrawer {
+                                Button {
+                                    showsDrawer = true
+                                } label: {
+                                    Label("Inspector", systemImage: "sidebar.right")
+                                        .font(.system(size: 11, weight: .semibold))
+                                }
+                                .buttonStyle(InkButtonStyle(filled: false))
+                                .help("Show Inspector")
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .frame(height: 42)
+                        .background(DiskMapTheme.cream)
+                        Divider().overlay(DiskMapTheme.cardStroke)
+                        mainContent
+                    }
+                    if showsDrawer {
+                        Color.black.opacity(0.12)
+                            .ignoresSafeArea()
+                            .onTapGesture { showsDrawer = false }
+                        HStack(spacing: 0) {
+                            Spacer(minLength: 0)
+                            Divider().overlay(DiskMapTheme.cardStroke)
+                            inspectorContent
+                                .frame(width: min(310, max(270, windowWidth * 0.34)))
+                                .background(DiskMapTheme.inspectorFill)
+                        }
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+                }
+                .onExitCommand { showsDrawer = false }
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: showsDrawer)
+            }
+        }
+        .onChange(of: inspectionToken) { oldValue, newValue in
+            guard newValue != nil, newValue != oldValue,
+                  !DiskMapLayout.showsSideInspector(for: windowWidth) else { return }
+            showsDrawer = true
+        }
     }
 }
 
@@ -298,10 +461,10 @@ struct DiskMapPageHeader: View {
         HStack(alignment: .top, spacing: DiskMapSpace.sm) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 28))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(symbolTint)
-                    .frame(width: 48, height: 48)
-                    .background(symbolTint.opacity(0.12), in: Circle())
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(symbolTint.opacity(0.10)))
                     .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: DiskMapSpace.xxs) {
@@ -318,6 +481,78 @@ struct DiskMapPageHeader: View {
     }
 }
 
+// MARK: - File identity
+
+struct FileIdentityIcon: View {
+    let url: URL
+    var kind: FileKind? = nil
+    var size: CGFloat = 34
+
+    private var resolvedKind: FileKind {
+        kind ?? FileKind.classify(fileName: url.lastPathComponent, path: url.path)
+    }
+
+    var body: some View {
+        Group {
+            if resolvedKind == .video, isLocallyPreviewable {
+                MediaThumbnailView(
+                    url: url,
+                    size: CGSize(width: size, height: size),
+                    fallbackSymbol: resolvedKind.symbolName
+                )
+            } else if resolvedKind == .application || url.pathExtension.lowercased() == "app" {
+                Image(nsImage: WorkspaceIconCache.icon(for: url.path))
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(2)
+            } else {
+                Image(systemName: resolvedKind.symbolName)
+                    .font(.system(size: size * 0.46, weight: .medium))
+                    .foregroundStyle(identityTint)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(identityTint.opacity(0.10))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: max(7, size * 0.23), style: .continuous))
+        .accessibilityHidden(true)
+    }
+
+    private var isLocallyPreviewable: Bool {
+        let values = try? url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
+        guard values?.isUbiquitousItem == true else { return true }
+        return values?.ubiquitousItemDownloadingStatus == .current
+            || values?.ubiquitousItemDownloadingStatus == .downloaded
+    }
+
+    private var identityTint: Color {
+        switch resolvedKind {
+        case .video: return DiskMapTheme.developer
+        case .diskImage: return DiskMapTheme.info
+        case .archive: return DiskMapTheme.review
+        case .application: return DiskMapTheme.folderPastels[4]
+        case .document: return DiskMapTheme.folderPastels[5]
+        case .virtualDisk: return DiskMapTheme.developer
+        case .deviceBackup: return DiskMapTheme.safe
+        case .database: return DiskMapTheme.folderPastels[5]
+        case .other: return DiskMapTheme.mutedLabel
+        }
+    }
+}
+
+@MainActor
+private enum WorkspaceIconCache {
+    static let cache = NSCache<NSString, NSImage>()
+
+    static func icon(for path: String) -> NSImage {
+        let key = path as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+        let icon = NSWorkspace.shared.icon(forFile: path)
+        cache.setObject(icon, forKey: key)
+        return icon
+    }
+}
+
 // MARK: - Lazy media / file thumbnail (Quick Look)
 
 
@@ -326,6 +561,7 @@ struct MediaThumbnailView: View {
     var size: CGSize = CGSize(width: 160, height: 90)
     var fallbackSymbol: String = "doc"
     var showPlayBadge: Bool = false
+    var allowsPreview: Bool = true
 
     @State private var image: NSImage?
     @State private var failed = false
@@ -361,6 +597,17 @@ struct MediaThumbnailView: View {
     private func load() async {
         failed = false
         image = nil
+        guard allowsPreview else {
+            image = NSWorkspace.shared.icon(forFile: url.path)
+            return
+        }
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+        let stamp = values?.contentModificationDate?.timeIntervalSince1970 ?? 0
+        let key = "\(url.path)|\(stamp)|\(Int(size.width))x\(Int(size.height))" as NSString
+        if let cached = ThumbnailCache.shared.object(forKey: key) {
+            image = cached
+            return
+        }
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let request = QLThumbnailGenerator.Request(
             fileAt: url,
@@ -370,11 +617,47 @@ struct MediaThumbnailView: View {
         )
         do {
             let rep = try await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
+            guard !Task.isCancelled else { return }
+            ThumbnailCache.shared.setObject(rep.nsImage, forKey: key)
             image = rep.nsImage
         } catch {
+            guard !Task.isCancelled else { return }
             failed = true
             // Fallback: NSWorkspace icon
             image = NSWorkspace.shared.icon(forFile: url.path)
         }
+    }
+}
+
+@MainActor
+private enum ThumbnailCache {
+    static let shared: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 160
+        cache.totalCostLimit = 96 * 1_024 * 1_024
+        return cache
+    }()
+}
+
+@MainActor
+final class DiskMapQuickLook: NSObject, @preconcurrency QLPreviewPanelDataSource, QLPreviewPanelDelegate {
+    static let shared = DiskMapQuickLook()
+    private var previewURL: URL?
+
+    func show(_ url: URL) {
+        previewURL = url
+        guard let panel = QLPreviewPanel.shared() else { return }
+        panel.dataSource = self
+        panel.delegate = self
+        panel.reloadData()
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
+        previewURL == nil ? 0 : 1
+    }
+
+    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
+        previewURL as NSURL?
     }
 }

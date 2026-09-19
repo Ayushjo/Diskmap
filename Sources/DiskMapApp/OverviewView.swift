@@ -16,7 +16,7 @@ struct OverviewView: View {
 
     var body: some View {
         Group {
-            if model.isScanning || model.tree == nil || showScanReady {
+            if model.tree == nil || showScanReady {
                 FirstScanHero(
                     model: model,
                     pickFolder: pickFolder,
@@ -244,10 +244,10 @@ struct OverviewView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 ZStack {
                     Circle()
-                        .stroke(DiskMapTheme.cardStroke, lineWidth: 10)
+                        .stroke(DiskMapTheme.cardStroke, lineWidth: 7)
                     Circle()
                         .trim(from: 0, to: snap.volume?.usedFraction ?? 0)
-                        .stroke(healthColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                        .stroke(healthColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                     VStack(spacing: 2) {
                         Text(pct(snap.volume?.usedFraction ?? 0))

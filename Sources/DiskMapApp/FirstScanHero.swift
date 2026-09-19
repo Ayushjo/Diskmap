@@ -25,7 +25,7 @@ struct FirstScanHero: View {
 
     private var emptyBody: some View {
         VStack(spacing: DiskMapSpace.lg) {
-            StorageMapIllustration(mode: .idle, size: 128)
+            StorageMapIllustration(mode: .idle, size: 147)
                 .accessibilityHidden(true)
                 .padding(.bottom, DiskMapSpace.xs)
 
@@ -77,7 +77,8 @@ struct FirstScanHero: View {
         }
         .frame(maxWidth: 620)
         .padding(.horizontal, DiskMapSpace.xl)
-        .padding(.vertical, DiskMapSpace.xxl)
+        .padding(.top, DiskMapSpace.xl)
+        .padding(.bottom, 72)
     }
 
     private var scanningBody: some View {

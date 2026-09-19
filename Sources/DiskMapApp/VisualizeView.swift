@@ -11,8 +11,10 @@ struct VisualizeView: View {
     var onOpenCleanup: () -> Void = {}
 
     @State private var showInspector = true
+    @State private var showsLargestItems = false
     @State private var history: [Int32] = [0]
     @State private var historyIndex: Int = 0
+    @State private var isMovingThroughHistory = false
     @State private var folderComposition: [FileTypeTotals] = []
     @State private var compositionLoading = false
     @State private var compositionCache: [Int32: [FileTypeTotals]] = [:]
@@ -64,12 +66,11 @@ struct VisualizeView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            mainColumn
+        Group {
             if showInspector {
-                Divider().overlay(DiskMapTheme.cardStroke)
-                inspector
-                    .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
+                AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: String(model.selectedNode), main: mainColumn, inspector: inspector)
+            } else {
+                mainColumn
             }
         }
         .background(DiskMapTheme.cream)
@@ -79,7 +80,9 @@ struct VisualizeView: View {
                 model.exploreMode = .treemap
             }
             scheduleFolderComposition(for: currentID)
-            scheduleSelectedComposition(for: model.selectedNode)
+            if model.selectedNode != currentID {
+                scheduleSelectedComposition(for: model.selectedNode)
+            }
         }
         .onChange(of: model.currentNode) { _, newValue in
             recordNavigation(newValue)
@@ -95,28 +98,59 @@ struct VisualizeView: View {
     }
 
     private var mainColumn: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            navToolbar
-            modePicker
-            if model.isScanning {
-                scanningState
-            } else if let tree = model.tree, let root = model.rootURL, totals.count == tree.count {
-                summaryCard
-                ExploreCanvas(
-                    model: model,
-                    tree: tree,
-                    totals: totals,
-                    rootURL: root,
-                    hideTreemapChrome: true
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
-                largestTable(tree: tree, root: root)
-            } else {
-                emptyScan
+        GeometryReader { geometry in
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Visualize Storage").font(DiskMapType.title)
+                        Text("Select to inspect · Double-click a folder to explore")
+                            .font(DiskMapType.caption).foregroundStyle(DiskMapTheme.mutedLabel)
+                    }
+                    Spacer()
+                    DiskMapMenu(label: "Size", options: SizeBasis.allCases,
+                                selection: $model.sizeBasis, title: { $0 == .allocated ? "On Disk" : "Logical" })
+                }
+                navToolbar
+                modePicker
+                if let tree = model.tree, let root = model.rootURL, totals.count == tree.count {
+                    HStack(spacing: 8) {
+                        Image(systemName: "folder.fill").foregroundStyle(DiskMapTheme.info)
+                        Text(tree.name(of: currentID)).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                        Text(ByteFormat.string(folderBytes)).font(.system(size: 14, weight: .semibold).monospacedDigit())
+                        Text("· \(formatCount(fileCount + folderCount)) items")
+                            .font(DiskMapType.caption).foregroundStyle(DiskMapTheme.mutedLabel)
+                        Spacer()
+                        DiskMapMenu(label: "Color", options: ExploreColorMode.allCases,
+                                    selection: $model.colorMode, title: { $0.rawValue })
+                    }
+                    ExploreCanvas(model: model, tree: tree, totals: totals, rootURL: root, hideTreemapChrome: true)
+                        .id("\(model.sizeBasis):\(tree.count)")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .layoutPriority(1)
+                        .background(DiskMapTheme.cardFill)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(DiskMapTheme.cardStroke, lineWidth: 1))
+                    HStack {
+                        Button {
+                            showsLargestItems.toggle()
+                        } label: {
+                            Label("Largest items", systemImage: showsLargestItems ? "chevron.down" : "chevron.right")
+                        }.buttonStyle(.plain)
+                        Spacer()
+                        Text("Area represents \(model.sizeBasis == .allocated ? "space on disk" : "logical file size")")
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                    }.font(DiskMapType.caption).frame(height: 24)
+                    if showsLargestItems {
+                        ScrollView { largestTable(tree: tree, root: root) }
+                            .frame(height: min(190, geometry.size.height * 0.28))
+                    }
+                } else if model.isScanning {
+                    scanningState
+                } else {
+                    emptyScan
+                }
             }
+            .padding(18)
         }
     }
 
@@ -156,23 +190,8 @@ struct VisualizeView: View {
             navBtn("chevron.right", enabled: canGoForward) { goForward() }
             breadcrumb
             Spacer(minLength: 8)
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) { showInspector.toggle() }
-            } label: {
-                Image(systemName: "sidebar.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(showInspector ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(showInspector ? DiskMapTheme.navSelected : DiskMapTheme.cardFill)
-                    )
-            }
-            .buttonStyle(.plain)
-            .help("Toggle inspector")
+
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
     }
 
     private func navBtn(_ system: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -222,7 +241,7 @@ struct VisualizeView: View {
 
     private func crumbLabel(_ id: Int32, tree: FileTree, root: URL) -> String {
         if id == 0 {
-            return VolumeStats.forPath(root.path)?.volumeName ?? tree.name(of: id)
+            return tree.name(of: id)
         }
         return tree.name(of: id)
     }
@@ -230,47 +249,22 @@ struct VisualizeView: View {
     // MARK: - Mode picker (reference)
 
     private var modePicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 4) {
                 ForEach(ExploreViewMode.visualizeModes) { mode in
-                    Button {
-                        model.exploreMode = mode
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: mode.symbol)
-                                .font(.system(size: 11, weight: .semibold))
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(mode.rawValue)
-                                    .font(.system(size: 11, weight: .semibold))
-                                Text(mode.blurb)
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(
-                                        model.exploreMode == mode
-                                            ? Color.white.opacity(0.85)
-                                            : DiskMapTheme.mutedLabel
-                                    )
-                                    .lineLimit(1)
-                            }
-                        }
-                        .foregroundStyle(model.exploreMode == mode ? Color.white : DiskMapTheme.ink)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(model.exploreMode == mode ? DiskMapTheme.ink : DiskMapTheme.cardFill)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .stroke(DiskMapTheme.cardStroke, lineWidth: model.exploreMode == mode ? 0 : 1)
-                                )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .help("\(mode.rawValue): \(mode.blurb)")
+                    Button { model.exploreMode = mode } label: {
+                        Label(mode.rawValue, systemImage: mode.symbol)
+                            .font(.system(size: 12, weight: .medium))
+                            .padding(.horizontal, 10).frame(height: 32)
+                            .foregroundStyle(model.exploreMode == mode ? Color.white : DiskMapTheme.ink)
+                            .background(model.exploreMode == mode ? DiskMapTheme.ink : Color.clear,
+                                        in: RoundedRectangle(cornerRadius: 8))
+                    }.buttonStyle(.plain).help(mode.blurb)
                 }
             }
-            .padding(.horizontal, 16)
+            DiskMapMenu(label: "View", options: ExploreViewMode.visualizeModes,
+                        selection: $model.exploreMode, title: { $0.rawValue })
         }
-        .padding(.bottom, 10)
     }
 
     // MARK: - Summary
@@ -509,6 +503,7 @@ struct VisualizeView: View {
     }
 
     private func recordNavigation(_ id: Int32) {
+        if isMovingThroughHistory { isMovingThroughHistory = false; return }
         if historyIndex < history.count - 1 {
             history = Array(history.prefix(historyIndex + 1))
         }
@@ -522,6 +517,7 @@ struct VisualizeView: View {
 
     private func goBack() {
         guard canGoBack else { return }
+        isMovingThroughHistory = true
         historyIndex -= 1
         let id = history[historyIndex]
         model.currentNode = id
@@ -530,6 +526,7 @@ struct VisualizeView: View {
 
     private func goForward() {
         guard canGoForward else { return }
+        isMovingThroughHistory = true
         historyIndex += 1
         let id = history[historyIndex]
         model.currentNode = id
@@ -538,6 +535,12 @@ struct VisualizeView: View {
 
     private func scheduleFolderComposition(for id: Int32) {
         guard let tree = model.tree, totals.count == tree.count else { return }
+        if id == 0, !model.cachedFileTypes.isEmpty {
+            folderComposition = model.cachedFileTypes
+            compositionCache[id] = model.cachedFileTypes
+            compositionLoading = false
+            return
+        }
         if let cached = compositionCache[id] {
             folderComposition = cached
             compositionLoading = false
@@ -571,8 +574,10 @@ struct VisualizeView: View {
             selectedComposition = cached
             return
         }
-        if id == currentID, !folderComposition.isEmpty {
-            selectedComposition = folderComposition
+        if id == currentID {
+            // The inspector reads folderComposition directly for the current
+            // folder. Never launch a second full-subtree traversal for it.
+            selectedComposition = []
             return
         }
         selectedCompositionTask?.cancel()
@@ -705,23 +710,23 @@ private struct VisualizeFolderInspector: View {
                 }
 
                 VStack(spacing: 8) {
+                    if safety.level != .protected {
+                        Button(model.isStaged(URL(fileURLWithPath: abs, isDirectory: true))
+                               ? "Open Cleanup Queue" : "Add to Cleanup") {
+                            Task { await stage() }
+                        }
+                        .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    }
                     Button("Open in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: abs)])
                     }
-                    .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
                     Button("View in File Browser") {
                         model.currentNode = nodeID
                         model.selectedNode = nodeID
                         model.destination = .fileBrowser
                     }
                     .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                    if safety.level != .protected {
-                        Button(model.isStaged(URL(fileURLWithPath: abs, isDirectory: true))
-                               ? "Open Cleanup Queue" : "Add to Cleanup") {
-                            Task { await stage() }
-                        }
-                        .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                    }
                     Button("Copy Path") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(CanonicalPath.displayPath(absolutePath: abs), forType: .string)
@@ -747,11 +752,11 @@ private struct VisualizeFolderInspector: View {
 
     private func stage() async {
         let url = URL(fileURLWithPath: abs, isDirectory: true).standardizedFileURL
-        if model.isStaged(url) { onOpenCleanup(); return }
-        let ok = await model.cleanupQueue.stage(url, size: bytes, reason: "Visualize: " + name)
-        await model.refreshQueue()
-        model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
-        if ok { onOpenCleanup() }
+        let result = await model.stageForCleanup([
+            CleanupStageRequest(url: url, size: bytes, reason: "Visualize: " + name)
+        ])
+        model.showToast(result.added > 0 ? "Added to Cleanup" : (result.rejected > 0 ? "Blocked by safety rules" : "Already in Cleanup"))
+        if result.added > 0 || result.alreadyPresent > 0 { onOpenCleanup() }
     }
 }
 
@@ -802,10 +807,16 @@ private struct VisualizeFileInspector: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color(red: 0.93, green: 0.95, blue: 0.99)))
 
                 VStack(spacing: 8) {
+                    if safety.level != .protected {
+                        Button(model.isStaged(URL(fileURLWithPath: abs)) ? "Open Cleanup Queue" : "Add to Cleanup") {
+                            Task { await stage() }
+                        }
+                        .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    }
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: abs)])
                     }
-                    .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
                     Button("Open Containing Folder") {
                         let parent = (abs as NSString).deletingLastPathComponent
                         // Jump File Browser to parent when possible
@@ -814,12 +825,6 @@ private struct VisualizeFileInspector: View {
                         _ = parent
                     }
                     .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                    if safety.level != .protected {
-                        Button(model.isStaged(URL(fileURLWithPath: abs)) ? "Open Cleanup Queue" : "Add to Cleanup") {
-                            Task { await stage() }
-                        }
-                        .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                    }
                     Button("Copy Path") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(CanonicalPath.displayPath(absolutePath: abs), forType: .string)
@@ -841,10 +846,10 @@ private struct VisualizeFileInspector: View {
 
     private func stage() async {
         let url = URL(fileURLWithPath: abs).standardizedFileURL
-        if model.isStaged(url) { onOpenCleanup(); return }
-        let ok = await model.cleanupQueue.stage(url, size: size, reason: "Visualize: " + name)
-        await model.refreshQueue()
-        model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
-        if ok { onOpenCleanup() }
+        let result = await model.stageForCleanup([
+            CleanupStageRequest(url: url, size: size, reason: "Visualize: " + name)
+        ])
+        model.showToast(result.added > 0 ? "Added to Cleanup" : (result.rejected > 0 ? "Blocked by safety rules" : "Already in Cleanup"))
+        if result.added > 0 || result.alreadyPresent > 0 { onOpenCleanup() }
     }
 }

@@ -8,6 +8,18 @@ struct BrowseQueryTests {
         #expect(TopSizes.ranked(totals: totals, limit: 2) == [4, 2])
     }
 
+    @Test func boundedRankingMatchesReferenceWithTies() {
+        let totals: [Int64] = [999999] + (0..<10000).map { Int64(($0 * 7919) % 997) }
+        let nonzero: [Int] = (1..<totals.count).filter { totals[$0] > 0 }
+        let ordered: [Int] = nonzero.sorted { lhs, rhs in
+            if totals[lhs] == totals[rhs] { return lhs < rhs }
+            return totals[lhs] > totals[rhs]
+        }
+        let expected: [Int32] = ordered.prefix(200).map { Int32($0) }
+        #expect(TopSizes.ranked(totals: totals, limit: 200) == expected)
+        #expect(TopSizes.ranked(totals: totals, limit: 0).isEmpty)
+    }
+
     @Test func ageBucketsAndUntouchedUseAFixedToday() {
         let today: Int32 = 20_000
         #expect(AgeMap.bucket(modifiedDay: 0, today: today) == .unknown)

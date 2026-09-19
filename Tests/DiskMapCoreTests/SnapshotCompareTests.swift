@@ -27,8 +27,8 @@ struct SnapshotCompareTests {
         let records = SnapshotStore.records(in: directory, rootPath: "/tmp/snap-meta")
         #expect(records.count == 1)
         #expect(records[0].displayName == "Before cleanup")
-        try SnapshotStore.delete(url)
-        #expect(SnapshotStore.records(in: directory, rootPath: "/tmp/snap-meta").isEmpty)
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        #expect(FileManager.default.fileExists(atPath: SnapshotStore.metaURL(for: url).path))
     }
 
     @Test func compareReportsCategoryAndFolderDeltas() {

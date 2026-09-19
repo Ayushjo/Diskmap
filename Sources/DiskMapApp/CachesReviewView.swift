@@ -72,18 +72,12 @@ struct CachesReviewView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            mainColumn
-            Divider().overlay(DiskMapTheme.cardStroke)
-            inspector
-                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
-        }
+        AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID, main: mainColumn, inspector: inspector)
         .background(DiskMapTheme.cream)
         .task {
             if model.cachedReviewables.isEmpty, model.tree != nil {
                 model.refreshReviewableCache()
             }
-            if selectedID == nil { selectedID = visible.first?.id }
         }
     }
 
@@ -166,7 +160,7 @@ struct CachesReviewView: View {
 
     private var summaryBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("\(ByteFormat.string(totalBytes)) across \(caches.count.formatted()) applications")
+            Text("\(ByteFormat.string(totalBytes)) across \(caches.count.formatted()) cache groups")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(DiskMapTheme.ink)
 
@@ -212,23 +206,7 @@ struct CachesReviewView: View {
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    TextField("Search applications…", text: $query)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(DiskMapTheme.cardFill)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                        )
-                )
+                DiskMapSearchField(placeholder: "Search cache groups…", text: $query)
                 Spacer()
                 Text("Sort: Largest")
                     .font(.system(size: 12, weight: .semibold))
@@ -260,7 +238,7 @@ struct CachesReviewView: View {
 
     private var listHeader: some View {
         HStack(spacing: 8) {
-            Color.clear.frame(width: 22)
+            DiskMapColumnSpacer(width: 22)
             Text("Application").frame(maxWidth: .infinity, alignment: .leading)
             Text("Cache type").frame(width: 140, alignment: .leading)
             Text("Size").frame(width: 72, alignment: .trailing)
@@ -269,7 +247,7 @@ struct CachesReviewView: View {
         .font(.system(size: 10, weight: .semibold))
         .foregroundStyle(DiskMapTheme.mutedLabel)
         .padding(.horizontal, 28)
-        .padding(.vertical, 8)
+        .frame(height: DiskMapMetric.tableHeaderHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DiskMapTheme.cardFill.opacity(0.72))
     }
@@ -372,7 +350,7 @@ struct CachesReviewView: View {
     private var selectionBar: some View {
         HStack {
             if checked.isEmpty {
-                Text("\(visible.count.formatted()) applications")
+                Text("\(visible.count.formatted()) cache groups")
                     .font(.system(size: 12))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Spacer()
@@ -426,14 +404,14 @@ struct CachesReviewView: View {
         var ok = 0
         for t in items where await stageTarget(t) { ok += 1 }
         await model.refreshQueue()
-        model.showToast(ok > 0 ? "Added \(ok) to cleanup review" : "Nothing staged")
+        model.showToast(ok > 0 ? "Added \(ok) to Cleanup" : "Nothing added")
         if ok > 0 { onOpenCleanup() }
     }
 
     private func stageOne(_ t: ReviewableTarget) async {
         let ok = await stageTarget(t)
         await model.refreshQueue()
-        model.showToast(ok ? "Added to cleanup review" : "Blocked or already staged")
+        model.showToast(ok ? "Added to Cleanup" : "Blocked or already added")
         if ok { onOpenCleanup() }
     }
 

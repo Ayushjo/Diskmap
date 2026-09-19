@@ -44,14 +44,7 @@ struct ExploreShellView: View {
 
     @ViewBuilder
     private var center: some View {
-        if model.isScanning {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Scanning… \(model.scannedCount) items")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let tree = model.tree, let root = model.rootURL,
+        if let tree = model.tree, let root = model.rootURL,
                   model.selectedTotals.count == tree.count {
             VStack(spacing: 0) {
                 canvasHeader(tree: tree, root: root)
@@ -68,6 +61,13 @@ struct ExploreShellView: View {
                         .frame(height: 160)
                 }
             }
+        } else if model.isScanning {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Scanning… \(model.scannedCount) items")
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 14) {
                 Text("Scan first to explore")
@@ -638,7 +638,7 @@ struct ExploreInspector: View {
                 .buttonStyle(.plain)
                 .disabled(alreadyStaged)
                 .confirmationDialog(
-                    "Add to cleanup review?",
+                    "Add to Cleanup?",
                     isPresented: $confirmCleanup,
                     titleVisibility: .visible
                 ) {
@@ -749,6 +749,8 @@ struct ExploreTreemapView: View {
 
     @State private var layoutRects: [TreemapRect] = []
     @State private var canvasSize: CGSize = .zero
+    @State private var layoutTask: Task<Void, Never>?
+    @State private var isPreparingLayout = false
 
 
     var body: some View {
@@ -768,21 +770,31 @@ struct ExploreTreemapView: View {
             }
 
             Canvas { context, size in
-                let items = tree.children(of: currentNode, totals: totals).filter { $0.size > 0 }
-                let rects = SquarifiedTreemap.layout(items: items, in: CGRect(origin: .zero, size: size))
-                for r in rects {
+                for r in layoutRects {
                     let inset = r.rect.insetBy(dx: 1, dy: 1)
-                    let path = Path(inset)
+                    let path = Path(roundedRect: inset, cornerRadius: 5)
                     let selected = r.id == selectedNode
                     context.fill(path, with: .color(colorFor(id: r.id)))
                     context.stroke(path, with: .color(selected ? DiskMapTheme.ink : .black.opacity(0.25)), lineWidth: selected ? 2 : 1)
                     if inset.width > 52 && inset.height > 20 {
                         context.draw(
-                            Text(tree.name(of: r.id)).font(.caption.weight(.semibold)).foregroundStyle(DiskMapTheme.ink),
+                            Text(String(tree.name(of: r.id).prefix(max(4, Int(inset.width / 7) - 3)))).font(.system(size: 12, weight: .semibold)).foregroundStyle(DiskMapTheme.ink),
                             at: CGPoint(x: inset.minX + 4, y: inset.minY + 4),
                             anchor: .topLeading
                         )
                     }
+                    if inset.width > 90 && inset.height > 48 {
+                        context.draw(Text(ByteFormat.string(totals[Int(r.id)]))
+                            .font(.system(size: 11).monospacedDigit()).foregroundStyle(DiskMapTheme.ink.opacity(0.75)),
+                            at: CGPoint(x: inset.minX + 4, y: inset.minY + 23), anchor: .topLeading)
+                    }
+                }
+            }
+            .overlay {
+                if isPreparingLayout && layoutRects.isEmpty {
+                    ProgressView("Preparing map…")
+                        .controlSize(.small)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
             }
             .background {
@@ -810,8 +822,8 @@ struct ExploreTreemapView: View {
             )
         }
         .onChange(of: currentNode) { _, _ in cacheLayout() }
-        .onChange(of: totals) { _, _ in cacheLayout() }
-        .onChange(of: colorMode) { _, _ in cacheLayout() }
+        .onChange(of: totals.count) { _, _ in cacheLayout() }
+        .onDisappear { layoutTask?.cancel() }
     }
 
     private var currentSize: Int64 {
@@ -825,10 +837,26 @@ struct ExploreTreemapView: View {
             layoutRects = []
             return
         }
-        layoutRects = SquarifiedTreemap.layout(
-            items: tree.children(of: currentNode, totals: totals).filter { $0.size > 0 },
-            in: CGRect(origin: .zero, size: canvasSize)
-        )
+        let node = currentNode
+        let targetSize = canvasSize
+        let sourceTree = tree
+        let sourceTotals = totals
+        layoutTask?.cancel()
+        isPreparingLayout = true
+        layoutTask = Task.detached(priority: .userInitiated) {
+            let items = sourceTree.children(of: node, totals: sourceTotals).filter { $0.size > 0 }
+            guard !Task.isCancelled else { return }
+            let rects = SquarifiedTreemap.layout(
+                items: items,
+                in: CGRect(origin: .zero, size: targetSize)
+            )
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard currentNode == node, canvasSize == targetSize else { return }
+                layoutRects = rects
+                isPreparingLayout = false
+            }
+        }
     }
 
     private func colorFor(id: Int32) -> Color {

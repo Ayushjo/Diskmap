@@ -15,6 +15,8 @@ struct MediaCatalogTests {
         #expect(MediaCatalog.classify(fileName: "Setup.pkg") == nil)
         #expect(MediaCatalog.classify(fileName: "archive.zip") == nil)
         #expect(MediaCatalog.classify(fileName: "Notes.pdf") == nil)
+        #expect(MediaCatalog.classify(fileName: "Docker.raw") == nil)
+        #expect(MediaCatalog.classify(fileName: "IMG_0042.dng") == .image)
     }
 
     @Test func buildExcludesDmgAndKeepsVideo() {

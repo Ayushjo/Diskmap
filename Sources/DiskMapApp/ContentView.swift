@@ -2,6 +2,40 @@ import SwiftUI
 import AppKit
 import DiskMapCore
 
+private struct PreparedScan: Sendable {
+    var allocated: [Int64]
+    var logical: [Int64]
+    var fileCounts: [Int]
+    var folderCounts: [Int]
+    var quickWins: [QuickWins.Hit]
+    var fileTypes: [FileTypeTotals]
+    var analysis: AnalysisSnapshot
+    var forgotten: [ForgottenCandidate]
+    var forgottenSummary: ForgottenSummary
+    var reviewables: [ReviewableTarget]
+    var reviewableSummary: ReviewableSummary
+    var developer: DeveloperCatalogResult
+    var oldDownloads: OldDownloadsCatalogResult
+    var largeMedia: MediaCatalogResult
+}
+
+struct CleanupStageRequest: Sendable {
+    var url: URL
+    var size: Int64
+    var reason: String
+    var sharesStorageGroup: String? = nil
+    var groupCopyCount: Int = 1
+}
+
+struct CleanupStageSummary: Sendable {
+    var added = 0
+    var alreadyPresent = 0
+    var rejected = 0
+    var wasBusy = false
+    var addedURLs: [URL] = []
+    var rejectedURLs: [URL] = []
+}
+
 /// Shared so launch-argument scans start from `applicationDidFinishLaunching`
 /// (the window may not be on screen yet) and the view still shows live
 /// `scannedCount` updates.
@@ -15,16 +49,23 @@ final class ScanModel: ObservableObject {
     @Published var isScanning = false
     @Published var scannedCount = 0
     @Published var rootURL: URL?
+    @Published var pendingRootURL: URL?
     @Published var duplicateGroups: [DuplicateGroup] = []
     @Published var isFindingDuplicates = false
     @Published var duplicatePhase: DuplicateScanPhase = .idle
     @Published var duplicateProgressDone = 0
     @Published var duplicateProgressTotal = 0
+    @Published var duplicateFilesExamined = 0
+    @Published var duplicateCandidateCount = 0
+    @Published var duplicateStartedAt: Date?
+    @Published var duplicateLastProgressAt: Date?
     @Published var duplicateError: String?
     @Published var duplicateDidRun = false
     private var duplicateTask: Task<Void, Never>?
+    private var duplicateOperationID: UUID?
     @Published var stagedItems: [CleanupQueue.StagedItem] = []
     @Published var reclaimableBytes: Int64 = 0
+    @Published var isStagingCleanup = false
     @Published var lastCommitLines: [String] = []
     @Published var sizeBasis: SizeBasis = .allocated
     @Published var currentNode: Int32 = 0
@@ -78,6 +119,7 @@ final class ScanModel: ObservableObject {
     func cancelScan() {
         scanGeneration += 1
         isScanning = false
+        pendingRootURL = nil
         if tree == nil {
             rootURL = nil
             scannedCount = 0
@@ -88,31 +130,29 @@ final class ScanModel: ObservableObject {
     func scan(_ url: URL) async {
         scanGeneration += 1
         let generation = scanGeneration
-        rootURL = url
+        let hasCommittedScan = tree != nil
+        pendingRootURL = url
+        if !hasCommittedScan { rootURL = url }
         isScanning = true
         scannedCount = 0
-        currentNode = 0
-        allocatedTotals = []
-        logicalTotals = []
-        descendantFileCounts = []
-        descendantFolderCounts = []
-        cachedQuickWins = []
-        cachedFileTypes = []
-        duplicateGroups = []
-        duplicatePhase = .idle
-        duplicateProgressDone = 0
-        duplicateProgressTotal = 0
-        duplicateError = nil
-        duplicateDidRun = false
         cancelDuplicateSearch()
-        folderFilterPath = nil
-        cachedForgotten = []
-        cachedForgottenSummary = .empty
-        cachedReviewables = []
-        cachedReviewableSummary = .empty
-        cachedDeveloper = .empty
-        cachedOldDownloads = .empty
-        cachedLargeMedia = .empty
+        if !hasCommittedScan {
+            currentNode = 0
+            allocatedTotals = []
+            logicalTotals = []
+            descendantFileCounts = []
+            descendantFolderCounts = []
+            cachedQuickWins = []
+            cachedFileTypes = []
+            folderFilterPath = nil
+            cachedForgotten = []
+            cachedForgottenSummary = .empty
+            cachedReviewables = []
+            cachedReviewableSummary = .empty
+            cachedDeveloper = .empty
+            cachedOldDownloads = .empty
+            cachedLargeMedia = .empty
+        }
         log("scan start \(url.path)")
 
         let before = ProcessMemory.current()
@@ -151,66 +191,64 @@ final class ScanModel: ObservableObject {
         fflush(stdout)
         log(summary)
 
-        let both = result.tree.rollUpBoth()
-        let allocated = both.allocated
-        let logical = both.logical
-        logNotDownloadedContrast(tree: result.tree, logical: logical, allocated: allocated)
-        tree = result.tree
-        allocatedTotals = allocated
-        logicalTotals = logical
-        let counts = result.tree.rollUpDescendantCounts()
-        descendantFileCounts = counts.files
-        descendantFolderCounts = counts.folders
-        let patterns = QuickWins.bundledPatterns()
-        cachedQuickWins = QuickWins.find(in: result.tree, root: url, patterns: patterns)
-        cachedFileTypes = FileTypeCatalog.totals(
-            in: result.tree,
-            sizes: allocated,
-            categories: fileTypeCategories
-        )
-        analysis = AnalysisSnapshot.build(
-            tree: result.tree,
-            root: url,
-            allocated: allocated,
-            logical: logical,
-            basis: sizeBasis,
-            quickWins: cachedQuickWins
-        )
-        let forgotten = ForgottenFiles.candidates(
-            tree: result.tree,
-            root: url,
-            totals: allocated,
-            limit: 400
-        )
-        cachedForgotten = forgotten
-        cachedForgottenSummary = ForgottenFiles.summary(from: forgotten)
-        let reviewable = ReviewableCatalog.build(
-            tree: result.tree,
-            root: url,
-            totals: allocated,
-            quickWins: cachedQuickWins
-        )
-        cachedReviewables = reviewable.targets
-        cachedReviewableSummary = reviewable.summary
-        cachedDeveloper = DeveloperCatalog.build(
-            tree: result.tree,
-            root: url,
-            totals: allocated
-        )
-        cachedOldDownloads = OldDownloadsCatalog.build(
-            tree: result.tree,
-            root: url,
-            totals: allocated
-        )
-        cachedLargeMedia = MediaCatalog.build(
-            tree: result.tree,
-            root: url,
-            totals: allocated
-        )
+        let scannedTree = result.tree
+        let categories = fileTypeCategories
+        let basis = sizeBasis
+        let prepared = await Task.detached(priority: .userInitiated) {
+            let both = scannedTree.rollUpBoth()
+            let counts = scannedTree.rollUpDescendantCounts()
+            let quickWins = QuickWins.find(in: scannedTree, root: url, patterns: QuickWins.bundledPatterns())
+            let fileTypes = FileTypeCatalog.totals(in: scannedTree, sizes: both.allocated, categories: categories)
+            let analysis = AnalysisSnapshot.build(
+                tree: scannedTree, root: url, allocated: both.allocated, logical: both.logical,
+                basis: basis, quickWins: quickWins
+            )
+            let forgotten = ForgottenFiles.candidates(tree: scannedTree, root: url, totals: both.allocated, limit: 400)
+            let reviewable = ReviewableCatalog.build(tree: scannedTree, root: url, totals: both.allocated, quickWins: quickWins)
+            return PreparedScan(
+                allocated: both.allocated, logical: both.logical,
+                fileCounts: counts.files, folderCounts: counts.folders,
+                quickWins: quickWins, fileTypes: fileTypes, analysis: analysis,
+                forgotten: forgotten, forgottenSummary: ForgottenFiles.summary(from: forgotten),
+                reviewables: reviewable.targets, reviewableSummary: reviewable.summary,
+                developer: DeveloperCatalog.build(tree: scannedTree, root: url, totals: both.allocated),
+                oldDownloads: OldDownloadsCatalog.build(tree: scannedTree, root: url, totals: both.allocated),
+                largeMedia: MediaCatalog.build(tree: scannedTree, root: url, totals: both.allocated)
+            )
+        }.value
+        guard generation == scanGeneration else {
+            log("prepared scan discarded (cancelled) path=\(url.path)")
+            return
+        }
+        logNotDownloadedContrast(tree: scannedTree, logical: prepared.logical, allocated: prepared.allocated)
+        tree = scannedTree
+        rootURL = url
+        allocatedTotals = prepared.allocated
+        logicalTotals = prepared.logical
+        descendantFileCounts = prepared.fileCounts
+        descendantFolderCounts = prepared.folderCounts
+        cachedQuickWins = prepared.quickWins
+        cachedFileTypes = prepared.fileTypes
+        analysis = prepared.analysis
+        cachedForgotten = prepared.forgotten
+        cachedForgottenSummary = prepared.forgottenSummary
+        cachedReviewables = prepared.reviewables
+        cachedReviewableSummary = prepared.reviewableSummary
+        cachedDeveloper = prepared.developer
+        cachedOldDownloads = prepared.oldDownloads
+        cachedLargeMedia = prepared.largeMedia
+        duplicateGroups = []
+        duplicatePhase = .idle
+        duplicateProgressDone = 0
+        duplicateProgressTotal = 0
+        duplicateError = nil
+        duplicateDidRun = false
+        folderFilterPath = nil
         selectedNode = 0
         currentNode = 0
         lastScanSeconds = result.elapsedSeconds
         rememberRecent(url)
+        pendingRootURL = nil
         isScanning = false
         log("scan finished items=\(result.itemCount)")
     }
@@ -249,12 +287,18 @@ final class ScanModel: ObservableObject {
     func findDuplicates() async {
         guard tree != nil, rootURL != nil else { return }
         cancelDuplicateSearch()
+        let operationID = UUID()
+        duplicateOperationID = operationID
         duplicateError = nil
         duplicateDidRun = false
         isFindingDuplicates = true
-        duplicatePhase = .collecting
+        duplicatePhase = .preparing
         duplicateProgressDone = 0
         duplicateProgressTotal = 0
+        duplicateFilesExamined = 0
+        duplicateCandidateCount = 0
+        duplicateStartedAt = Date()
+        duplicateLastProgressAt = Date()
 
         let task = Task { @MainActor in
             guard let tree = self.tree, let rootURL = self.rootURL else {
@@ -264,30 +308,47 @@ final class ScanModel: ObservableObject {
             }
             do {
                 self.duplicatePhase = .collecting
-                let files = DuplicateFinder.candidates(in: tree, root: rootURL)
-                try Task.checkCancellation()
-                self.duplicatePhase = .grouping
-                let groups = try await DuplicateFinder.findDuplicates(candidates: files) { phase, done, total in
+                let files = try await DuplicateFinder.candidatesAsync(in: tree, root: rootURL) { examined, candidates in
                     Task { @MainActor in
-                        self.duplicatePhase = phase
-                        self.duplicateProgressDone = done
-                        self.duplicateProgressTotal = total
+                        guard self.duplicateOperationID == operationID else { return }
+                        self.duplicateFilesExamined = examined
+                        self.duplicateCandidateCount = candidates
+                        self.duplicateLastProgressAt = Date()
                     }
                 }
                 try Task.checkCancellation()
+                guard self.duplicateOperationID == operationID else { return }
+                self.duplicatePhase = .grouping
+                let groups = try await DuplicateFinder.findDuplicates(candidates: files) { phase, done, total in
+                    Task { @MainActor in
+                        guard self.duplicateOperationID == operationID else { return }
+                        self.duplicatePhase = phase
+                        self.duplicateProgressDone = done
+                        self.duplicateProgressTotal = total
+                        self.duplicateLastProgressAt = Date()
+                    }
+                }
+                try Task.checkCancellation()
+                guard self.duplicateOperationID == operationID else { return }
+                self.duplicatePhase = .assembling
                 self.duplicateGroups = groups
-                self.duplicatePhase = .complete
+                self.duplicatePhase = groups.isEmpty ? .noResults : .complete
                 self.duplicateDidRun = true
                 self.isFindingDuplicates = false
+                self.duplicateOperationID = nil
             } catch is CancellationError {
+                guard self.duplicateOperationID == operationID else { return }
                 self.duplicatePhase = .cancelled
                 self.isFindingDuplicates = false
                 self.duplicateDidRun = true
+                self.duplicateOperationID = nil
             } catch {
+                guard self.duplicateOperationID == operationID else { return }
                 self.duplicateError = error.localizedDescription
                 self.duplicatePhase = .failed
                 self.isFindingDuplicates = false
                 self.duplicateDidRun = true
+                self.duplicateOperationID = nil
             }
         }
         duplicateTask = task
@@ -295,6 +356,7 @@ final class ScanModel: ObservableObject {
     }
 
     func cancelDuplicateSearch() {
+        duplicateOperationID = nil
         duplicateTask?.cancel()
         duplicateTask = nil
         if isFindingDuplicates {
@@ -393,6 +455,41 @@ final class ScanModel: ObservableObject {
     func refreshQueue() async {
         stagedItems = await cleanupQueue.allItems()
         reclaimableBytes = await cleanupQueue.totalSize()
+    }
+
+    func stageForCleanup(_ requests: [CleanupStageRequest]) async -> CleanupStageSummary {
+        guard !isStagingCleanup else { return CleanupStageSummary(wasBusy: true) }
+        isStagingCleanup = true
+        defer { isStagingCleanup = false }
+        var summary = CleanupStageSummary()
+        for request in requests {
+            let url = request.url.standardizedFileURL
+            if isStaged(url) {
+                summary.alreadyPresent += 1
+                continue
+            }
+            let added = await cleanupQueue.stage(
+                url,
+                size: request.size,
+                reason: request.reason,
+                sharesStorageGroup: request.sharesStorageGroup,
+                groupCopyCount: request.groupCopyCount
+            )
+            if added {
+                summary.added += 1
+                summary.addedURLs.append(url)
+            } else {
+                summary.rejected += 1
+                summary.rejectedURLs.append(url)
+            }
+        }
+        await refreshQueue()
+        return summary
+    }
+
+    func unstageFromCleanup(_ item: CleanupQueue.StagedItem) async {
+        await cleanupQueue.unstage(id: item.id)
+        await refreshQueue()
     }
 
     func commitCleanup() async {
@@ -544,10 +641,33 @@ struct ContentView: View {
 
     var body: some View {
         AppShellView(model: model)
-            .onChange(of: model.sizeBasis) { _, _ in
-                model.rebuildAnalysis()
-                model.refreshForgottenCache()
-                model.refreshReviewableCache()
+            .task(id: model.sizeBasis) {
+                guard let tree = model.tree, let root = model.rootURL,
+                      model.allocatedTotals.count == tree.count else { return }
+                let allocated = model.allocatedTotals
+                let logical = model.logicalTotals
+                let basis = model.sizeBasis
+                let quickWins = model.cachedQuickWins
+                let categories = model.fileTypeCategories
+                let worker = Task.detached(priority: .userInitiated) {
+                    let totals = basis == .logical ? logical : allocated
+                    let analysis = AnalysisSnapshot.build(tree: tree, root: root, allocated: allocated,
+                        logical: logical, basis: basis, quickWins: quickWins)
+                    let forgotten = ForgottenFiles.candidates(tree: tree, root: root, totals: totals, limit: 400)
+                    let review = ReviewableCatalog.build(tree: tree, root: root, totals: totals, quickWins: quickWins)
+                    let types = FileTypeCatalog.totals(in: tree, sizes: totals, categories: categories)
+                    return (analysis, forgotten, review, types)
+                }
+                let result = await withTaskCancellationHandler {
+                    await worker.value
+                } onCancel: { worker.cancel() }
+                guard !Task.isCancelled, model.rootURL == root, model.sizeBasis == basis else { return }
+                model.analysis = result.0
+                model.cachedForgotten = result.1
+                model.cachedForgottenSummary = ForgottenFiles.summary(from: result.1)
+                model.cachedReviewables = result.2.targets
+                model.cachedReviewableSummary = result.2.summary
+                model.cachedFileTypes = result.3
             }
     }
 }

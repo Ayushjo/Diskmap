@@ -11,10 +11,7 @@ struct CleanReviewView: View {
 
     var body: some View {
         Group {
-            if model.isScanning {
-                ProgressView("Scanning…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if model.tree == nil {
+            if model.tree == nil {
                 VStack(spacing: 12) {
                     Text("Scan first to find cleanup candidates.")
                         .foregroundStyle(DiskMapTheme.mutedLabel)
@@ -42,7 +39,7 @@ struct CleanReviewView: View {
                 ForEach(hits, id: \.id) { hit in
                     hitRow(hit: hit, totals: totals)
                 }
-                Button("Open cleanup review…") { showCleanup = true }
+                Button("Open Cleanup…") { showCleanup = true }
                     .buttonStyle(InkButtonStyle())
             }
             .padding(20)
@@ -112,7 +109,7 @@ struct CleanReviewView: View {
                             }
                             let _ = await model.cleanupQueue.stage(url, size: size, reason: "Review cleanup: \(hit.name)")
                             await model.refreshQueue()
-                            model.showToast("Added to cleanup review")
+                            model.showToast("Added to Cleanup")
                         }
                     }
                     .buttonStyle(PrimaryCTAStyle())
@@ -154,7 +151,7 @@ struct CleanReviewView: View {
                         }
                         let _ = await model.cleanupQueue.stage(url, size: file.bytes, reason: "Review cleanup: \(file.name)")
                         await model.refreshQueue()
-                        model.showToast("Added to cleanup review")
+                        model.showToast("Added to Cleanup")
                     }
                 }
                 .buttonStyle(PrimaryCTAStyle())

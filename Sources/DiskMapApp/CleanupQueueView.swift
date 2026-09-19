@@ -58,6 +58,7 @@ struct CleanupQueueView: View {
                         Section {
                             ForEach(grouped[reason] ?? []) { item in
                                 HStack(alignment: .center, spacing: 12) {
+                                    FileIdentityIcon(url: item.url, size: 34)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(item.url.lastPathComponent)
                                             .font(.system(size: 13, weight: .medium))
@@ -135,8 +136,7 @@ struct CleanupQueueView: View {
                 guard let item = pendingRemove else { return }
                 let name = item.url.lastPathComponent
                 Task {
-                    await model.cleanupQueue.unstage(id: item.id)
-                    await model.refreshQueue()
+                    await model.unstageFromCleanup(item)
                     model.showToast("Removed “\(name)” from Cleanup")
                     pendingRemove = nil
                 }

@@ -48,21 +48,13 @@ struct DeveloperStorageView: View {
             if model.tree == nil {
                 emptyScan
             } else {
-                HStack(spacing: 0) {
-                    mainColumn
-                    Divider().overlay(DiskMapTheme.cardStroke)
-                    inspector
-                        .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
-                }
+                AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID, main: mainColumn, inspector: inspector)
             }
         }
         .background(DiskMapTheme.cream)
         .task {
             if model.cachedDeveloper.items.isEmpty, model.tree != nil {
                 model.refreshDeveloperCache()
-            }
-            if selectedID == nil {
-                selectedID = catalog.opportunities.first?.id ?? catalog.items.first?.id
             }
         }
     }
@@ -716,18 +708,10 @@ private struct DeveloperInspector: View {
     private func stage() async {
         guard let root = model.rootURL, let tree = model.tree else { return }
         let url = tree.path(of: item.nodeID, root: root)
-        if model.isStaged(url) {
-            model.showToast("Already in cleanup list")
-            onOpenCleanup()
-            return
-        }
-        let ok = await model.cleanupQueue.stage(
-            url,
-            size: item.bytes,
-            reason: "Developer: \(item.displayName)"
-        )
-        await model.refreshQueue()
-        model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
-        if ok { onOpenCleanup() }
+        let result = await model.stageForCleanup([
+            CleanupStageRequest(url: url, size: item.bytes, reason: "Developer: \(item.displayName)")
+        ])
+        model.showToast(result.added > 0 ? "Added to Cleanup" : (result.rejected > 0 ? "Blocked by safety rules" : "Already in Cleanup"))
+        if result.added > 0 || result.alreadyPresent > 0 { onOpenCleanup() }
     }
 }

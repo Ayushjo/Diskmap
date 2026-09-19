@@ -10,8 +10,13 @@ enum DiskMapTheme {
     static let cardStroke = Color(red: 226 / 255, green: 226 / 255, blue: 230 / 255)
     static let compressed = Color(red: 70 / 255, green: 140 / 255, blue: 90 / 255)
     static let inspectorFill = Color(red: 248 / 255, green: 248 / 255, blue: 250 / 255)
-    static let sidebarFill = Color(red: 245 / 255, green: 245 / 255, blue: 247 / 255)
+    /// The navigation rail shares the application canvas so the shell reads as one surface.
+    static let sidebarFill = cream
     static let navSelected = Color(red: 232 / 255, green: 232 / 255, blue: 237 / 255)
+    static let hoverFill = Color(red: 242 / 255, green: 242 / 255, blue: 245 / 255)
+    static let inspectedFill = Color(red: 235 / 255, green: 239 / 255, blue: 246 / 255)
+    static let disabledLabel = Color(red: 118 / 255, green: 118 / 255, blue: 124 / 255)
+    static let focus = Color(red: 0.22, green: 0.43, blue: 0.82)
 
     // Semantic
     static let info = Color(red: 0.20, green: 0.45, blue: 0.95)
@@ -56,6 +61,22 @@ enum DiskMapTheme {
     }
 }
 
+enum DiskMapRadius {
+    static let control: CGFloat = 8
+    static let card: CGFloat = 12
+}
+
+enum DiskMapMetric {
+    static let topBarHeight: CGFloat = 50
+    static let sidebarWidth: CGFloat = 200
+    static let controlHeight: CGFloat = 30
+    static let searchHeight: CGFloat = 32
+    static let tableHeaderHeight: CGFloat = 30
+    static let statusBarHeight: CGFloat = 30
+    static let checkboxColumnWidth: CGFloat = 24
+    static let inspectorPadding: CGFloat = 18
+}
+
 enum DiskMapType {
     static let title = Font.system(size: 22, weight: .semibold)
     static let section = Font.system(size: 15, weight: .semibold)
@@ -82,13 +103,12 @@ struct PanelCard<Content: View>: View {
         content
             .padding(padding)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DiskMapRadius.card, style: .continuous)
                     .fill(DiskMapTheme.cardFill)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: DiskMapRadius.card, style: .continuous)
                             .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.03), radius: 8, y: 2)
             )
     }
 }
@@ -123,7 +143,7 @@ struct ProportionBar: View {
                     .frame(width: max(0, geo.size.width * min(1, max(0, fraction))))
             }
         }
-        .frame(height: 4)
+        .frame(height: 5)
     }
 }
 
@@ -142,7 +162,7 @@ struct SegmentedStorageBar: View {
                 }
             }
         }
-        .frame(height: 12)
+        .frame(height: 9)
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
     }
 }
@@ -155,10 +175,10 @@ struct InkButtonStyle: ButtonStyle {
             .font(.system(size: 13, weight: .semibold))
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .frame(height: DiskMapMetric.controlHeight)
             .foregroundStyle(filled ? Color.white : DiskMapTheme.ink)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
                     .fill(filled ? DiskMapTheme.ink.opacity(configuration.isPressed ? 0.85 : 1) : DiskMapTheme.navSelected)
             )
     }
@@ -171,10 +191,10 @@ struct PrimaryCTAStyle: ButtonStyle {
             .font(.system(size: 13, weight: .semibold))
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.horizontal, 16)
-            .padding(.vertical, 11)
+            .frame(height: DiskMapMetric.controlHeight)
             .foregroundStyle(Color.white)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
                     .fill(DiskMapTheme.safe.opacity(configuration.isPressed ? 0.85 : 1))
             )
     }

@@ -19,7 +19,7 @@ struct QuickWinsView: View {
                 Text("\(hits.count) regenerable folders · \(diskByteString(checkedSize)) selected")
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Stage Selected") { Task { await stageSelected() } }
+                Button("Add to Cleanup") { Task { await stageSelected() } }
                     .disabled(checked.isEmpty)
             }
             .padding(8)

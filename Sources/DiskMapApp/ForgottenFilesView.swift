@@ -18,7 +18,7 @@ struct ForgottenFilesView: View {
             case .all: return "All"
             case .likely: return "Likely forgotten"
             case .worth: return "Worth reviewing"
-            case .excluded: return "Old but important"
+            case .excluded: return "Excluded"
             }
         }
     }
@@ -97,19 +97,11 @@ struct ForgottenFilesView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            mainColumn
-            Divider().overlay(DiskMapTheme.cardStroke)
-            inspectorColumn
-                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
-        }
+        AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init), main: mainColumn, inspector: inspectorColumn)
         .background(DiskMapTheme.cream)
         .task {
             if model.cachedForgotten.isEmpty, model.tree != nil {
                 model.refreshForgottenCache()
-            }
-            if selectedID == nil {
-                selectedID = visible.first?.id
             }
         }
     }
@@ -129,10 +121,7 @@ struct ForgottenFilesView: View {
             controls
             listHeader
             Divider().overlay(DiskMapTheme.cardStroke)
-            if model.isScanning {
-                ProgressView("Finding files you may have forgotten…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if visible.isEmpty {
+            if visible.isEmpty {
                 emptyState
             } else {
                 list
@@ -180,7 +169,7 @@ struct ForgottenFilesView: View {
             card("Worth reviewing", summary.worthBytes, summary.worthCount, "eye", DiskMapTheme.review, filterTab == .worth) {
                 filterTab = .worth
             }
-            card("Old but important", summary.excludedBytes, summary.excludedCount, "shield", DiskMapTheme.mutedLabel, filterTab == .excluded) {
+            card("Excluded from recommendations", summary.excludedBytes, summary.excludedCount, "shield", DiskMapTheme.mutedLabel, filterTab == .excluded) {
                 filterTab = .excluded
             }
         }
@@ -339,50 +328,8 @@ struct ForgottenFilesView: View {
 
     private var controls: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                TextField("Search forgotten files…", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(DiskMapTheme.cardFill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                    )
-            )
-            Menu {
-                ForEach(SortMode.allCases) { mode in
-                    Button(mode.title) { sortMode = mode }
-                }
-            } label: {
-                HStack {
-                    Text("Sort: " + sortMode.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .lineLimit(1)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .frame(width: 190)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(DiskMapTheme.cardFill)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                        )
-                )
-            }
-            .menuStyle(.borderlessButton)
+            DiskMapSearchField(placeholder: "Search forgotten files…", text: $query)
+            DiskMapMenu(label: "Sort", options: SortMode.allCases, selection: $sortMode, title: { $0.title }, width: 190)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 8)
@@ -390,7 +337,7 @@ struct ForgottenFilesView: View {
 
     private var listHeader: some View {
         HStack(spacing: 8) {
-            Color.clear.frame(width: 22)
+            DiskMapColumnSpacer(width: 22)
             Text("Name").frame(maxWidth: .infinity, alignment: .leading)
             Text("Location").frame(width: 140, alignment: .leading)
             Text("Size").frame(width: 72, alignment: .trailing)
@@ -401,6 +348,8 @@ struct ForgottenFilesView: View {
         .foregroundStyle(DiskMapTheme.mutedLabel)
         .padding(.horizontal, 28)
         .padding(.vertical, 6)
+        .frame(height: DiskMapMetric.tableHeaderHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var list: some View {
@@ -428,6 +377,7 @@ struct ForgottenFilesView: View {
             }
             .padding(.horizontal, 12)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var emptyState: some View {
@@ -528,7 +478,7 @@ struct ForgottenFilesView: View {
             }
         }
         await model.refreshQueue()
-        model.showToast(okCount > 0 ? "Added \(okCount) to cleanup review" : "Nothing could be staged")
+        model.showToast(okCount > 0 ? "Added \(okCount) to Cleanup" : "Nothing could be added")
         if okCount > 0 { onOpenCleanup() }
     }
 
@@ -546,7 +496,7 @@ struct ForgottenFilesView: View {
         let ok = await model.cleanupQueue.stage(url, size: c.bytes, reason: "Forgotten: " + c.confidence.title)
         await model.refreshQueue()
         if ok {
-            model.showToast("Added to cleanup review")
+            model.showToast("Added to Cleanup")
             onOpenCleanup()
         } else {
             model.showToast("Blocked by safety rules")
@@ -598,13 +548,17 @@ private struct ForgottenRow: View {
                         .font(.system(size: 11))
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .frame(width: 88, alignment: .trailing)
-                    Text(candidate.confidence.title)
+                    Text(confidenceLabel)
                         .font(.system(size: 10, weight: .semibold))
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .foregroundStyle(confColor)
                         .background(Capsule().fill(confColor.opacity(0.14)))
                         .frame(width: 118, alignment: .leading)
+                        .lineLimit(1)
+                        .help(candidate.confidence == .oldImportant
+                              ? "Excluded from recommendations because this appears to be app-managed or important data."
+                              : candidate.confidence.title)
                 }
                 .padding(.vertical, 9)
                 .padding(.horizontal, 6)
@@ -624,6 +578,14 @@ private struct ForgottenRow: View {
         case .likelyForgotten: return DiskMapTheme.safe
         case .worthReviewing: return DiskMapTheme.review
         case .oldImportant: return DiskMapTheme.mutedLabel
+        }
+    }
+
+    private var confidenceLabel: String {
+        switch candidate.confidence {
+        case .likelyForgotten: return "Likely forgotten"
+        case .worthReviewing: return "Worth reviewing"
+        case .oldImportant: return "Excluded"
         }
     }
 
@@ -687,7 +649,7 @@ private struct ForgottenInspectorPanel: View {
 
                 meta("Location", candidate.displayPath)
                 meta("Type", candidate.kind.title)
-                meta("Size", "\(candidate.bytes.formatted()) bytes")
+                meta("Size", ByteFormat.string(candidate.bytes))
 
                 WhyCard(title: "Why was this flagged?", bodyText: candidate.reasons.map { "• \($0)" }.joined(separator: "\n"))
 

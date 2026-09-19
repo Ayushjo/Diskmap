@@ -126,12 +126,11 @@ struct FileBrowserView: View {
     private var canGoForward: Bool { historyIndex + 1 < history.count }
 
     var body: some View {
-        HStack(spacing: 0) {
-            mainColumn
+        Group {
             if showInspector {
-                Divider().overlay(DiskMapTheme.cardStroke)
-                inspector
-                    .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
+                AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init), main: mainColumn, inspector: inspector)
+            } else {
+                mainColumn
             }
         }
         .background(DiskMapTheme.cream)
@@ -165,10 +164,7 @@ struct FileBrowserView: View {
             controls
             listHeader
             Group {
-                if model.isScanning {
-                    ProgressView("Indexing… File Browser uses the finished scan.")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if rows.isEmpty {
+                if rows.isEmpty {
                     emptyState
                 } else {
                     list
@@ -409,6 +405,7 @@ struct FileBrowserView: View {
                 )
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
 
             Image(systemName: "list.bullet")
                 .font(.system(size: 12, weight: .semibold))
@@ -435,8 +432,8 @@ struct FileBrowserView: View {
 
     private var listHeader: some View {
         HStack(spacing: Col.spacing) {
-            Color.clear.frame(width: Col.check)
-            Color.clear.frame(width: Col.icon)
+            Color.clear.frame(width: Col.check, height: 1)
+            Color.clear.frame(width: Col.icon, height: 1)
             Text("Name")
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text("Kind")
@@ -726,7 +723,9 @@ struct FileBrowserView: View {
         let start = model.currentNode
         history = [start]
         historyIndex = 0
-        selectedID = model.selectedNode >= 0 ? model.selectedNode : start
+        // Keep navigation and inspection separate. A row click establishes the
+        // inspected item and lets the adaptive inspector respond to that event.
+        selectedID = nil
         model.currentNode = start
     }
 
@@ -835,7 +834,7 @@ struct FileBrowserView: View {
             if await stageOne(id, openSheet: false) { ok += 1 }
         }
         await model.refreshQueue()
-        model.showToast(ok > 0 ? "Added \(ok) to cleanup review" : "Nothing staged")
+        model.showToast(ok > 0 ? "Added \(ok) to Cleanup" : "Nothing added")
         if ok > 0 { onOpenCleanup() }
     }
 
@@ -858,7 +857,7 @@ struct FileBrowserView: View {
         let ok = await model.cleanupQueue.stage(url, size: size, reason: "File Browser: " + name)
         await model.refreshQueue()
         if openSheet {
-            model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
+            model.showToast(ok ? "Added to Cleanup" : "Blocked by safety rules")
             if ok { onOpenCleanup() }
         }
         return ok
@@ -1076,18 +1075,22 @@ private struct FolderBrowserInspector: View {
                 .font(.system(size: 12, weight: .semibold))
 
                 VStack(spacing: 8) {
+                    if safety.level != .protected {
+                        Button(model.isStaged(URL(fileURLWithPath: abs, isDirectory: true))
+                               ? "Open Cleanup Queue"
+                               : "Add to Cleanup") {
+                            Task { await stage() }
+                        }
+                        .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    }
                     if nodeID != model.currentNode {
                         Button("Open Folder") { onOpen() }
-                            .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                            .buttonStyle(InkButtonStyle(fullWidth: true))
                     }
                     Button("Open in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: abs)])
                     }
-                    .buttonStyle(
-                        nodeID == model.currentNode
-                            ? AnyButtonStyle(PrimaryCTAStyle(fullWidth: true))
-                            : AnyButtonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                    )
+                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
 
                     Button("Visualize this folder") {
                         model.currentNode = nodeID
@@ -1103,14 +1106,6 @@ private struct FolderBrowserInspector: View {
                     }
                     .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
 
-                    if safety.level != .protected {
-                        Button(model.isStaged(URL(fileURLWithPath: abs, isDirectory: true))
-                               ? "Open Cleanup Queue"
-                               : "Add to Cleanup") {
-                            Task { await stage() }
-                        }
-                        .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                    }
 
                     Button("Copy Path") {
                         NSPasteboard.general.clearContents()
@@ -1149,7 +1144,7 @@ private struct FolderBrowserInspector: View {
         }
         let ok = await model.cleanupQueue.stage(url, size: bytes, reason: "File Browser: " + name)
         await model.refreshQueue()
-        model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
+        model.showToast(ok ? "Added to Cleanup" : "Blocked by safety rules")
         if ok { onOpenCleanup() }
     }
 }
@@ -1238,10 +1233,16 @@ private struct FileBrowserInspector: View {
                 }
 
                 VStack(spacing: 8) {
+                    if safety.level != .protected {
+                        Button(model.isStaged(URL(fileURLWithPath: abs)) ? "Open Cleanup Queue" : "Add to Cleanup") {
+                            Task { await stage() }
+                        }
+                        .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    }
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: abs)])
                     }
-                    .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
 
                     Button("Open Containing Folder") {
                         let parent = (abs as NSString).deletingLastPathComponent
@@ -1255,12 +1256,6 @@ private struct FileBrowserInspector: View {
                     }
                     .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
 
-                    if safety.level != .protected {
-                        Button(model.isStaged(URL(fileURLWithPath: abs)) ? "Open Cleanup Queue" : "Add to Cleanup") {
-                            Task { await stage() }
-                        }
-                        .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                    }
 
                     Button("Copy Path") {
                         NSPasteboard.general.clearContents()
@@ -1309,7 +1304,7 @@ private struct FileBrowserInspector: View {
         }
         let ok = await model.cleanupQueue.stage(url, size: size, reason: "File Browser: " + name)
         await model.refreshQueue()
-        model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
+        model.showToast(ok ? "Added to Cleanup" : "Blocked by safety rules")
         if ok { onOpenCleanup() }
     }
 }

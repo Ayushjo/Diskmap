@@ -190,14 +190,6 @@ public enum SnapshotStore {
         return url
     }
 
-    public static func delete(_ snapshotURL: URL) throws {
-        try FileManager.default.removeItem(at: snapshotURL)
-        let meta = metaURL(for: snapshotURL)
-        if FileManager.default.fileExists(atPath: meta.path) {
-            try FileManager.default.removeItem(at: meta)
-        }
-    }
-
     public static func records(in directory: URL, rootPath: String) -> [SnapshotRecord] {
         summaries(in: directory, rootPath: rootPath).map { pair in
             SnapshotRecord(

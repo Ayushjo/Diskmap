@@ -332,7 +332,7 @@ public enum OldDownloadsCatalog {
     public static func recommendation(status: OldDownloadsStatus, kind: FileKind) -> String {
         switch status {
         case .likelyDisposable:
-            return "If the software is already installed and you don’t need the installer again, this may be reasonable to remove via Cleanup Review."
+            return "If the software is already installed and you don’t need the installer again, add it to Cleanup and review it before removing."
         case .reviewFirst:
             if kind == .video || kind == .document {
                 return "This looks like a personal file. DiskMap can’t determine whether you still need it. Review before removing."

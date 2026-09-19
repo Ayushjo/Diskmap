@@ -5,6 +5,7 @@ import SwiftUI
 /// Explore → Snapshots: storage history and comparison workspace.
 struct SnapshotsView: View {
     @ObservedObject var model: ScanModel
+    var onOpenCleanup: () -> Void = {}
     @Environment(\.diskMapContentWidth) private var contentWidth
 
     @State private var records: [SnapshotRecord] = []
@@ -123,31 +124,26 @@ struct SnapshotsView: View {
             if model.tree == nil && records.isEmpty {
                 emptyNoScan
             } else {
-                HStack(spacing: 0) {
-                    mainColumn
-                    Divider().overlay(DiskMapTheme.cardStroke)
-                    inspector
-                        .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
-                }
+                AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedChangePath ?? selectedID, main: mainColumn, inspector: inspector)
             }
         }
         .background(DiskMapTheme.cream)
         .task { reload() }
         .sheet(isPresented: $showSave) { saveSheet }
         .confirmationDialog(
-            "Delete snapshot?",
+            "Add snapshot to Cleanup?",
             isPresented: Binding(
                 get: { confirmDelete != nil },
                 set: { if !$0 { confirmDelete = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Delete Snapshot", role: .destructive) {
-                if let rec = confirmDelete { delete(rec) }
+            Button("Add to Cleanup") {
+                if let rec = confirmDelete { Task { await stageSnapshot(rec) } }
             }
             Button("Cancel", role: .cancel) { confirmDelete = nil }
         } message: {
-            Text("This only removes the saved DiskMap storage analysis. Your files will not be affected.")
+            Text("The saved analysis and its metadata will be reviewed in Cleanup before either file moves to Trash. Your scanned files are not affected.")
         }
     }
 
@@ -203,7 +199,7 @@ struct SnapshotsView: View {
             } label: {
                 Label("Save Snapshot", systemImage: "plus")
             }
-            .buttonStyle(PrimaryCTAStyle())
+            .buttonStyle(InkButtonStyle())
             .disabled(model.tree == nil)
         }
     }
@@ -337,7 +333,7 @@ struct SnapshotsView: View {
                     Menu {
                         Button("Compare with previous") { compareWithPrevious(rec) }
                         Button(rec.meta.favorite ? "Unfavorite" : "Favorite") { toggleFavorite(rec) }
-                        Button("Delete…", role: .destructive) { confirmDelete = rec }
+                        Button("Add to Cleanup…") { confirmDelete = rec }
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 12, weight: .semibold))
@@ -419,7 +415,7 @@ struct SnapshotsView: View {
                     .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
                 }
                 Button("Compare") { Task { await runCompare() } }
-                    .buttonStyle(PrimaryCTAStyle())
+                    .buttonStyle(InkButtonStyle())
                     .disabled(!canCompare)
             }
         }
@@ -678,11 +674,11 @@ struct SnapshotsView: View {
             if !rec.isCurrent {
                 Button("Compare with previous") { compareWithPrevious(rec) }
                     .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                Button("Delete snapshot…", role: .destructive) { confirmDelete = rec }
+                Button("Add snapshot to Cleanup…") { confirmDelete = rec }
                     .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
             } else {
                 Button("Save Snapshot") { prepareSave() }
-                    .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    .buttonStyle(InkButtonStyle(fullWidth: true))
             }
         }
     }
@@ -751,7 +747,7 @@ struct SnapshotsView: View {
                 Button("Cancel") { showSave = false }
                     .buttonStyle(InkButtonStyle(filled: false))
                 Button("Save Snapshot") { saveSnapshot() }
-                    .buttonStyle(PrimaryCTAStyle())
+                    .buttonStyle(InkButtonStyle())
             }
         }
         .padding(24)
@@ -826,19 +822,19 @@ struct SnapshotsView: View {
         }
     }
 
-    private func delete(_ rec: SnapshotRecord) {
+    private func stageSnapshot(_ rec: SnapshotRecord) async {
         guard !rec.isCurrent else { return }
-        do {
-            try SnapshotStore.delete(rec.url)
-            if beforeID == rec.id { beforeID = nil }
-            if afterID == rec.id { afterID = nil }
-            if selectedID == rec.id { selectedID = nil }
-            confirmDelete = nil
-            reload()
-            model.showToast("Snapshot deleted")
-        } catch {
-            statusMessage = "Could not delete snapshot"
+        let metaURL = SnapshotStore.metaURL(for: rec.url)
+        let urls = [rec.url, metaURL].filter { FileManager.default.fileExists(atPath: $0.path) }
+        let requests = urls.map { url in
+            let values = try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .fileSizeKey])
+            let size = Int64(values?.totalFileAllocatedSize ?? values?.fileSize ?? 0)
+            return CleanupStageRequest(url: url, size: size, reason: "Saved snapshot: \(rec.displayName)")
         }
+        let result = await model.stageForCleanup(requests)
+        confirmDelete = nil
+        model.showToast(result.added > 0 ? "Snapshot added to Cleanup" : "Snapshot is already in Cleanup")
+        onOpenCleanup()
     }
 
     private func toggleFavorite(_ rec: SnapshotRecord) {

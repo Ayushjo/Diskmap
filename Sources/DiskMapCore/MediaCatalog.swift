@@ -350,7 +350,7 @@ public enum MediaCatalog {
         "mp4", "mov", "mkv", "avi", "m4v", "webm", "wmv", "flv", "mpeg", "mpg", "m2ts", "mts", "ts", "vob", "3gp"
     ]
     private static let imageExtensions: Set<String> = [
-        "jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "tiff", "tif", "bmp", "raw", "dng", "cr2", "nef", "orf", "arw", "rw2", "psd", "ico"
+        "jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "tiff", "tif", "bmp", "dng", "cr2", "nef", "orf", "arw", "rw2", "psd", "ico"
     ]
     private static let audioExtensions: Set<String> = [
         "mp3", "wav", "flac", "aac", "m4a", "ogg", "aiff", "aif", "wma", "alac", "opus", "caf"

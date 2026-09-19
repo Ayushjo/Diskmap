@@ -6,15 +6,20 @@ struct TopSizesView: View {
     let totals: [Int64]
     let rootURL: URL
     @Binding var selectedNode: Int32
+    @State private var ranked: [Int32] = []
+    @State private var isPreparing = true
 
-    private var ranked: [Int32] {
-        guard totals.count == tree.count else { return [] }
-        return TopSizes.rankedFiles(tree: tree, totals: totals)
+    private var rankingID: String {
+        "\(tree.count):\(totals.first ?? 0)"
     }
 
     var body: some View {
         Group {
-            if ranked.isEmpty {
+            if isPreparing {
+                ProgressView("Ranking files…")
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if ranked.isEmpty {
                 Text("Nothing ranked yet")
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -35,6 +40,25 @@ struct TopSizesView: View {
             }
         }
         .background(DiskMapTheme.cream)
+        .task(id: rankingID) { await prepareRanking() }
+    }
+
+    @MainActor
+    private func prepareRanking() async {
+        guard totals.count == tree.count else {
+            ranked = []
+            isPreparing = false
+            return
+        }
+        isPreparing = true
+        let sourceTree = tree
+        let sourceTotals = totals
+        let result = await Task.detached(priority: .userInitiated) {
+            TopSizes.rankedFiles(tree: sourceTree, totals: sourceTotals)
+        }.value
+        guard !Task.isCancelled else { return }
+        ranked = result
+        isPreparing = false
     }
 
     private func rankRow(index: Int, id: Int32) -> some View {

@@ -11,18 +11,11 @@ struct AgeMapView: View {
 
     @State private var checked: Set<Int32> = []
     @State private var filterBucket: AgeBucket? = nil
+    @State private var bucketSizes: [AgeBucket: Int64] = [:]
+    @State private var untouched: [Int32] = []
+    @State private var isPreparing = true
 
     private var today: Int32 { AgeMap.today() }
-
-    private var bucketSizes: [AgeBucket: Int64] {
-        guard totals.count == tree.count else { return [:] }
-        return AgeMap.bucketSizes(in: tree, totals: totals, today: today)
-    }
-
-    private var untouched: [Int32] {
-        guard totals.count == tree.count else { return [] }
-        return AgeMap.untouched(in: tree, totals: totals, today: today, limit: 200)
-    }
 
     private var filteredUntouched: [Int32] {
         guard let filterBucket else { return untouched }
@@ -43,30 +36,62 @@ struct AgeMapView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            heatmap
-                .frame(minHeight: findWorkflow ? 140 : 180, maxHeight: findWorkflow ? 200 : 260)
-                .padding(8)
-
-            summaryBar
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
-
-            bucketChips
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
-
-            Divider().overlay(DiskMapTheme.cardStroke)
-
-            if filteredUntouched.isEmpty {
-                emptyState
+            if isPreparing {
+                DiskMapLoadingState(title: "Preparing Age Map", detail: "Grouping modification dates off the main thread.")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                listHeader
+                heatmap
+                    .frame(minHeight: findWorkflow ? 140 : 180, maxHeight: findWorkflow ? 200 : 260)
+                    .padding(8)
+
+                summaryBar
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                candidateList
+                    .padding(.bottom, 8)
+
+                bucketChips
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+
+                Divider().overlay(DiskMapTheme.cardStroke)
+
+                if filteredUntouched.isEmpty {
+                    emptyState
+                } else {
+                    listHeader
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                    candidateList
+                }
             }
         }
         .background(DiskMapTheme.cream)
+        .task(id: totals.count) {
+            await prepareAgeMap()
+        }
+    }
+
+    @MainActor
+    private func prepareAgeMap() async {
+        guard totals.count == tree.count else {
+            bucketSizes = [:]
+            untouched = []
+            isPreparing = false
+            return
+        }
+        isPreparing = true
+        let sourceTree = tree
+        let sourceTotals = totals
+        let referenceDay = today
+        let result = await Task.detached(priority: .utility) {
+            let buckets = AgeMap.bucketSizes(in: sourceTree, totals: sourceTotals, today: referenceDay)
+            guard !Task.isCancelled else { return ([AgeBucket: Int64](), [Int32]()) }
+            let candidates = AgeMap.untouched(in: sourceTree, totals: sourceTotals, today: referenceDay, limit: 200)
+            return (buckets, candidates)
+        }.value
+        guard !Task.isCancelled else { return }
+        bucketSizes = result.0
+        untouched = result.1
+        isPreparing = false
     }
 
     private var summaryBar: some View {
@@ -347,7 +372,7 @@ struct AgeMapView: View {
         }
         _ = await model.cleanupQueue.stage(url, size: totals[Int(id)], reason: "big & untouched")
         await model.refreshQueue()
-        model.showToast("Added to cleanup review")
+        model.showToast("Added to Cleanup")
     }
 
     private func stageSelected() async {
@@ -359,6 +384,6 @@ struct AgeMapView: View {
         }
         checked.removeAll()
         await model.refreshQueue()
-        model.showToast("Added to cleanup review")
+        model.showToast("Added to Cleanup")
     }
 }

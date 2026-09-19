@@ -36,9 +36,19 @@ enum ExploreColoring {
             top = cursor
         }
         if tree.parent[Int(cursor)] == 0 { top = cursor }
-        let hues = topLevelHues(tree: tree)
-        let idx = hues[top] ?? Int(id)
-        let base = DiskMapTheme.folderPastels[abs(idx) % DiskMapTheme.folderPastels.count]
+        // Stable constant-time palette lookup; never enumerate root siblings per tile.
+        let idx = Int(top)
+        let palette = ["849BB8", "A795C7", "C78797", "7BA89C", "B9A071", "8FACC0", "A2A4AC"]
+        let name = tree.name(of: top).lowercased()
+        let hex: String
+        switch name {
+        case "library": hex = "A795C7"
+        case "downloads": hex = "C78797"
+        case "desktop", "documents": hex = "849BB8"
+        case "applications": hex = "C9A078"
+        default: hex = palette[abs(idx) % palette.count]
+        }
+        let base = DiskMapTheme.hex(hex)
         let depth = max(0, ancestorDepth(id, tree: tree) - ancestorDepth(top, tree: tree))
         return depth == 0 ? base : base.opacity(1.0 - min(0.35, Double(depth) * 0.08))
     }

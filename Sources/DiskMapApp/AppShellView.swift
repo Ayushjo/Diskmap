@@ -8,6 +8,7 @@ struct AppShellView: View {
     @State private var showCleanup = false
     @State private var showExplain = false
     @State private var showPalette = false
+    @State private var showCompactSidebar = false
     @State private var searchText = ""
     @State private var needsScanReady = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -15,37 +16,62 @@ struct AppShellView: View {
     private var hasCompletedScan: Bool { model.tree != nil }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            VStack(spacing: 0) {
-                topBar
-                Divider().overlay(DiskMapTheme.cardStroke)
-                HStack(spacing: 0) {
-                    sidebar
-                        .frame(width: 220)
+        GeometryReader { window in
+            let compactSidebar = window.size.width < 1_000
+            ZStack(alignment: .topLeading) {
+                VStack(spacing: 0) {
+                    topBar(compactSidebar: compactSidebar)
                     Divider().overlay(DiskMapTheme.cardStroke)
-                    GeometryReader { geo in
-                        destinationBody
-                            .environment(\.diskMapContentWidth, geo.size.width)
-                            .frame(width: geo.size.width, height: geo.size.height)
+                    HStack(spacing: 0) {
+                        if !compactSidebar {
+                            sidebar
+                                .frame(width: DiskMapMetric.sidebarWidth)
+                            Divider().overlay(DiskMapTheme.cardStroke)
+                        }
+                        GeometryReader { geo in
+                            destinationBody
+                                .environment(
+                                    \.diskMapContentWidth,
+                                    geo.size.width + (compactSidebar ? 0 : DiskMapMetric.sidebarWidth + 1)
+                                )
+                                .frame(width: geo.size.width, height: geo.size.height)
+                        }
                     }
                 }
+
+                if compactSidebar, showCompactSidebar {
+                    Color.black.opacity(0.18)
+                        .padding(.top, DiskMapMetric.topBarHeight + 1)
+                        .ignoresSafeArea(edges: [.horizontal, .bottom])
+                        .onTapGesture { showCompactSidebar = false }
+                    sidebar
+                        .frame(width: DiskMapMetric.sidebarWidth)
+                        .padding(.top, DiskMapMetric.topBarHeight + 1)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                        .shadow(color: .black.opacity(0.14), radius: 16, x: 5, y: 0)
+                        .onExitCommand { showCompactSidebar = false }
+                }
+
+                if let toast = model.toastMessage {
+                    Text(toast)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(DiskMapTheme.ink.opacity(0.92)))
+                        .padding(.top, 56)
+                        .frame(maxWidth: .infinity)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .zIndex(10)
+                }
+
             }
-            if let toast = model.toastMessage {
-                Text(toast)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(DiskMapTheme.ink.opacity(0.92)))
-                    .padding(.top, 56)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(10)
-            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: showCompactSidebar)
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.toastMessage)
         .background(DiskMapTheme.cream)
         .preferredColorScheme(.light)
-        .frame(minWidth: 1024, minHeight: 680)
+        .frame(minWidth: 880, minHeight: 600)
         .sheet(isPresented: $showCleanup) {
             CleanupQueueView(model: model)
                 .frame(minWidth: 640, minHeight: 480)
@@ -64,18 +90,35 @@ struct AppShellView: View {
                         .onTapGesture { showPalette = false }
                         .accessibilityLabel("Dismiss command palette")
                         .accessibilityAddTraits(.isButton)
-                    CommandPalette(model: model, isPresented: $showPalette, initialQuery: searchText, onReviewCleanup: { showPalette = false; showCleanup = true })
+                    CommandPalette(
+                        model: model,
+                        isPresented: $showPalette,
+                        initialQuery: searchText,
+                        onReviewCleanup: { showPalette = false; showCleanup = true },
+                        onExplain: { showPalette = false; showExplain = true }
+                    )
                 }
                 .transition(reduceMotion ? .identity : .opacity)
             }
         }
     }
 
-    private var topBar: some View {
+    private func topBar(compactSidebar: Bool) -> some View {
         HStack(spacing: 12) {
+            if compactSidebar {
+                Button {
+                    showCompactSidebar.toggle()
+                } label: {
+                    Image(systemName: "sidebar.left")
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help(showCompactSidebar ? "Hide Sidebar" : "Show Sidebar")
+                .accessibilityLabel(showCompactSidebar ? "Hide Sidebar" : "Show Sidebar")
+            }
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(DiskMapTheme.mutedLabel)
-            TextField("Search files, folders or ask anything… (⌘K)", text: $searchText)
+            TextField("Search files, folders and actions…", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .accessibilityLabel("Search storage")
@@ -92,7 +135,7 @@ struct AppShellView: View {
                 Text("⌘K")
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .frame(height: DiskMapMetric.controlHeight)
                     .background(RoundedRectangle(cornerRadius: 6).fill(DiskMapTheme.navSelected))
             }
             .buttonStyle(.plain)
@@ -101,6 +144,17 @@ struct AppShellView: View {
             .opacity(hasCompletedScan ? 1 : 0.45)
             .help(hasCompletedScan ? "Command palette" : "Scan first to search")
             Spacer()
+            if model.isScanning {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(model.tree == nil ? "Scanning… \(model.scannedCount.formatted())" : "Rescanning… \(model.scannedCount.formatted())")
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .lineLimit(1)
+                }
+                .layoutPriority(1)
+                .accessibilityElement(children: .combine)
+            }
             Button {
                 showCleanup = true
             } label: {
@@ -143,7 +197,7 @@ struct AppShellView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .frame(height: DiskMapMetric.topBarHeight)
         .background(DiskMapTheme.cardFill)
     }
 
@@ -196,6 +250,7 @@ struct AppShellView: View {
         let locked = dest.requiresScan && !hasCompletedScan
         return Button {
             guard !locked else { return }
+            showCompactSidebar = false
             model.destination = dest
             if dest == .visualize { model.topNav = .explore }
             if dest == .duplicates { model.topNav = .duplicates }
@@ -213,7 +268,7 @@ struct AppShellView: View {
                     .font(.system(size: 13, weight: model.destination == dest ? .semibold : .regular))
                 Spacer()
             }
-            .foregroundStyle(locked ? DiskMapTheme.mutedLabel.opacity(0.55) : DiskMapTheme.ink)
+            .foregroundStyle(locked ? DiskMapTheme.disabledLabel.opacity(0.62) : DiskMapTheme.ink)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(
@@ -224,7 +279,7 @@ struct AppShellView: View {
         }
         .buttonStyle(.plain)
         .disabled(locked)
-        .help(locked ? "Scan first" : dest.label)
+        .help(locked ? "Scan your Mac first." : dest.label)
         .accessibilityLabel(locked ? "\(dest.label), scan first" : dest.label)
         .accessibilityAddTraits(model.destination == dest ? .isSelected : [])
     }
@@ -338,7 +393,7 @@ struct AppShellView: View {
                 onOpenCleanup: { showCleanup = true }
             )
         case .snapshots:
-            SnapshotsView(model: model)
+            SnapshotsView(model: model, onOpenCleanup: { showCleanup = true })
         }
     }
 
@@ -378,10 +433,7 @@ struct AppShellView: View {
         @ViewBuilder trailing: () -> Trailing,
         @ViewBuilder content: (FileTree, URL) -> Content
     ) -> some View {
-        if model.isScanning {
-            ProgressView("Scanning… \(model.scannedCount)")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let tree = model.tree, let root = model.rootURL, model.selectedTotals.count == tree.count {
+        if let tree = model.tree, let root = model.rootURL, model.selectedTotals.count == tree.count {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {

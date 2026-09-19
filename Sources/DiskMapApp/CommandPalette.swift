@@ -5,13 +5,29 @@ struct CommandPalette: View {
     @ObservedObject var model: ScanModel
     @Binding var isPresented: Bool
     @State private var query: String
+    @State private var searchHits: [SearchHit] = []
+    @State private var isSearching = false
     var onReviewCleanup: () -> Void
+    var onExplain: () -> Void
 
-    init(model: ScanModel, isPresented: Binding<Bool>, initialQuery: String = "", onReviewCleanup: @escaping () -> Void) {
+    init(model: ScanModel, isPresented: Binding<Bool>, initialQuery: String = "", onReviewCleanup: @escaping () -> Void, onExplain: @escaping () -> Void) {
         self.model = model
         self._isPresented = isPresented
         self._query = State(initialValue: initialQuery)
         self.onReviewCleanup = onReviewCleanup
+        self.onExplain = onExplain
+    }
+
+    private enum Category: String, CaseIterable { case actions = "Actions", files = "Files", folders = "Folders", applications = "Applications" }
+
+    private struct SearchHit: Identifiable, Sendable {
+        var id: Int32 { nodeID }
+        var nodeID: Int32
+        var parentID: Int32
+        var name: String
+        var path: String
+        var isDirectory: Bool
+        var isApplication: Bool
     }
 
     private struct Command: Identifiable {
@@ -19,6 +35,7 @@ struct CommandPalette: View {
         var title: String
         var subtitle: String
         var symbol: String
+        var category: Category = .actions
         var run: () -> Void
     }
 
@@ -50,7 +67,7 @@ struct CommandPalette: View {
                 model.exploreMode = .treemap
             },
             Command(title: "Explain my storage", subtitle: "Structured summary from scan facts", symbol: "sparkles") {
-                model.destination = .overview
+                onExplain()
             },
             Command(title: "Review cleanup", subtitle: "Opens review queue — never deletes directly", symbol: "leaf") {
                 onReviewCleanup()
@@ -61,30 +78,17 @@ struct CommandPalette: View {
                 }
             },
         ]
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if !q.isEmpty {
-            for file in model.analysis.topFiles where file.name.lowercased().contains(q) || file.relativePath.lowercased().contains(q) {
-                let hit = file
+        if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            for hit in searchHits {
                 list.append(Command(
                     title: hit.name,
-                    subtitle: "File · \(hit.relativePath)",
-                    symbol: "doc"
+                    subtitle: hit.path,
+                    symbol: hit.isApplication ? "app" : (hit.isDirectory ? "folder" : "doc"),
+                    category: hit.isApplication ? .applications : (hit.isDirectory ? .folders : .files)
                 ) {
                     model.destination = .visualize
                     model.selectedNode = hit.nodeID
-                    model.currentNode = hit.nodeID
-                })
-            }
-            for folder in model.analysis.topFolders where folder.name.lowercased().contains(q) || folder.relativePath.lowercased().contains(q) {
-                let hit = folder
-                list.append(Command(
-                    title: hit.name,
-                    subtitle: "Folder · \(hit.relativePath)",
-                    symbol: "folder"
-                ) {
-                    model.destination = .visualize
-                    model.selectedNode = hit.nodeID
-                    model.currentNode = hit.nodeID
+                    model.currentNode = hit.isDirectory ? hit.nodeID : max(0, hit.parentID)
                 })
             }
         }
@@ -93,7 +97,7 @@ struct CommandPalette: View {
 
     private var filtered: [Command] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return commands.filter { !$0.subtitle.hasPrefix("File ·") && !$0.subtitle.hasPrefix("Folder ·") } }
+        guard !q.isEmpty else { return commands.filter { $0.category == .actions } }
         return commands.filter {
             $0.title.lowercased().contains(q) || $0.subtitle.lowercased().contains(q)
         }
@@ -118,7 +122,16 @@ struct CommandPalette: View {
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(filtered) { cmd in
+                    ForEach(Category.allCases, id: \.self) { category in
+                        let section = filtered.filter { $0.category == category }
+                        if !section.isEmpty {
+                            Text(category.rawValue.uppercased())
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.8)
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                                .padding(.horizontal, 12)
+                                .padding(.top, 8)
+                            ForEach(section) { cmd in
                         Button {
                             cmd.run()
                             isPresented = false
@@ -144,6 +157,13 @@ struct CommandPalette: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("\(cmd.title). \(cmd.subtitle)")
+                            }
+                        }
+                    }
+                    if isSearching {
+                        ProgressView("Searching this scan…")
+                            .controlSize(.small)
+                            .padding(12)
                     }
                 }
                 .padding(8)
@@ -160,5 +180,45 @@ struct CommandPalette: View {
         .shadow(color: .black.opacity(0.2), radius: 24, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Command palette")
+        .task(id: query) { await updateSearch() }
+    }
+
+    @MainActor
+    private func updateSearch() async {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty, let tree = model.tree, let root = model.rootURL else {
+            searchHits = []
+            isSearching = false
+            return
+        }
+        isSearching = true
+        try? await Task.sleep(for: .milliseconds(150))
+        guard !Task.isCancelled else { return }
+        let hits = await Task.detached(priority: .userInitiated) {
+            var found: [SearchHit] = []
+            found.reserveCapacity(100)
+            for index in 1..<tree.count {
+                if index & 1_023 == 0, Task.isCancelled { return found }
+                let id = Int32(index)
+                let name = tree.name(of: id)
+                let path = tree.path(of: id, root: root).path
+                guard name.localizedCaseInsensitiveContains(normalized)
+                        || path.localizedCaseInsensitiveContains(normalized) else { continue }
+                let directory = tree.isDirectory[index]
+                found.append(SearchHit(
+                    nodeID: id,
+                    parentID: tree.parent[index],
+                    name: name,
+                    path: CanonicalPath.displayPath(absolutePath: path),
+                    isDirectory: directory,
+                    isApplication: directory && name.lowercased().hasSuffix(".app")
+                ))
+                if found.count == 100 { break }
+            }
+            return found
+        }.value
+        guard !Task.isCancelled else { return }
+        searchHits = hits
+        isSearching = false
     }
 }

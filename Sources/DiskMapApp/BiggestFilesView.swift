@@ -28,6 +28,8 @@ struct BiggestFilesView: View {
     @State private var kindFilter: FileKind? = nil
     @State private var sortMode: SortMode = .largest
     @State private var selectedID: Int32?
+    @State private var rankedFileIDs: [Int32] = []
+    @State private var isPreparingRanking = true
 
     private var totals: [Int64] { model.selectedTotals }
 
@@ -37,8 +39,7 @@ struct BiggestFilesView: View {
     }
 
     private var allFileIDs: [Int32] {
-        guard totals.count == tree.count else { return [] }
-        return TopSizes.rankedFiles(tree: tree, totals: totals, limit: 2_000)
+        rankedFileIDs
     }
 
     private var filtered: [Int32] {
@@ -90,19 +91,9 @@ struct BiggestFilesView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            mainColumn
-            Divider().overlay(DiskMapTheme.cardStroke)
-            inspector
-                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
-        }
+        AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init), main: mainColumn, inspector: inspector)
         .background(DiskMapTheme.cream)
-        .onAppear {
-            if selectedID == nil, let first = filtered.first {
-                selectedID = first
-                model.selectedNode = first
-            }
-        }
+        .task(id: rankingID) { await prepareRanking() }
     }
 
     private var mainColumn: some View {
@@ -110,15 +101,37 @@ struct BiggestFilesView: View {
             header
             controls
             Divider().overlay(DiskMapTheme.cardStroke)
-            if model.isScanning {
-                ProgressView("Scanning your Mac… Biggest files will appear when the scan finishes.")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if isPreparingRanking {
+                DiskMapLoadingState(title: "Finding biggest files", detail: "Ranking the scan without blocking the interface.")
             } else if filtered.isEmpty {
                 emptyState
             } else {
                 list
             }
         }
+    }
+
+    private var rankingID: String {
+        let rootSize = totals.first ?? 0
+        return "\(tree.count):\(rootSize):\(model.sizeBasis)"
+    }
+
+    @MainActor
+    private func prepareRanking() async {
+        guard totals.count == tree.count else {
+            rankedFileIDs = []
+            isPreparingRanking = false
+            return
+        }
+        isPreparingRanking = true
+        let sourceTree = tree
+        let sourceTotals = totals
+        let result = await Task.detached(priority: .userInitiated) {
+            TopSizes.rankedFiles(tree: sourceTree, totals: sourceTotals, limit: 2_000)
+        }.value
+        guard !Task.isCancelled else { return }
+        rankedFileIDs = result
+        isPreparingRanking = false
     }
 
     private var header: some View {
@@ -190,56 +203,11 @@ struct BiggestFilesView: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            TextField("Search files by name or path…", text: $query)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(DiskMapTheme.cardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                )
-        )
+        DiskMapSearchField(placeholder: "Search files by name or path…", text: $query)
     }
 
     private var sortControl: some View {
-        Menu {
-            ForEach(SortMode.allCases) { mode in
-                Button(mode.title) { sortMode = mode }
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Text("Sort: " + sortMode.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(DiskMapTheme.cardFill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                    )
-            )
-            .contentShape(Rectangle())
-        }
-        .menuStyle(.borderlessButton)
+        DiskMapMenu(label: "Sort", options: SortMode.allCases, selection: $sortMode, title: { $0.title })
         .accessibilityLabel("Sort by " + sortMode.title)
     }
 
@@ -312,11 +280,7 @@ struct BiggestFilesView: View {
                     .font(.system(size: 12, weight: .bold).monospacedDigit())
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .frame(width: 28, alignment: .center)
-                Image(systemName: kind.symbolName)
-                    .font(.system(size: 14))
-                    .foregroundStyle(kindTint(kind))
-                    .frame(width: 22)
-                    .accessibilityHidden(true)
+                FileIdentityIcon(url: URL(fileURLWithPath: abs), kind: kind, size: 34)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(name)
                         .font(.system(size: 13, weight: .semibold))
@@ -441,15 +405,7 @@ private struct FileInspectorPanel: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: kind.symbolName)
-                        .font(.system(size: 26, weight: .medium))
-                        .foregroundStyle(tint(kind))
-                        .frame(width: 56, height: 56)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(tint(kind).opacity(0.12))
-                        )
-                        .accessibilityHidden(true)
+                    FileIdentityIcon(url: URL(fileURLWithPath: abs), kind: kind, size: 56)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(name)
@@ -483,10 +439,17 @@ private struct FileInspectorPanel: View {
                 }
 
                 VStack(spacing: 8) {
+                    if allowTrash {
+                        Button(model.isStaged(URL(fileURLWithPath: abs)) ? "Open Cleanup Queue" : "Add to Cleanup") {
+                            Task { await stageForTrash(url: URL(fileURLWithPath: abs), name: name) }
+                        }
+                        .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    }
+
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: abs)])
                     }
-                    .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
 
                     Button("Open Containing Folder") {
                         NSWorkspace.shared.open(URL(fileURLWithPath: abs).deletingLastPathComponent())
@@ -500,12 +463,6 @@ private struct FileInspectorPanel: View {
                     }
                     .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
 
-                    if allowTrash {
-                        Button("Move to Trash…") {
-                            Task { await stageForTrash(url: URL(fileURLWithPath: abs), name: name) }
-                        }
-                        .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                    }
                 }
                 .padding(.top, 4)
             }
@@ -515,15 +472,14 @@ private struct FileInspectorPanel: View {
 
     private func stageForTrash(url: URL, name: String) async {
         let url = url.standardizedFileURL
-        if model.isStaged(url) {
-            model.showToast("Already in cleanup list")
+        let result = await model.stageForCleanup([
+            CleanupStageRequest(url: url, size: size, reason: "Biggest file: " + name)
+        ])
+        if result.added > 0 {
+            model.showToast("Added to Cleanup")
             onOpenCleanup()
-            return
-        }
-        let ok = await model.cleanupQueue.stage(url, size: size, reason: "Biggest file: " + name)
-        await model.refreshQueue()
-        if ok {
-            model.showToast("Added to cleanup review")
+        } else if result.alreadyPresent > 0 {
+            model.showToast("Already in Cleanup")
             onOpenCleanup()
         } else {
             model.showToast("Blocked by safety rules")

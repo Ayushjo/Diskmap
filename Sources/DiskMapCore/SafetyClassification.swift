@@ -45,7 +45,7 @@ public struct SafetyAssessment: Sendable, Equatable {
 
     private static func defaultAction(_ level: SafetyLevel) -> String {
         switch level {
-        case .safe: return "Add to cleanup review, then Move to Trash when ready."
+        case .safe: return "Add to Cleanup, then review it before moving it to Trash."
         case .review: return "Inspect contents, reveal in Finder, then stage only what you recognize."
         case .protected: return "Do not remove. Leave system and keychain data alone."
         }
@@ -99,7 +99,7 @@ public enum SafetyClassifier {
                 reason: "npm cache stores downloaded packages so installs are faster. npm can recreate it.",
                 title: "npm cache",
                 consequences: "Next npm install may re-download packages (slower once).",
-                recommendedAction: "Safe to clear via cleanup review."
+                recommendedAction: "Add to Cleanup and review before removing."
             )
         }
         if n == ".pnpm-store" || lower.contains("/.pnpm-store") || n == ".pnpm" {

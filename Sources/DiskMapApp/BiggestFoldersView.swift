@@ -71,19 +71,8 @@ struct BiggestFoldersView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            mainColumn
-            Divider().overlay(DiskMapTheme.cardStroke)
-            inspector
-                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
-        }
+        AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init), main: mainColumn, inspector: inspector)
         .background(DiskMapTheme.cream)
-        .onAppear {
-            if selectedID == nil {
-                selectedID = activeSelection
-                if let id = selectedID { model.selectedNode = id }
-            }
-        }
         .onChange(of: model.currentNode) { _, newValue in
             selectedID = newValue
             model.selectedNode = newValue
@@ -96,10 +85,7 @@ struct BiggestFoldersView: View {
             controls
             navBar
             Divider().overlay(DiskMapTheme.cardStroke)
-            if model.isScanning {
-                ProgressView("Scanning your Mac… Biggest folders will appear when the scan finishes.")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if rows.isEmpty {
+            if rows.isEmpty {
                 emptyState
             } else {
                 list
@@ -504,10 +490,19 @@ private struct FolderInspectorPanel: View {
                 }
 
                 VStack(spacing: 8) {
+                    if allowStage {
+                        Button(model.isStaged(URL(fileURLWithPath: insight.absolutePath, isDirectory: true))
+                               ? "Open Cleanup Queue"
+                               : "Add to Cleanup") {
+                            Task { await stageFolder() }
+                        }
+                        .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    }
+
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: insight.absolutePath)])
                     }
-                    .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
 
                     Button("Copy Path") {
                         NSPasteboard.general.clearContents()
@@ -516,14 +511,7 @@ private struct FolderInspectorPanel: View {
                     }
                     .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
 
-                    if allowStage {
-                        Button(model.isStaged(URL(fileURLWithPath: insight.absolutePath, isDirectory: true))
-                               ? "Open Cleanup Queue"
-                               : "Review in Cleanup") {
-                            Task { await stageFolder() }
-                        }
-                        .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                    } else {
+                    if !allowStage {
                         Text("Cleanup staging is disabled for protected system folders.")
                             .font(.system(size: 11))
                             .foregroundStyle(DiskMapTheme.mutedLabel)
@@ -538,19 +526,14 @@ private struct FolderInspectorPanel: View {
 
     private func stageFolder() async {
         let url = URL(fileURLWithPath: insight.absolutePath, isDirectory: true).standardizedFileURL
-        if model.isStaged(url) {
-            model.showToast("Already in cleanup list")
+        let result = await model.stageForCleanup([
+            CleanupStageRequest(url: url, size: insight.bytes, reason: "Biggest folder: " + insight.name)
+        ])
+        if result.added > 0 {
+            model.showToast("Added to Cleanup")
             onOpenCleanup()
-            return
-        }
-        let ok = await model.cleanupQueue.stage(
-            url,
-            size: insight.bytes,
-            reason: "Biggest folder: " + insight.name
-        )
-        await model.refreshQueue()
-        if ok {
-            model.showToast("Added to cleanup review")
+        } else if result.alreadyPresent > 0 {
+            model.showToast("Already in Cleanup")
             onOpenCleanup()
         } else {
             model.showToast("Blocked by safety rules")

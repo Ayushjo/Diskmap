@@ -64,12 +64,7 @@ struct AppsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            mainColumn
-            Divider().overlay(DiskMapTheme.cardStroke)
-            inspector
-                .frame(width: DiskMapLayout.inspectorWidth(for: contentWidth))
-        }
+        AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID, main: mainColumn, inspector: inspector)
         .background(DiskMapTheme.cream)
         .task { await reloadCatalog() }
         .onDisappear { loadTask?.cancel() }
@@ -286,7 +281,7 @@ struct AppsView: View {
 
     private var tableHeader: some View {
         HStack(spacing: 8) {
-            Color.clear.frame(width: 22)
+            Color.clear.frame(width: 22, height: 1)
             Text("#").frame(width: 28, alignment: .leading)
             Text("APPLICATION").frame(maxWidth: .infinity, alignment: .leading)
             Text("SIZE").frame(width: 88, alignment: .trailing)
@@ -787,8 +782,8 @@ struct AppsView: View {
             stubs.append(entry)
         }
         apps = ApplicationsCatalog.sorted(stubs, by: sort)
-        if selectedID == nil || !apps.contains(where: { $0.id == selectedID }) {
-            selectedID = apps.first?.id
+        if let selectedID, !apps.contains(where: { $0.id == selectedID }) {
+            self.selectedID = nil
         }
         isLoading = false
 
@@ -882,29 +877,22 @@ struct AppsView: View {
     private func stage(_ app: ApplicationEntry) async {
         guard app.canStageForCleanup else { return }
         let url = URL(fileURLWithPath: app.bundlePath)
-        if model.isStaged(url) {
-            model.showToast("Already in cleanup list")
-            onOpenCleanup()
-            return
-        }
-        let ok = await model.cleanupQueue.stage(url, size: app.bundleBytes, reason: "Application: \(app.name)")
-        await model.refreshQueue()
-        model.showToast(ok ? "Added to cleanup review" : "Blocked by safety rules")
-        if ok { onOpenCleanup() }
+        let result = await model.stageForCleanup([
+            CleanupStageRequest(url: url, size: app.bundleBytes, reason: "Application: \(app.name)")
+        ])
+        model.showToast(result.added > 0 ? "Added to Cleanup" : (result.rejected > 0 ? "Blocked by safety rules" : "Already in Cleanup"))
+        if result.added > 0 || result.alreadyPresent > 0 { onOpenCleanup() }
     }
 
     private func stageChecked() async {
-        var okCount = 0
-        for app in checkedApps {
-            let url = URL(fileURLWithPath: app.bundlePath)
-            if model.isStaged(url) { continue }
-            let ok = await model.cleanupQueue.stage(url, size: app.bundleBytes, reason: "Application: \(app.name)")
-            if ok { okCount += 1 }
-        }
-        await model.refreshQueue()
-        checked.removeAll()
-        model.showToast(okCount > 0 ? "Added \(okCount) apps to cleanup" : "Nothing new staged")
-        if okCount > 0 { onOpenCleanup() }
+        let apps = checkedApps
+        let result = await model.stageForCleanup(apps.map {
+            CleanupStageRequest(url: URL(fileURLWithPath: $0.bundlePath), size: $0.bundleBytes, reason: "Application: \($0.name)")
+        })
+        let rejected = Set(result.rejectedURLs.map(\.path))
+        checked = Set(apps.filter { rejected.contains(URL(fileURLWithPath: $0.bundlePath).standardizedFileURL.path) }.map(\.id))
+        model.showToast(result.added > 0 ? "Added \(result.added) apps to Cleanup" : "Nothing new added")
+        if result.added > 0 { onOpenCleanup() }
     }
 
     // MARK: - Formatting
