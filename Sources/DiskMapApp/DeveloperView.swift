@@ -78,9 +78,13 @@ struct DeveloperView: View {
         }
         .task(id: model.scanID) {
             selected = []
-            hits = await Task.detached(priority: .userInitiated) {
+            hits = nil
+            let found = await Task.detached(priority: .userInitiated) {
                 QuickWins.findCategorized(in: tree, root: rootURL, categories: categories)
             }.value
+            // A newer scan supersedes this result.
+            guard !Task.isCancelled else { return }
+            hits = found
         }
     }
 
@@ -90,10 +94,7 @@ struct DeveloperView: View {
                 Text("\(category.title) — \(group.count) items, \(ByteCountFormatter.string(fromByteCount: bytes(group), countStyle: .file))")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                Button("Stage All") {
-                    for hit in group { selected.insert(hit.id) }
-                    stageSelected()
-                }
+                Button("Stage All") { stage(group.map(\.id)) }
             }
             if !category.note.isEmpty {
                 Text(category.note)
@@ -137,7 +138,7 @@ struct DeveloperView: View {
             HStack {
                 Text("\(selected.count) selected")
                 Spacer()
-                Button("Stage Selected") { stageSelected() }
+                Button("Stage Selected") { stage(Array(selected)) }
                     .disabled(selected.isEmpty)
             }
         }
@@ -155,8 +156,8 @@ struct DeveloperView: View {
         )
     }
 
-    private func stageSelected() {
-        for id in selected {
+    private func stage(_ ids: [Int32]) {
+        for id in ids {
             let url = tree.path(of: id, root: rootURL)
             let category = hits?.first { $0.id == id }?.categoryID ?? "dev"
             Task {
@@ -164,5 +165,6 @@ struct DeveloperView: View {
                 await model.refreshQueue()
             }
         }
+        selected.subtract(ids)
     }
 }

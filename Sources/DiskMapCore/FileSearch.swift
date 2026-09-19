@@ -80,7 +80,7 @@ public struct FileSearchIndex: Sendable {
         var matchedNames = 0
 
         for nameID in loweredNames.indices where loweredNames[nameID].contains(needle) {
-            matchedNames += 1
+            let before = totalMatches
             for position in offsets[nameID]..<offsets[nameID + 1] {
                 let id = nodes[position]
                 let index = Int(id)
@@ -95,6 +95,8 @@ public struct FileSearchIndex: Sendable {
                 insert(&best, id: id, size: size, limit: limit)
                 cutoff = best.last?.size ?? Int64.min
             }
+            // A name whose nodes are all filtered out doesn't count.
+            if totalMatches > before { matchedNames += 1 }
         }
 
         return Result(ids: best.map(\.id), totalMatches: totalMatches, matchedNames: matchedNames)

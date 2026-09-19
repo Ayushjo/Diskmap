@@ -319,8 +319,13 @@ struct ContentView: View {
                 needsScan
             }
         case .developer:
-            scannedPage { tree, totals, root in
-                DeveloperView(model: model, tree: tree, totals: totals, rootURL: root)
+            // Allocated, not the display basis: CleanupQueue's reclaimable
+            // total sums what each stage will actually free.
+            if let tree = model.tree, let rootURL = model.rootURL,
+               model.allocatedTotals.count == tree.count {
+                DeveloperView(model: model, tree: tree, totals: model.allocatedTotals, rootURL: rootURL)
+            } else {
+                needsScan
             }
         case .apps:
             AppsView(model: model)

@@ -17,12 +17,18 @@ struct SearchView: View {
     @State private var query = ""
     @State private var kind: FileSearchIndex.KindFilter = .all
     @State private var result = FileSearchIndex.Result.empty
+    /// Bumped when the index finishes building, so a query typed during
+    /// the build re-runs once the index exists.
+    @State private var indexGeneration = 0
 
     /// The inputs a run depends on — `.task(id:)` keys to this.
     private struct SearchKey: Equatable {
         var query: String
         var kind: FileSearchIndex.KindFilter
         var scanID: UUID
+        var indexGeneration: Int
+        /// Ranking input — toggling it must re-run, not just re-render.
+        var basis: SizeBasis
     }
 
     var body: some View {
@@ -82,13 +88,22 @@ struct SearchView: View {
             }
         }
         .task(id: model.scanID) {
+            index = nil
+            result = .empty
             // One interned-name pass per scan — cheap compared to the scan.
             let built = await Task.detached(priority: .userInitiated) {
                 FileSearchIndex(tree: tree)
             }.value
             index = built
+            indexGeneration += 1
         }
-        .task(id: SearchKey(query: query, kind: kind, scanID: model.scanID)) {
+        .task(id: SearchKey(
+            query: query,
+            kind: kind,
+            scanID: model.scanID,
+            indexGeneration: indexGeneration,
+            basis: model.sizeBasis
+        )) {
             let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let index, !needle.isEmpty else {
                 result = .empty
@@ -97,9 +112,12 @@ struct SearchView: View {
             // Debounce: wait out a fast typist, then run off-actor.
             try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { return }
-            result = await Task.detached(priority: .userInitiated) {
+            let found = await Task.detached(priority: .userInitiated) {
                 index.search(needle, in: tree, totals: totals, kind: kind)
             }.value
+            // A newer keystroke already superseded this result.
+            guard !Task.isCancelled else { return }
+            result = found
         }
     }
 

@@ -45,9 +45,13 @@ struct QuickWinsView: View {
         // The pattern walk covers the whole tree — once per scan, not per render.
         .task(id: model.scanID) {
             checked = []
-            hits = await Task.detached(priority: .userInitiated) {
+            hits = nil
+            let found = await Task.detached(priority: .userInitiated) {
                 QuickWins.find(in: tree, root: rootURL, patterns: QuickWins.bundledPatterns())
             }.value
+            // A newer scan supersedes this result.
+            guard !Task.isCancelled else { return }
+            hits = found
         }
     }
 

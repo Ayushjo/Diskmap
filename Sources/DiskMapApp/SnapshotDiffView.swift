@@ -11,6 +11,9 @@ struct SnapshotDiffView: View {
     @State private var afterURL: URL?
     @State private var changes: [SnapshotChange] = []
     @State private var status = ""
+    /// Latest-clicked compare wins — concurrent detached loads must not
+    /// let an earlier pair overwrite the rows the user just asked for.
+    @State private var compareGeneration = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -81,6 +84,8 @@ struct SnapshotDiffView: View {
 
     private func compare() {
         guard let beforeURL, let afterURL else { return }
+        compareGeneration += 1
+        let generation = compareGeneration
         status = "Comparing…"
         Task {
             do {
@@ -90,9 +95,11 @@ struct SnapshotDiffView: View {
                     let after = try SnapshotStore.load(from: afterURL)
                     return SnapshotDiff.changes(before: before, after: after, basis: basis)
                 }.value
+                guard generation == compareGeneration else { return }
                 changes = diff
                 status = "\(diff.count) folders changed"
             } catch {
+                guard generation == compareGeneration else { return }
                 changes = []
                 status = "Could not read those snapshots"
             }

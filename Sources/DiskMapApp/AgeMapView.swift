@@ -55,8 +55,9 @@ struct AgeMapView: View {
                 }
             }
         }
-        // Whole-tree aggregations — once per scan, not per body evaluation.
-        .task(id: model.scanID) {
+        // Whole-tree aggregations — once per scan and size basis, not
+        // per body evaluation.
+        .task(id: AggregateKey(scanID: model.scanID, basis: model.sizeBasis)) {
             checked = []
             selectedBucket = nil
             bucketFiles = []
@@ -66,23 +67,37 @@ struct AgeMapView: View {
             async let stale = Task.detached(priority: .userInitiated) {
                 AgeMap.untouched(in: tree, totals: totals, today: today)
             }.value
-            bucketSizes = await sizes
-            untouched = await stale
+            let resolvedSizes = await sizes
+            let resolvedStale = await stale
+            guard !Task.isCancelled else { return }
+            bucketSizes = resolvedSizes
+            untouched = resolvedStale
         }
-        .task(id: BucketKey(scanID: model.scanID, bucket: selectedBucket)) {
+        .task(id: BucketKey(scanID: model.scanID, bucket: selectedBucket, basis: model.sizeBasis)) {
+            // Selections from a different list must not stage invisibly.
+            checked = []
             guard let selectedBucket else {
                 bucketFiles = []
                 return
             }
-            bucketFiles = await Task.detached(priority: .userInitiated) {
+            let found = await Task.detached(priority: .userInitiated) {
                 AgeMap.files(in: tree, totals: totals, today: today, bucket: selectedBucket)
             }.value
+            // A newer bucket pick supersedes this detached result.
+            guard !Task.isCancelled else { return }
+            bucketFiles = found
         }
+    }
+
+    private struct AggregateKey: Equatable {
+        var scanID: UUID
+        var basis: SizeBasis
     }
 
     private struct BucketKey: Equatable {
         var scanID: UUID
         var bucket: AgeBucket?
+        var basis: SizeBasis
     }
 
     private var listedIDs: [Int32] {
