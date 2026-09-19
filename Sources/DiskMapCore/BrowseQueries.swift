@@ -78,6 +78,28 @@ public enum AgeMap {
         return files
     }
 
+    /// File ids inside one age bucket, largest first, capped. Backs the
+    /// tap-a-bucket filter in the Age Map view.
+    public static func files(
+        in tree: FileTree,
+        totals: [Int64],
+        today: Int32,
+        bucket: AgeBucket,
+        limit: Int = 200
+    ) -> [Int32] {
+        guard tree.count == totals.count, limit > 0 else { return [] }
+        var files: [Int32] = []
+        for id in 1..<Int32(tree.count) {
+            let index = Int(id)
+            guard !tree.isDirectory[index], totals[index] > 0 else { continue }
+            guard AgeMap.bucket(modifiedDay: tree.modifiedDay[index], today: today) == bucket else { continue }
+            files.append(id)
+        }
+        files.sort { totals[Int($0)] > totals[Int($1)] }
+        if files.count > limit { files.removeLast(files.count - limit) }
+        return files
+    }
+
     public static func bucketSizes(
         in tree: FileTree,
         totals: [Int64],

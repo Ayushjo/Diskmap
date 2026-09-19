@@ -17,9 +17,15 @@ struct TopSizesView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(tree.path(of: id, root: rootURL).path)
                         .lineLimit(1)
-                    Text(tree.isDirectory[Int(id)] ? "Folder" : "File")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                        if tree.flags[Int(id)] & NodeFlags.notDownloaded != 0 {
+                            Image(systemName: "icloud")
+                                .help("Not downloaded — revealing may trigger an iCloud download")
+                        }
+                        Text(tree.isDirectory[Int(id)] ? "Folder" : "File")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(diskByteString(totals[Int(id)]))
