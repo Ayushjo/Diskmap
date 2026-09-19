@@ -17,7 +17,7 @@ struct DeveloperView: View {
     private let categories = QuickWins.bundledCategories()
     private let impactThreshold: Int64 = 10_000_000
 
-    private func hits(in category: QuickWins.Category) -> [QuickWins.Hit] {
+    private func groupHits(_ category: QuickWins.Category) -> [QuickWins.Hit] {
         (hits ?? [])
             .filter { $0.categoryID == category.id }
             .sorted { totals[Int($0.id)] > totals[Int($1.id)] }
@@ -52,7 +52,7 @@ struct DeveloperView: View {
                 } else {
                     List {
                         ForEach(categories) { category in
-                            let group = hits(in: category)
+                            let group = groupHits(category)
                             if !group.isEmpty {
                                 Section {
                                     ForEach(group) { hit in
