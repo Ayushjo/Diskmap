@@ -57,10 +57,17 @@ struct CleanupQueueView: View {
             }
 
             if !model.lastCommitLines.isEmpty {
-                Text(model.lastCommitLines.joined(separator: "\n"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(8)
+                // A big commit reports one line per item — bound it so the
+                // report can't push the staged list out of the window.
+                ScrollView {
+                    Text(model.lastCommitLines.joined(separator: "\n"))
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                }
+                .frame(maxHeight: 120)
+                .overlay(alignment: .top) { Divider() }
             }
         }
         .task { await model.refreshQueue() }

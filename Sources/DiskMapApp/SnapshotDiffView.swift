@@ -11,6 +11,9 @@ struct SnapshotDiffView: View {
     @State private var afterURL: URL?
     @State private var changes: [SnapshotChange] = []
     @State private var status = ""
+    /// Latest-clicked compare wins — concurrent detached loads must not
+    /// let an earlier pair overwrite the rows the user just asked for.
+    @State private var compareGeneration = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -38,7 +41,7 @@ struct SnapshotDiffView: View {
             }
         }
         .padding(8)
-        .onAppear(perform: reload)
+        .onAppear { Task { await reload() } }
     }
 
     private func picker(_ title: String, selection: Binding<URL?>) -> some View {
@@ -51,34 +54,55 @@ struct SnapshotDiffView: View {
         }
     }
 
-    private func reload() {
-        summaries = SnapshotStore.summaries(in: SnapshotStore.defaultDirectory(), rootPath: rootURL.path)
-        if beforeURL == nil { beforeURL = summaries.first?.url }
-        if afterURL == nil { afterURL = summaries.last?.url }
+    private func reload() async {
+        let rootPath = rootURL.path
+        let found = await Task.detached(priority: .userInitiated) {
+            SnapshotStore.summaries(in: SnapshotStore.defaultDirectory(), rootPath: rootPath)
+        }.value
+        summaries = found
+        if beforeURL == nil { beforeURL = found.first?.url }
+        if afterURL == nil { afterURL = found.last?.url }
     }
 
     private func save() {
+        // Encoding a million-node snapshot blocks; do it off-actor.
         let snapshot = DiskSnapshot(rootPath: rootURL.path, capturedAt: Date(), tree: tree)
-        let directory = SnapshotStore.defaultDirectory()
-        do {
-            _ = try SnapshotStore.save(snapshot, in: directory)
-            status = "Saved"
-            reload()
-        } catch {
-            status = "Could not save snapshot"
+        status = "Saving…"
+        Task {
+            let directory = SnapshotStore.defaultDirectory()
+            do {
+                _ = try await Task.detached(priority: .userInitiated) {
+                    try SnapshotStore.save(snapshot, in: directory)
+                }.value
+                status = "Saved"
+            } catch {
+                status = "Could not save snapshot"
+            }
+            await reload()
         }
     }
 
     private func compare() {
         guard let beforeURL, let afterURL else { return }
-        do {
-            let before = try SnapshotStore.load(from: beforeURL)
-            let after = try SnapshotStore.load(from: afterURL)
-            changes = SnapshotDiff.changes(before: before, after: after, basis: basis)
-            status = "\(changes.count) folders changed"
-        } catch {
-            changes = []
-            status = "Could not read those snapshots"
+        compareGeneration += 1
+        let generation = compareGeneration
+        status = "Comparing…"
+        Task {
+            do {
+                // Decode + diff walk every node twice; off the main actor.
+                let diff = try await Task.detached(priority: .userInitiated) {
+                    let before = try SnapshotStore.load(from: beforeURL)
+                    let after = try SnapshotStore.load(from: afterURL)
+                    return SnapshotDiff.changes(before: before, after: after, basis: basis)
+                }.value
+                guard generation == compareGeneration else { return }
+                changes = diff
+                status = "\(diff.count) folders changed"
+            } catch {
+                guard generation == compareGeneration else { return }
+                changes = []
+                status = "Could not read those snapshots"
+            }
         }
     }
 

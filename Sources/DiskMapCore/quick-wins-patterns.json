@@ -1,10 +1,67 @@
 {
-  "directoryNames": ["node_modules", ".venv", "target", ".next", "dist", "build", "DerivedData"],
-  "pathSuffixes": [
-    "~/Library/Caches",
-    "~/Library/Logs",
-    "~/Library/Developer/Xcode/DerivedData",
-    "~/Library/Developer/Xcode/iOS DeviceSupport",
-    "~/Library/Developer/CoreSimulator/Caches"
+  "categories": [
+    {
+      "id": "node",
+      "title": "JavaScript / Node.js",
+      "note": "Recreated by your package manager's install or the next build.",
+      "directoryNames": ["node_modules", "bower_components", ".next", ".nuxt", ".svelte-kit", ".output", ".turbo", ".parcel-cache", ".vite", ".angular", "dist", "build", "coverage"],
+      "pathSuffixes": ["~/.npm", "~/.pnpm-store", "~/.bun/install/cache", "~/Library/Caches/Yarn"]
+    },
+    {
+      "id": "python",
+      "title": "Python",
+      "note": "Virtualenvs and tool caches are recreated by installs and test runs.",
+      "directoryNames": [".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", ".nox", ".ipynb_checkpoints", ".eggs"],
+      "pathSuffixes": ["~/Library/Caches/pip", "~/Library/Caches/uv", "~/.cache/pip", "~/.cache/uv"]
+    },
+    {
+      "id": "rust",
+      "title": "Rust",
+      "note": "target/ rebuilds on the next cargo build; the registry re-downloads crates.",
+      "directoryNames": ["target"],
+      "pathSuffixes": ["~/.cargo/registry", "~/.cargo/git"]
+    },
+    {
+      "id": "jvm",
+      "title": "JVM (Gradle / Maven)",
+      "note": "Dependency caches and build state re-download or rebuild.",
+      "directoryNames": [".gradle", ".kotlin"],
+      "pathSuffixes": ["~/.gradle/caches", "~/.m2/repository", "~/.sbt", "~/.ivy2/cache"]
+    },
+    {
+      "id": "go",
+      "title": "Go",
+      "note": "Module and build caches re-download on the next build.",
+      "directoryNames": [],
+      "pathSuffixes": ["~/go/pkg/mod", "~/Library/Caches/go-build"]
+    },
+    {
+      "id": "ruby",
+      "title": "Ruby",
+      "note": "Recreated by bundle install.",
+      "directoryNames": [".bundle"],
+      "pathSuffixes": ["vendor/bundle", "~/.gem"]
+    },
+    {
+      "id": "flutter",
+      "title": "Flutter / Dart",
+      "note": "The package cache and per-project build state re-download.",
+      "directoryNames": [".dart_tool"],
+      "pathSuffixes": ["~/.pub-cache"]
+    },
+    {
+      "id": "xcode",
+      "title": "Xcode / iOS",
+      "note": "DerivedData, device support files and caches are recreated by Xcode. Deleting Devices removes the simulators themselves — recreate them in Xcode's Devices window.",
+      "directoryNames": ["DerivedData", ".build", "Pods"],
+      "pathSuffixes": ["~/Library/Developer/Xcode/iOS DeviceSupport", "~/Library/Developer/Xcode/DeviceLogs", "~/Library/Developer/CoreSimulator/Caches", "~/Library/Developer/CoreSimulator/Devices", "~/Library/Caches/CocoaPods"]
+    },
+    {
+      "id": "macos",
+      "title": "macOS caches & logs",
+      "note": "Apps recreate these. Review what you don't recognize.",
+      "directoryNames": [],
+      "pathSuffixes": ["~/Library/Caches", "~/Library/Logs", "~/Library/Caches/Homebrew"]
+    }
   ]
 }

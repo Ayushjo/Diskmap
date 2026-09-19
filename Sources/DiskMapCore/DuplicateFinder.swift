@@ -68,21 +68,38 @@ public enum DuplicateFinder {
     /// not-downloaded iCloud placeholders (opening those would download).
     public static func candidates(in tree: FileTree, root: URL) -> [(id: Int32, url: URL, size: Int64)] {
         var result: [(id: Int32, url: URL, size: Int64)] = []
-        func walk(_ id: Int32) {
-            let index = Int(id)
-            if index > 0 {
-                let notDownloaded = tree.flags[index] & NodeFlags.notDownloaded != 0
-                if !tree.isDirectory[index], !notDownloaded, tree.logicalSize[index] > 0 {
-                    result.append((id, tree.path(of: id, root: root), tree.logicalSize[index]))
-                }
-            }
-            var child = tree.firstChild[index]
-            while child != -1 {
-                walk(child)
-                child = tree.nextSibling[Int(child)]
-            }
+        for index in 1..<tree.count
+        where !tree.isDirectory[index]
+            && tree.flags[index] & NodeFlags.notDownloaded == 0
+            && tree.logicalSize[index] > 0 {
+            let id = Int32(index)
+            result.append((id, tree.path(of: id, root: root), tree.logicalSize[index]))
         }
-        if tree.count > 0 { walk(0) }
+        return result
+    }
+
+    /// `candidates` restricted to sizes occurring at least twice — the
+    /// files that can actually collide. `tree.path` is O(depth) string
+    /// work per node, so building it only for size-colliding files skips
+    /// nearly all of it on a real scan (most files are unique sizes).
+    /// Produces the same groups as running `scan` over `candidates`.
+    public static func sizeCollidingCandidates(in tree: FileTree, root: URL) -> [(id: Int32, url: URL, size: Int64)] {
+        var countsBySize: [Int64: Int] = [:]
+        for index in 1..<tree.count
+        where !tree.isDirectory[index]
+            && tree.flags[index] & NodeFlags.notDownloaded == 0 {
+            let size = tree.logicalSize[index]
+            if size > 0 { countsBySize[size, default: 0] += 1 }
+        }
+        var result: [(id: Int32, url: URL, size: Int64)] = []
+        for index in 1..<tree.count
+        where !tree.isDirectory[index]
+            && tree.flags[index] & NodeFlags.notDownloaded == 0 {
+            let size = tree.logicalSize[index]
+            guard size > 0, countsBySize[size, default: 0] > 1 else { continue }
+            let id = Int32(index)
+            result.append((id, tree.path(of: id, root: root), size))
+        }
         return result
     }
 

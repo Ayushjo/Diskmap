@@ -22,6 +22,9 @@ final class ScanModel: ObservableObject {
     @Published var lastCommitLines: [String] = []
     @Published var sizeBasis: SizeBasis = .allocated
     @Published var currentNode: Int32 = 0
+    /// New value per scan — views key one-shot work (index builds,
+    /// whole-tree queries) to it instead of recomputing on every render.
+    @Published var scanID = UUID()
 
     let cleanupQueue = CleanupQueue()
 
@@ -43,6 +46,10 @@ final class ScanModel: ObservableObject {
     }
 
     func scan(_ url: URL) async {
+        // A second concurrent scan would race both `tree` and the
+        // progress reporting — the picker is disabled while scanning,
+        // this is the belt to that suspenders.
+        guard !isScanning else { return }
         rootURL = url
         isScanning = true
         scannedCount = 0
@@ -50,6 +57,7 @@ final class ScanModel: ObservableObject {
         allocatedTotals = []
         logicalTotals = []
         duplicateGroups = []
+        scanID = UUID()
         log("scan start \(url.path)")
 
         let before = ProcessMemory.current()
@@ -81,12 +89,17 @@ final class ScanModel: ObservableObject {
         fflush(stdout)
         log(summary)
 
-        let allocated = result.tree.rollUpSizes(basis: .allocated)
-        let logical = result.tree.rollUpSizes(basis: .logical)
-        logNotDownloadedContrast(tree: result.tree, logical: logical, allocated: allocated)
-        tree = result.tree
-        allocatedTotals = allocated
-        logicalTotals = logical
+        // Rollups walk every node; keep the main actor responsive while
+        // they run. FileTree is a value type — the detached task shares
+        // the packed arrays, it does not copy them.
+        let scannedTree = result.tree
+        let rolled = await Task.detached(priority: .userInitiated) {
+            (scannedTree.rollUpSizes(basis: .allocated), scannedTree.rollUpSizes(basis: .logical))
+        }.value
+        logNotDownloadedContrast(tree: scannedTree, logical: rolled.1, allocated: rolled.0)
+        tree = scannedTree
+        allocatedTotals = rolled.0
+        logicalTotals = rolled.1
         isScanning = false
         log("scan finished items=\(result.itemCount)")
     }
@@ -94,8 +107,12 @@ final class ScanModel: ObservableObject {
     func findDuplicates() async {
         guard let tree, let rootURL else { return }
         isFindingDuplicates = true
-        let files = DuplicateFinder.candidates(in: tree, root: rootURL)
-        duplicateGroups = await DuplicateFinder.findDuplicates(candidates: files)
+        // Candidate collection walks the whole tree; size-colliding only
+        // keeps `path` building off the files that can never match.
+        duplicateGroups = await Task.detached(priority: .userInitiated) { () async -> [DuplicateGroup] in
+            let files = DuplicateFinder.sizeCollidingCandidates(in: tree, root: rootURL)
+            return await DuplicateFinder.findDuplicates(candidates: files)
+        }.value
         isFindingDuplicates = false
     }
 
@@ -180,6 +197,7 @@ final class ScanModel: ObservableObject {
 
 private enum WorkspacePage: String, CaseIterable, Identifiable {
     case map = "Map"
+    case search = "Search"
     case topSizes = "Top Sizes"
     case folders = "Folders"
     case ageMap = "Age Map"
@@ -190,6 +208,7 @@ private enum WorkspacePage: String, CaseIterable, Identifiable {
     case snapshots = "Snapshots"
     case duplicates = "Duplicates"
     case quickWins = "Quick Wins"
+    case developer = "Developer"
     case apps = "Apps"
     case cleanup = "Cleanup"
 
@@ -198,6 +217,7 @@ private enum WorkspacePage: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .map: return "square.grid.3x3.fill"
+        case .search: return "magnifyingglass"
         case .topSizes: return "list.number"
         case .folders: return "folder"
         case .ageMap: return "calendar"
@@ -208,6 +228,7 @@ private enum WorkspacePage: String, CaseIterable, Identifiable {
         case .snapshots: return "clock.arrow.circlepath"
         case .duplicates: return "doc.on.doc"
         case .quickWins: return "bolt"
+        case .developer: return "wrench.and.screwdriver"
         case .apps: return "app"
         case .cleanup: return "trash"
         }
@@ -240,6 +261,7 @@ struct ContentView: View {
                     }
                     Spacer()
                     Button("Choose Folder…") { pickFolder() }
+                        .disabled(model.isScanning)
                 }
                 .padding(8)
                 pageContent
@@ -253,6 +275,12 @@ struct ContentView: View {
         switch page {
         case .map:
             mapPage
+        case .search:
+            scannedPage { tree, totals, root in
+                SearchView(model: model, tree: tree, totals: totals, rootURL: root, currentNode: $model.currentNode) {
+                    page = .map
+                }
+            }
         case .topSizes:
             scannedPage { tree, totals, root in
                 TopSizesView(tree: tree, totals: totals, rootURL: root)
@@ -290,6 +318,15 @@ struct ContentView: View {
             } else {
                 needsScan
             }
+        case .developer:
+            // Allocated, not the display basis: CleanupQueue's reclaimable
+            // total sums what each stage will actually free.
+            if let tree = model.tree, let rootURL = model.rootURL,
+               model.allocatedTotals.count == tree.count {
+                DeveloperView(model: model, tree: tree, totals: model.allocatedTotals, rootURL: rootURL)
+            } else {
+                needsScan
+            }
         case .apps:
             AppsView(model: model)
         case .cleanup:
@@ -300,11 +337,13 @@ struct ContentView: View {
     @ViewBuilder
     private var mapPage: some View {
         if let tree = model.tree,
+           let rootURL = model.rootURL,
            model.selectedTotals.count == tree.count,
            tree.count > 0 {
             TreemapContainerView(
                 tree: tree,
                 totals: model.selectedTotals,
+                rootURL: rootURL,
                 currentNode: $model.currentNode
             )
         } else if model.isScanning {
@@ -367,6 +406,7 @@ struct ContentView: View {
 struct TreemapContainerView: View {
     let tree: FileTree
     let totals: [Int64]
+    let rootURL: URL
     @Binding var currentNode: Int32
 
     @State private var layoutRects: [TreemapRect] = []
@@ -413,6 +453,13 @@ struct TreemapContainerView: View {
                             cacheLayout(in: newSize)
                         }
                 }
+            }
+            // Registered before the single-tap so two quick taps on a
+            // file reveal it in Finder instead of tapping it twice.
+            .onTapGesture(count: 2) { location in
+                guard let hit = SquarifiedTreemap.hitTest(layoutRects, at: location) else { return }
+                guard !tree.isDirectory[Int(hit)] else { return }
+                revealDownloadedFile(hit, tree: tree, root: rootURL)
             }
             .onTapGesture { location in
                 guard let hit = SquarifiedTreemap.hitTest(layoutRects, at: location) else { return }

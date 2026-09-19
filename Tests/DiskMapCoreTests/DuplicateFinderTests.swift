@@ -65,6 +65,19 @@ struct DuplicateFinderTests {
         #expect(found.count == 1)
         #expect(folder > 0)
     }
+
+    @Test func sizeCollidingCandidatesSkipUniqueSizes() {
+        var tree = FileTree()
+        let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        let a = tree.addNode(name: "a.txt", parent: root, isDirectory: false, logicalSize: 8, allocatedSize: 8, modifiedDaysSinceEpoch: 1)
+        let b = tree.addNode(name: "b.txt", parent: root, isDirectory: false, logicalSize: 8, allocatedSize: 8, modifiedDaysSinceEpoch: 1)
+        _ = tree.addNode(name: "unique.txt", parent: root, isDirectory: false, logicalSize: 7, allocatedSize: 7, modifiedDaysSinceEpoch: 1)
+        // Not-downloaded files must not create phantom collisions either.
+        _ = tree.addNode(name: "cloud.txt", parent: root, isDirectory: false, logicalSize: 8, allocatedSize: 0, modifiedDaysSinceEpoch: 1, flags: NodeFlags.notDownloaded)
+
+        let found = DuplicateFinder.sizeCollidingCandidates(in: tree, root: URL(fileURLWithPath: "/tmp/diskmap-candidates", isDirectory: true))
+        #expect(Set(found.map(\.id)) == [a, b])
+    }
 }
 
 struct CleanupQueueReclaimTests {

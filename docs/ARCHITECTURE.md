@@ -280,6 +280,52 @@ Offline. No networking.
 
 **Status:** implemented (TASK-018, TASK-019).
 
+### Search indexes the name table, not the nodes
+
+Names are interned: 1.8M scanned items share ~10⁵ unique strings.
+`FileSearchIndex` lowercases the name table once at build, then a
+counting sort groups node ids by name id — so a query is `contains` over
+the table plus a gather over only the nodes whose name already matched,
+and the common case (a needle with few matching names) never touches
+most nodes at all. Ranking keeps the top N by rolled-up size with a
+bounded insert instead of sorting the match set, so pathological
+needles stay cheap too. Result: single-digit-millisecond queries on a
+million-node tree, versus a per-node substring scan on every keystroke.
+
+The alternative — building paths up front — would spend O(depth) string
+work per node to answer a question about names only. Paths are built on
+demand for the ≤300 shown results.
+
+**Status:** implemented. `FileSearchIndex` is built once per scan and
+shared by the Search page.
+
+### Quick Wins patterns are categorized data, not a flat list
+
+The pattern file is `{"categories": [...]}` — each category carries an
+id, display title, a plain-language note about why its data is
+regenerable, plus the same name/suffix patterns as before. Grouping is
+what makes the Developer page possible: hits are attributed to the first
+category that claims them (name lookups resolve once per unique interned
+name, not once per directory), and each category explains its own
+caveat — e.g. deleting `CoreSimulator/Devices` removes the simulators,
+not just their cache. A flat legacy file still decodes as one category,
+so a hand-edited pattern list keeps working.
+
+**Status:** implemented. Flat `QuickWins.find` is the union of all
+categories; `findCategorized` backs the Developer page.
+
+### Whole-tree view queries are once-per-scan state, not computed properties
+
+Quick Wins, age buckets, and untouched files were computed properties —
+every render (each checkbox toggle) re-walked the entire tree on the main
+actor. Views now compute them in `.task(id: model.scanID)` detached from
+the main actor and cache the result; a new scan is the only thing that
+recomputes. The same applies to snapshot save/load/diff, duplicate
+candidate collection, and app-leftover lookup — all detached, with a
+staleness guard so a superseded selection can't write its result.
+
+**Status:** implemented.
+
 ## Adding a new decision
 
 When you make a non-obvious architectural choice, add an entry here:
