@@ -58,6 +58,7 @@ struct CleanupQueueView: View {
                         Section {
                             ForEach(grouped[reason] ?? []) { item in
                                 HStack(alignment: .center, spacing: 12) {
+                                    FileIdentityIcon(url: item.url, size: 34)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(item.url.lastPathComponent)
                                             .font(.system(size: 13, weight: .medium))
@@ -135,8 +136,7 @@ struct CleanupQueueView: View {
                 guard let item = pendingRemove else { return }
                 let name = item.url.lastPathComponent
                 Task {
-                    await model.cleanupQueue.unstage(id: item.id)
-                    await model.refreshQueue()
+                    await model.unstageFromCleanup(item)
                     model.showToast("Removed “\(name)” from Cleanup")
                     pendingRemove = nil
                 }
@@ -158,20 +158,98 @@ struct CleanupQueueView: View {
     }
 }
 
-final class QuickLookPresenter: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
+/// Quick Look from SwiftUI sheets needs a real NSResponder in the chain.
+/// Folders used to no-op; we preview the largest suitable child file instead.
+final class QuickLookPresenter: NSResponder, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     static let shared = QuickLookPresenter()
     private var url: URL?
 
     func present(_ url: URL) {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else { return }
-        self.url = url
-        guard let panel = QLPreviewPanel.shared() else { return }
+        let target = resolvePreviewURL(url)
+        guard let target else {
+            NSWorkspace.shared.activateFileViewerSelecting([url.standardizedFileURL])
+            return
+        }
+        self.url = target
+        NSApp.activate(ignoringOtherApps: true)
+        if nextResponder == nil, let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            nextResponder = window.nextResponder
+            window.nextResponder = self
+        }
+        windowMakeFirstResponder()
+        guard let panel = QLPreviewPanel.shared() else {
+            NSWorkspace.shared.activateFileViewerSelecting([target])
+            return
+        }
         panel.dataSource = self
         panel.delegate = self
+        panel.currentPreviewItemIndex = 0
         panel.reloadData()
-        panel.makeKeyAndOrderFront(nil)
+        if panel.isVisible {
+            panel.refreshCurrentPreviewItem()
+        } else {
+            panel.makeKeyAndOrderFront(nil)
+        }
     }
+
+    private func windowMakeFirstResponder() {
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            _ = window.makeFirstResponder(self)
+        }
+    }
+
+    /// Files preview as-is. Directories resolve to the largest previewable child
+    /// (video/image/PDF/archive/disk image) so movie folders Quick Look usefully.
+    private func resolvePreviewURL(_ url: URL) -> URL? {
+        let standardized = url.standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: standardized.path, isDirectory: &isDirectory) else {
+            return nil
+        }
+        if !isDirectory.boolValue { return standardized }
+        return largestPreviewableChild(in: standardized) ?? standardized
+    }
+
+    private static let previewExtensions: Set<String> = [
+        "mkv", "mp4", "mov", "m4v", "avi", "webm",
+        "jpg", "jpeg", "png", "heic", "gif", "webp", "tiff", "tif",
+        "pdf", "txt", "rtf", "md",
+        "zip", "dmg", "iso", "pkg", "rar", "7z",
+        "mp3", "m4a", "wav", "aac",
+    ]
+
+    private func largestPreviewableChild(in directory: URL) -> URL? {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return nil }
+        var best: (URL, Int64)?
+        var scanned = 0
+        for case let fileURL as URL in enumerator {
+            scanned += 1
+            if scanned > 2_000 { break }
+            let ext = fileURL.pathExtension.lowercased()
+            guard Self.previewExtensions.contains(ext) else { continue }
+            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .isDirectoryKey])
+            guard values?.isDirectory != true, values?.isRegularFile == true else { continue }
+            let size = Int64(values?.fileSize ?? 0)
+            if best == nil || size > best!.1 {
+                best = (fileURL, size)
+            }
+        }
+        return best?.0
+    }
+
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = self
+        panel.delegate = self
+    }
+
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {}
 
     func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int { url == nil ? 0 : 1 }
 

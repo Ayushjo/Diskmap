@@ -21,31 +21,57 @@ struct LayoutChartView: View {
     var otherFraction: Double = ChartLayout.otherFraction
     var colorMode: ExploreColorMode = .folder
     var categories: [FileTypeCategory] = []
+    @State private var preparedSlices: [ChartSlice] = []
+    @State private var isPreparing = true
 
     var body: some View {
         VStack(spacing: 0) {
-            DrillHeader(tree: tree, currentNode: currentNode, totals: totals) { id in
-                currentNode = id
-                selectedNode = id
-            }
+
             GeometryReader { proxy in
-                let slices = currentSlices
-                if slices.isEmpty {
+                if isPreparing {
+                    ProgressView("Preparing visualization…")
+                        .controlSize(.small)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if preparedSlices.isEmpty {
                     Text("Nothing with a size in this folder")
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    chart(slices, in: proxy.size)
+                    chart(preparedSlices, in: proxy.size)
                 }
             }
             .background(DiskMapTheme.cream)
         }
         .background(DiskMapTheme.cream)
+        .task(id: preparationID) {
+            await prepareSlices()
+        }
     }
 
-    private var currentSlices: [ChartSlice] {
-        guard currentNode >= 0, Int(currentNode) < tree.count, totals.count == tree.count else { return [] }
-        return ChartLayout.slices(of: currentNode, in: tree, totals: totals, otherFraction: otherFraction)
+    private var preparationID: String {
+        let size = currentNode >= 0 && Int(currentNode) < totals.count ? totals[Int(currentNode)] : 0
+        return "\(currentNode):\(totals.count):\(size):\(otherFraction)"
+    }
+
+    @MainActor
+    private func prepareSlices() async {
+        guard currentNode >= 0, Int(currentNode) < tree.count, totals.count == tree.count else {
+            preparedSlices = []
+            isPreparing = false
+            return
+        }
+        isPreparing = true
+        let node = currentNode
+        let sourceTree = tree
+        let sourceTotals = totals
+        let fraction = otherFraction
+        let result = await Task.detached(priority: .userInitiated) {
+            ChartLayout.slices(of: node, in: sourceTree, totals: sourceTotals, otherFraction: fraction)
+        }.value
+        guard !Task.isCancelled, currentNode == node else { return }
+        preparedSlices = result
+        isPreparing = false
     }
 
     @ViewBuilder
@@ -100,7 +126,8 @@ private struct SunburstChart: View {
                 if sweep > 0.14, wedge.outer - wedge.inner > 22 {
                     let mid = (wedge.start + wedge.end) / 2
                     let radius = (wedge.inner + wedge.outer) / 2
-                    let short = wedge.label.count > 16 ? String(wedge.label.prefix(14)) + "…" : wedge.label
+                    let capacity = min(18, max(3, Int(min(sweep * radius, wedge.outer - wedge.inner) / 6)))
+                    let short = wedge.label.count > capacity ? String(wedge.label.prefix(capacity - 1)) + "…" : wedge.label
                     context.draw(
                         Text(short).font(.caption2.weight(.semibold)).foregroundStyle(DiskMapTheme.ink),
                         at: polarPoint(center: wedge.center, angle: mid, radius: radius)
@@ -109,8 +136,11 @@ private struct SunburstChart: View {
             }
         }
         .contentShape(Rectangle())
-        .gesture(SpatialTapGesture().onEnded { value in
+        .gesture(SpatialTapGesture(count: 2).onEnded { value in
             drill(hit(layout, at: value.location))
+        })
+        .simultaneousGesture(SpatialTapGesture().onEnded { value in
+            select(hit(layout, at: value.location))
         })
     }
 }
@@ -132,7 +162,8 @@ private struct FlameChart: View {
                 context.fill(path, with: .color(color(bar.nodeID)))
                 context.stroke(path, with: .color(isSel ? DiskMapTheme.ink : .black.opacity(0.25)), lineWidth: isSel ? 2 : 1)
                 if bar.rect.width > 56 && bar.rect.height > 18 {
-                    let short = bar.label.count > 22 ? String(bar.label.prefix(20)) + "…" : bar.label
+                    let capacity = max(3, Int((bar.rect.width - 14) / 6))
+                    let short = bar.label.count > capacity ? String(bar.label.prefix(capacity - 1)) + "…" : bar.label
                     context.draw(
                         Text(short).font(.caption2.weight(.semibold)).foregroundStyle(DiskMapTheme.ink),
                         at: CGPoint(x: bar.rect.minX + 6, y: bar.rect.midY),
@@ -142,8 +173,11 @@ private struct FlameChart: View {
             }
         }
         .contentShape(Rectangle())
-        .gesture(SpatialTapGesture().onEnded { value in
+        .gesture(SpatialTapGesture(count: 2).onEnded { value in
             drill(bars.first { $0.rect.contains(value.location) }?.nodeID)
+        })
+        .simultaneousGesture(SpatialTapGesture().onEnded { value in
+            select(bars.first { $0.rect.contains(value.location) }?.nodeID)
         })
     }
 }
@@ -156,15 +190,13 @@ private struct BubbleChart: View {
     let select: (Int32?) -> Void
     let drill: (Int32?) -> Void
 
+    @State private var packed: [PackedCircle] = []
+
+    private var circles: [DrawnCircle] { placedCircles(slices, packed: packed, in: size) }
+
     var body: some View {
-        let circles = placedCircles(slices, in: size)
+        let circles = circles
         Canvas { context, _ in
-            if let bounds = bubbleBounds(circles) {
-                let pad: CGFloat = 6
-                let enclosure = Path(ellipseIn: bounds.insetBy(dx: -pad, dy: -pad))
-                context.fill(enclosure, with: .color(DiskMapTheme.cardFill.opacity(0.95)))
-                context.stroke(enclosure, with: .color(DiskMapTheme.cardStroke), lineWidth: 1.5)
-            }
             for circle in circles {
                 let rect = CGRect(
                     x: circle.center.x - circle.radius,
@@ -183,7 +215,7 @@ private struct BubbleChart: View {
                     with: .color(isSel ? DiskMapTheme.ink : DiskMapTheme.ink.opacity(0.18)),
                     lineWidth: isSel ? 2.5 : 1
                 )
-                if circle.radius > 24 {
+                if circle.radius > (circle.isContainer ? 60 : 28) {
                     let maxChars = max(4, Int(circle.radius / 4.5))
                     let short = circle.label.count > maxChars
                         ? String(circle.label.prefix(maxChars - 1)) + "…"
@@ -193,39 +225,39 @@ private struct BubbleChart: View {
                         Text(short)
                             .font(.system(size: fontSize, weight: .semibold))
                             .foregroundStyle(DiskMapTheme.ink.opacity(0.9)),
-                        at: circle.center
+                        at: CGPoint(x: circle.center.x, y: circle.center.y - (circle.isContainer ? circle.radius * 0.72 : 0))
                     )
                 }
             }
         }
         .contentShape(Rectangle())
-        .gesture(SpatialTapGesture().onEnded { value in
+        .gesture(SpatialTapGesture(count: 2).onEnded { value in
             // Smallest containing circle wins (deepest child).
             let hit = circles
                 .filter { hypot($0.center.x - value.location.x, $0.center.y - value.location.y) <= $0.radius }
                 .min(by: { $0.radius < $1.radius })
             drill(hit?.nodeID)
         })
-    }
-}
+        .simultaneousGesture(SpatialTapGesture().onEnded { value in
+            // Smallest containing circle wins (deepest child).
+            let hit = circles
+                .filter { hypot($0.center.x - value.location.x, $0.center.y - value.location.y) <= $0.radius }
+                .min(by: { $0.radius < $1.radius })
+            select(hit?.nodeID)
+        })
+        .task(id: slices) {
+            let input = slices
+            let worker = Task.detached(priority: .userInitiated) {
+                CirclePack.pack(input)
+            }
+            let result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: { worker.cancel() }
+            guard !Task.isCancelled else { return }
+            packed = result
+        }
 
-private func bubbleBounds(_ circles: [DrawnCircle]) -> CGRect? {
-    guard let first = circles.first else { return nil }
-    var minX = first.center.x - first.radius
-    var minY = first.center.y - first.radius
-    var maxX = first.center.x + first.radius
-    var maxY = first.center.y + first.radius
-    for c in circles.dropFirst() {
-        minX = min(minX, c.center.x - c.radius)
-        minY = min(minY, c.center.y - c.radius)
-        maxX = max(maxX, c.center.x + c.radius)
-        maxY = max(maxY, c.center.y + c.radius)
     }
-    // Force enclosure to a circle (DiskBuddy look).
-    let cx = (minX + maxX) / 2
-    let cy = (minY + maxY) / 2
-    let r = max(maxX - minX, maxY - minY) / 2
-    return CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)
 }
 
 private struct MindMapChart: View {
@@ -238,46 +270,82 @@ private struct MindMapChart: View {
     let drill: (Int32?) -> Void
 
     var body: some View {
-        let nodes = mindNodes(slices, centerName: centerName, in: size)
-        Canvas { context, _ in
-            if let hub = nodes.first {
-                for node in nodes.dropFirst() {
-                    var line = Path()
-                    line.move(to: hub.center)
-                    line.addLine(to: node.center)
-                    context.stroke(line, with: .color(DiskMapTheme.cardStroke), lineWidth: 1)
+        ScrollView {
+            VStack(spacing: 0) {
+                VStack(spacing: 5) {
+                    Label(centerName, systemImage: "folder.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .lineLimit(1).help(centerName)
+                    Text(ByteFormat.string(slices.reduce(0) { $0 + $1.size }))
+                        .font(.system(size: 12)).monospacedDigit()
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
+                .padding(14)
+                .frame(maxWidth: 280)
+                .background(DiskMapTheme.cardFill, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(DiskMapTheme.cardStroke))
+                Rectangle().fill(DiskMapTheme.cardStroke).frame(width: 1, height: 24)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20, alignment: .top), count: size.width >= 720 ? 3 : size.width >= 480 ? 2 : 1), alignment: .center, spacing: 22) {
+                    ForEach(slices) { slice in
+                        VStack(spacing: 0) {
+                            Rectangle().fill(color(slice.nodeID).opacity(0.5)).frame(width: 2, height: 16)
+                            VStack(alignment: .leading, spacing: 10) {
+                                nodeRow(slice, primary: true)
+                                if !slice.children.isEmpty {
+                                    Divider()
+                                    ForEach(slice.children.prefix(4)) { child in
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "arrow.turn.down.right")
+                                                .font(.system(size: 10)).foregroundStyle(DiskMapTheme.mutedLabel)
+                                            nodeRow(child, primary: false)
+                                        }
+                                    }
+                                    if slice.children.count > 4 {
+                                        Text("\(slice.children.count - 4) more branches · Explore folder to see all")
+                                            .font(.system(size: 11)).foregroundStyle(DiskMapTheme.mutedLabel)
+                                    }
+                                }
+                            }
+                            .padding(12)
+                            .background(DiskMapTheme.cardFill, in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(color(slice.nodeID).opacity(0.45)))
+                        }
+                    }
+                }
+                .overlay(alignment: .top) { Rectangle().fill(DiskMapTheme.cardStroke).frame(height: 1) }
             }
-            for node in nodes {
-                let path = Path(ellipseIn: CGRect(
-                    x: node.center.x - node.radius,
-                    y: node.center.y - node.radius,
-                    width: node.radius * 2,
-                    height: node.radius * 2
-                ))
-                let isSel = !node.hub && node.nodeID == selected
-                let fill = node.hub ? DiskMapTheme.ink.opacity(0.55) : color(node.nodeID)
-                context.fill(path, with: .color(fill))
-                if isSel {
-                    context.stroke(path, with: .color(DiskMapTheme.ink), lineWidth: 2)
+            .padding(20)
+        }
+    }
+
+    private func nodeRow(_ slice: ChartSlice, primary: Bool) -> some View {
+        HStack(spacing: 6) {
+            Button { select(slice.nodeID) } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: slice.drillable ? "folder.fill" : "doc.fill")
+                        .foregroundStyle(color(slice.nodeID))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(slice.label).font(.system(size: primary ? 13 : 12, weight: .medium))
+                            .lineLimit(1).truncationMode(.middle)
+                        Text(ByteFormat.string(slice.size)).font(.system(size: 11)).monospacedDigit()
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                    }
+                    Spacer(minLength: 0)
                 }
-                if node.labelWidth > 0.14 || node.hub {
-                    let short = node.label.count > 14 ? String(node.label.prefix(12)) + "…" : node.label
-                    context.draw(
-                        Text(short).font(.caption2.weight(.semibold))
-                            .foregroundStyle(node.hub ? Color.white : DiskMapTheme.ink),
-                        at: node.center
-                    )
+                .padding(4).contentShape(Rectangle())
+                .background(slice.nodeID == selected ? DiskMapTheme.ink.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 5))
+            }
+            .buttonStyle(.plain).disabled(slice.nodeID == nil).help(slice.label)
+            .accessibilityLabel("\(slice.label), \(ByteFormat.string(slice.size))")
+            if slice.drillable {
+                Button { drill(slice.nodeID) } label: {
+                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, height: 28).contentShape(Rectangle())
                 }
+                .buttonStyle(.plain).help("Explore \(slice.label)")
+                .accessibilityLabel("Explore \(slice.label)")
             }
         }
-        .contentShape(Rectangle())
-        .gesture(SpatialTapGesture().onEnded { value in
-            let hit = nodes.first {
-                !$0.hub && hypot($0.center.x - value.location.x, $0.center.y - value.location.y) <= $0.radius
-            }
-            drill(hit?.nodeID)
-        })
     }
 }
 
@@ -291,21 +359,12 @@ private struct Wedge {
     var outer: CGFloat
 }
 
-private struct DrawnCircle {
+private struct DrawnCircle: Sendable {
     var nodeID: Int32?
     var label: String
     var center: CGPoint
     var radius: CGFloat
     var isContainer: Bool
-}
-
-private struct MindNode {
-    var nodeID: Int32?
-    var label: String
-    var center: CGPoint
-    var radius: CGFloat
-    var labelWidth: Double
-    var hub: Bool
 }
 
 private struct FlameBar {
@@ -416,30 +475,17 @@ private func flameBars(_ slices: [ChartSlice], in size: CGSize) -> [FlameBar] {
     return bars
 }
 
-private func placedCircles(_ slices: [ChartSlice], in size: CGSize) -> [DrawnCircle] {
-    let packed = CirclePack.pack(slices)
-    guard !packed.isEmpty, size.width > 8, size.height > 8 else { return [] }
-    let minX = packed.map { $0.x - $0.radius }.min() ?? 0
-    let minY = packed.map { $0.y - $0.radius }.min() ?? 0
-    let maxX = packed.map { $0.x + $0.radius }.max() ?? 1
-    let maxY = packed.map { $0.y + $0.radius }.max() ?? 1
-    let spanX = max(maxX - minX, 1e-6)
-    let spanY = max(maxY - minY, 1e-6)
-    // Fill the canvas the way DiskBuddy does — use nearly the full panel,
-    // not a tiny cluster floating in cream.
-    let pad: CGFloat = 10
-    let scale = min((size.width - pad * 2) / spanX, (size.height - pad * 2) / spanY)
-    let offsetX = size.width / 2 - (minX + maxX) / 2 * scale
-    let offsetY = size.height / 2 - (minY + maxY) / 2 * scale
+private func placedCircles(_ slices: [ChartSlice], packed: [PackedCircle], in size: CGSize) -> [DrawnCircle] {
+    let fitted = BubblePresentation.fit(packed, slices: slices, width: size.width, height: size.height)
     let byID = Dictionary(uniqueKeysWithValues: labeled(slices).map { ($0.id, $0) })
     let topIDs = Set(slices.map(\.id))
-    return packed.map { circle in
+    return fitted.map { circle in
         let slice = byID[circle.id]
         return DrawnCircle(
             nodeID: slice?.nodeID,
             label: slice?.label ?? "",
-            center: CGPoint(x: circle.x * scale + offsetX, y: circle.y * scale + offsetY),
-            radius: circle.radius * scale,
+            center: CGPoint(x: circle.x, y: circle.y),
+            radius: circle.radius,
             isContainer: topIDs.contains(circle.id) && !(slice?.children.isEmpty ?? true)
         )
     }
@@ -450,27 +496,3 @@ private func labeled(_ slices: [ChartSlice]) -> [ChartSlice] {
     slices.flatMap { [$0] + labeled($0.children) }
 }
 
-private func mindNodes(_ slices: [ChartSlice], centerName: String, in size: CGSize) -> [MindNode] {
-    let total = slices.reduce(Int64(0)) { $0 + $1.size }
-    guard total > 0, size.width > 0, size.height > 0 else { return [] }
-    let center = CGPoint(x: size.width / 2, y: size.height / 2)
-    let ring = min(size.width, size.height) * 0.38
-    let maxSize = slices.map(\.size).max() ?? 1
-    var nodes = [MindNode(nodeID: nil, label: centerName, center: center, radius: 36, labelWidth: 1, hub: true)]
-    var angle = -Double.pi / 2
-    for slice in slices {
-        let sweep = Double(slice.size) / Double(total) * 2 * .pi
-        let mid = angle + sweep / 2
-        let radius = 14 + 34 * sqrt(Double(slice.size) / Double(max(maxSize, 1)))
-        nodes.append(MindNode(
-            nodeID: slice.nodeID,
-            label: slice.label,
-            center: polarPoint(center: center, angle: mid, radius: ring),
-            radius: radius,
-            labelWidth: sweep,
-            hub: false
-        ))
-        angle += sweep
-    }
-    return nodes
-}

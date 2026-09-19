@@ -6,20 +6,20 @@ struct TopSizesView: View {
     let totals: [Int64]
     let rootURL: URL
     @Binding var selectedNode: Int32
+    @State private var ranked: [Int32] = []
+    @State private var isPreparing = true
 
-    private var ranked: [Int32] {
-        guard totals.count == tree.count else { return [] }
-        return TopSizes.ranked(totals: totals)
-    }
-
-    private var maxSize: Int64 {
-        guard let first = ranked.first, Int(first) < totals.count else { return 1 }
-        return max(totals[Int(first)], 1)
+    private var rankingID: String {
+        "\(tree.count):\(totals.first ?? 0)"
     }
 
     var body: some View {
         Group {
-            if ranked.isEmpty {
+            if isPreparing {
+                ProgressView("Ranking files…")
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if ranked.isEmpty {
                 Text("Nothing ranked yet")
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -40,12 +40,30 @@ struct TopSizesView: View {
             }
         }
         .background(DiskMapTheme.cream)
+        .task(id: rankingID) { await prepareRanking() }
+    }
+
+    @MainActor
+    private func prepareRanking() async {
+        guard totals.count == tree.count else {
+            ranked = []
+            isPreparing = false
+            return
+        }
+        isPreparing = true
+        let sourceTree = tree
+        let sourceTotals = totals
+        let result = await Task.detached(priority: .userInitiated) {
+            TopSizes.rankedFiles(tree: sourceTree, totals: sourceTotals)
+        }.value
+        guard !Task.isCancelled else { return }
+        ranked = result
+        isPreparing = false
     }
 
     private func rankRow(index: Int, id: Int32) -> some View {
         let selected = id == selectedNode
         let size = totals[Int(id)]
-        let frac = Double(size) / Double(maxSize)
         return Button {
             selectedNode = id
         } label: {
@@ -60,19 +78,15 @@ struct TopSizesView: View {
                     )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(tree.path(of: id, root: rootURL).path)
-                        .font(.system(size: 12, weight: .medium))
+                    Text(tree.name(of: id))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
+                    Text(CanonicalPath.parentDisplay(of: tree.path(of: id, root: rootURL).path))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .lineLimit(1)
                         .truncationMode(.middle)
-                    HStack(spacing: 8) {
-                        Text(tree.isDirectory[Int(id)] ? "Folder" : "File")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                        ProportionBar(fraction: frac, tint: DiskMapTheme.ink.opacity(0.28))
-                            .frame(maxWidth: 160)
-                            .frame(height: 3)
-                    }
                 }
                 Spacer(minLength: 8)
                 Text(diskByteString(size))

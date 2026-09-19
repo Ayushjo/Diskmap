@@ -5,6 +5,7 @@ import SwiftUI
 /// Persistent 3-panel Explore shell. View-modes swap only the center canvas.
 struct ExploreShellView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var pickFolder: () -> Void
     @State private var showCleanup = false
 
@@ -32,7 +33,7 @@ struct ExploreShellView: View {
                     .zIndex(10)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: model.toastMessage)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.toastMessage)
         .background(DiskMapTheme.cream)
         .sheet(isPresented: $showCleanup) {
             CleanupQueueView(model: model)
@@ -43,14 +44,7 @@ struct ExploreShellView: View {
 
     @ViewBuilder
     private var center: some View {
-        if model.isScanning {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Scanning… \(model.scannedCount) items")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let tree = model.tree, let root = model.rootURL,
+        if let tree = model.tree, let root = model.rootURL,
                   model.selectedTotals.count == tree.count {
             VStack(spacing: 0) {
                 canvasHeader(tree: tree, root: root)
@@ -62,16 +56,34 @@ struct ExploreShellView: View {
                     totals: model.selectedTotals,
                     rootURL: root
                 )
+                if model.exploreMode.showsLayoutControls || model.exploreMode == .folders {
+                    LargestItemsStrip(model: model, tree: tree, root: root)
+                        .frame(height: 160)
+                }
             }
-        } else {
-            VStack(spacing: 16) {
-                Text("Pick a folder to explore")
+        } else if model.isScanning {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Scanning… \(model.scannedCount) items")
                     .foregroundStyle(DiskMapTheme.mutedLabel)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            VStack(spacing: 14) {
+                Text("Scan first to explore")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.ink)
+                Text("Where is the space? What have I forgotten? Pick a folder to open Treemap, Age Map, and the other views.")
+                    .font(DiskMapType.body)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
                 Button("Scan Full Mac") {
                     Task { await model.scan(URL(fileURLWithPath: "/", isDirectory: true)) }
                 }
                 .buttonStyle(InkButtonStyle())
                 Button("Choose Folder…", action: pickFolder)
+                    .buttonStyle(InkButtonStyle(filled: false))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -84,22 +96,41 @@ struct ExploreShellView: View {
         let files = model.descendantFileCounts.indices.contains(idx) ? model.descendantFileCounts[idx] : 0
         let folders = model.descendantFolderCounts.indices.contains(idx) ? model.descendantFolderCounts[idx] : 0
         let size = model.selectedTotals.indices.contains(idx) ? model.selectedTotals[idx] : 0
-        return HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(tree.name(of: node))
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(DiskMapTheme.ink)
-            Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                .font(.system(size: 13, weight: .medium).monospacedDigit())
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text("·").foregroundStyle(DiskMapTheme.cardStroke)
-            Text("\(files.formatted()) files")
-                .font(.system(size: 12))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text("·").foregroundStyle(DiskMapTheme.cardStroke)
-            Text("\(folders.formatted()) folders")
-                .font(.system(size: 12))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Spacer(minLength: 8)
+        let scanTotal = model.selectedTotals.first ?? 0
+        let ofDisk = scanTotal > 0 ? Double(size) / Double(scanTotal) : 0
+        let crumbs = tree.ancestorIDs(of: node)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                ForEach(Array(crumbs.enumerated()), id: \.element) { i, id in
+                    if i > 0 {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                    }
+                    Button {
+                        model.currentNode = id
+                        model.selectedNode = id
+                    } label: {
+                        Text(id == 0 ? (VolumeStats.forPath(root.path)?.volumeName ?? tree.name(of: id)) : tree.name(of: id))
+                            .font(.system(size: 12, weight: id == node ? .semibold : .regular))
+                            .foregroundStyle(id == node ? DiskMapTheme.ink : DiskMapTheme.info)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 8)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("Visualize Storage")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.ink)
+                Text("This folder uses \(ByteFormat.string(size)) (\(String(format: "%.1f%%", ofDisk * 100)) of scan)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                Spacer(minLength: 8)
+                Text("\(files.formatted()) files · \(folders.formatted()) folders")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 10)
@@ -123,7 +154,7 @@ struct ExploreShellView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .help(mode.rawValue)
+                    .help("\(mode.rawValue) — \(mode.blurb)")
                     .accessibilityIdentifier("explore-mode-\(mode.rawValue)")
                 }
             }
@@ -137,10 +168,17 @@ struct ExploreShellView: View {
                     )
             )
 
-            Text(model.exploreMode.blurb)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .lineLimit(1)
+            HStack(spacing: 6) {
+                Text(model.exploreMode.rawValue)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.ink)
+                Text("·")
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                Text(model.exploreMode.blurb)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .lineLimit(1)
+            }
 
             Spacer(minLength: 8)
 
@@ -181,17 +219,6 @@ struct ExploreShellView: View {
     }
 }
 
-private struct InkButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(DiskMapTheme.ink))
-            .opacity(configuration.isPressed ? 0.85 : 1)
-    }
-}
 
 struct ExploreSidebar: View {
     @ObservedObject var model: ScanModel
@@ -408,9 +435,22 @@ struct ExploreInspector: View {
                model.selectedNode >= 0, Int(model.selectedNode) < tree.count {
                 inspector(tree: tree, root: root, id: model.selectedNode)
             } else {
-                Text("Select an item")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Storage context")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(DiskMapTheme.ink)
+                        Text("Select a file or folder to see what it is, why it’s large, and whether it’s safe to review.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                        if model.analysis.reviewableBytes > 0 {
+                            Text("\(ByteFormat.string(model.analysis.reviewableBytes)) worth reviewing in this scan.")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(DiskMapTheme.safe)
+                        }
+                    }
+                    .padding(14)
+                }
             }
         }
     }
@@ -433,6 +473,11 @@ struct ExploreInspector: View {
         let created = tree.createdDay[idx]
         let itemURL = tree.path(of: id, root: root)
         let alreadyStaged = model.isStaged(itemURL)
+        let safety = SafetyClassifier.assess(
+            path: itemURL.path,
+            name: tree.name(of: id),
+            isDirectory: tree.isDirectory[idx]
+        )
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -478,8 +523,54 @@ struct ExploreInspector: View {
                     }
                 }
 
+                PanelCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("What is this?")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(DiskMapTheme.ink)
+                        Text(safety.title == tree.name(of: id) ? (tree.isDirectory[idx] ? "Folder in your scan." : "File in your scan.") : safety.title)
+                            .font(.system(size: 12))
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                        HStack {
+                            Text(safety.level.title)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(safety.level == .safe ? DiskMapTheme.safe : (safety.level == .protected ? DiskMapTheme.danger : DiskMapTheme.review))
+                            Spacer()
+                        }
+                        Text(safety.reason)
+                            .font(.system(size: 11))
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if tree.isDirectory[idx], let top = children.first {
+                    PanelCard {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Why is it large?")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(DiskMapTheme.ink)
+                            ForEach(Array(children.prefix(3).enumerated()), id: \.element.id) { _, child in
+                                HStack {
+                                    Text(tree.name(of: child.id))
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(DiskMapTheme.ink)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(byte(child.size))
+                                        .font(.system(size: 11).monospacedDigit())
+                                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                                }
+                            }
+                            Text("Dominant contributor: \(tree.name(of: top.id))")
+                                .font(.system(size: 11))
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                        }
+                    }
+                }
+
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Largest Inside")
+                    Text("What's inside?")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(DiskMapTheme.ink)
                     PanelCard {
@@ -534,7 +625,7 @@ struct ExploreInspector: View {
                 Button {
                     confirmCleanup = true
                 } label: {
-                    Text(alreadyStaged ? "Already in Cleanup" : "Add to Cleanup")
+                    Text(alreadyStaged ? "Already in review" : "Review cleanup")
                         .font(.system(size: 13, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -547,15 +638,15 @@ struct ExploreInspector: View {
                 .buttonStyle(.plain)
                 .disabled(alreadyStaged)
                 .confirmationDialog(
-                    "Add to Cleanup Queue?",
+                    "Add to Cleanup?",
                     isPresented: $confirmCleanup,
                     titleVisibility: .visible
                 ) {
-                    Button("Add to Cleanup") {
+                    Button("Add to review") {
                         let size = model.allocatedTotals[idx]
                         let name = tree.name(of: id)
                         Task {
-                            let ok = await model.cleanupQueue.stage(itemURL, size: size, reason: "manual")
+                            let ok = await model.cleanupQueue.stage(itemURL, size: size, reason: "review cleanup")
                             await model.refreshQueue()
                             model.showToast(ok ? "Added “\(name)” to Cleanup" : "Couldn’t add — excluded or already queued")
                         }
@@ -598,6 +689,8 @@ struct ExploreCanvas: View {
     let tree: FileTree
     let totals: [Int64]
     let rootURL: URL
+    /// When true, Treemap omits its internal breadcrumb (VisualizeView owns chrome).
+    var hideTreemapChrome: Bool = false
 
     private var otherFraction: Double {
         // Map depth slider 1…12 onto a collapse fraction (shallower → more Other).
@@ -615,7 +708,8 @@ struct ExploreCanvas: View {
                     currentNode: $model.currentNode,
                     selectedNode: $model.selectedNode,
                     colorMode: model.colorMode,
-                    categories: model.fileTypeCategories
+                    categories: model.fileTypeCategories,
+                    showInlineChrome: !hideTreemapChrome
                 )
             case .sunburst:
                 LayoutChartView(kind: .sunburst, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: $model.selectedNode, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
@@ -650,41 +744,57 @@ struct ExploreTreemapView: View {
     @Binding var selectedNode: Int32
     var colorMode: ExploreColorMode
     var categories: [FileTypeCategory]
+    /// When false, breadcrumbs/size chrome are provided by VisualizeView.
+    var showInlineChrome: Bool = true
 
     @State private var layoutRects: [TreemapRect] = []
     @State private var canvasSize: CGSize = .zero
+    @State private var layoutTask: Task<Void, Never>?
+    @State private var isPreparingLayout = false
 
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                BreadcrumbBar(tree: tree, currentNode: currentNode) { id in
-                    currentNode = id
-                    selectedNode = id
-                    cacheLayout()
+            if showInlineChrome {
+                HStack {
+                    BreadcrumbBar(tree: tree, currentNode: currentNode) { id in
+                        currentNode = id
+                        selectedNode = id
+                        cacheLayout()
+                    }
+                    Spacer()
+                    Text(ByteCountFormatter.string(fromByteCount: currentSize, countStyle: .file))
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
-                Spacer()
-                Text(ByteCountFormatter.string(fromByteCount: currentSize, countStyle: .file))
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                .padding(8)
             }
-            .padding(8)
 
             Canvas { context, size in
-                let items = tree.children(of: currentNode, totals: totals)
-                let rects = SquarifiedTreemap.layout(items: items, in: CGRect(origin: .zero, size: size))
-                for r in rects {
+                for r in layoutRects {
                     let inset = r.rect.insetBy(dx: 1, dy: 1)
-                    let path = Path(inset)
+                    let path = Path(roundedRect: inset, cornerRadius: 5)
                     let selected = r.id == selectedNode
                     context.fill(path, with: .color(colorFor(id: r.id)))
                     context.stroke(path, with: .color(selected ? DiskMapTheme.ink : .black.opacity(0.25)), lineWidth: selected ? 2 : 1)
                     if inset.width > 52 && inset.height > 20 {
                         context.draw(
-                            Text(tree.name(of: r.id)).font(.caption.weight(.semibold)).foregroundStyle(DiskMapTheme.ink),
+                            Text(String(tree.name(of: r.id).prefix(max(4, Int(inset.width / 7) - 3)))).font(.system(size: 12, weight: .semibold)).foregroundStyle(DiskMapTheme.ink),
                             at: CGPoint(x: inset.minX + 4, y: inset.minY + 4),
                             anchor: .topLeading
                         )
                     }
+                    if inset.width > 90 && inset.height > 48 {
+                        context.draw(Text(ByteFormat.string(totals[Int(r.id)]))
+                            .font(.system(size: 11).monospacedDigit()).foregroundStyle(DiskMapTheme.ink.opacity(0.75)),
+                            at: CGPoint(x: inset.minX + 4, y: inset.minY + 23), anchor: .topLeading)
+                    }
+                }
+            }
+            .overlay {
+                if isPreparingLayout && layoutRects.isEmpty {
+                    ProgressView("Preparing map…")
+                        .controlSize(.small)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
             }
             .background {
@@ -712,8 +822,8 @@ struct ExploreTreemapView: View {
             )
         }
         .onChange(of: currentNode) { _, _ in cacheLayout() }
-        .onChange(of: totals) { _, _ in cacheLayout() }
-        .onChange(of: colorMode) { _, _ in cacheLayout() }
+        .onChange(of: totals.count) { _, _ in cacheLayout() }
+        .onDisappear { layoutTask?.cancel() }
     }
 
     private var currentSize: Int64 {
@@ -727,10 +837,26 @@ struct ExploreTreemapView: View {
             layoutRects = []
             return
         }
-        layoutRects = SquarifiedTreemap.layout(
-            items: tree.children(of: currentNode, totals: totals),
-            in: CGRect(origin: .zero, size: canvasSize)
-        )
+        let node = currentNode
+        let targetSize = canvasSize
+        let sourceTree = tree
+        let sourceTotals = totals
+        layoutTask?.cancel()
+        isPreparingLayout = true
+        layoutTask = Task.detached(priority: .userInitiated) {
+            let items = sourceTree.children(of: node, totals: sourceTotals).filter { $0.size > 0 }
+            guard !Task.isCancelled else { return }
+            let rects = SquarifiedTreemap.layout(
+                items: items,
+                in: CGRect(origin: .zero, size: targetSize)
+            )
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard currentNode == node, canvasSize == targetSize else { return }
+                layoutRects = rects
+                isPreparingLayout = false
+            }
+        }
     }
 
     private func colorFor(id: Int32) -> Color {
@@ -738,3 +864,64 @@ struct ExploreTreemapView: View {
     }
 }
 
+
+
+struct LargestItemsStrip: View {
+    @ObservedObject var model: ScanModel
+    let tree: FileTree
+    let root: URL
+
+    private var rows: [(id: Int32, size: Int64)] {
+        let node = model.currentNode
+        guard model.selectedTotals.count == tree.count else { return [] }
+        return tree.children(of: node, totals: model.selectedTotals).sorted { $0.size > $1.size }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Largest items in this folder")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DiskMapTheme.ink)
+                .padding(.horizontal, 14)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(rows.prefix(12).enumerated()), id: \.element.id) { _, row in
+                        Button {
+                            model.selectedNode = row.id
+                            if tree.isDirectory[Int(row.id)] {
+                                model.currentNode = row.id
+                            }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(tree.name(of: row.id))
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(DiskMapTheme.ink)
+                                    .lineLimit(1)
+                                Text(ByteFormat.string(row.size))
+                                    .font(.system(size: 11).monospacedDigit())
+                                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                                Text(tree.isDirectory[Int(row.id)] ? "Folder" : "File")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                            }
+                            .padding(10)
+                            .frame(width: 140, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(DiskMapTheme.cardFill)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14)
+            }
+        }
+        .padding(.vertical, 8)
+        .background(DiskMapTheme.inspectorFill.opacity(0.5))
+    }
+}

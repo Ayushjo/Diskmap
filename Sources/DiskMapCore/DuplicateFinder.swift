@@ -41,6 +41,35 @@ public struct DuplicateGroup: Sendable, Equatable {
     }
 }
 
+
+public enum DuplicateScanPhase: String, Sendable, Equatable {
+    case idle
+    case preparing
+    case collecting
+    case grouping
+    case hashing
+    case assembling
+    case complete
+    case noResults
+    case cancelled
+    case failed
+
+    public var title: String {
+        switch self {
+        case .idle: return "Ready"
+        case .preparing: return "Preparing duplicate search…"
+        case .collecting: return "Collecting candidate files…"
+        case .grouping: return "Grouping by size…"
+        case .hashing: return "Hashing colliding files…"
+        case .assembling: return "Assembling duplicate groups…"
+        case .complete: return "Finished"
+        case .noResults: return "No duplicates found"
+        case .cancelled: return "Cancelled"
+        case .failed: return "Failed"
+        }
+    }
+}
+
 public struct DuplicateScanResult: Sendable, Equatable {
     public var groups: [DuplicateGroup]
     public var fullContentHashCalls: Int
@@ -59,16 +88,49 @@ public struct DuplicateScanResult: Sendable, Equatable {
 public enum DuplicateFinder {
 
     public static func findDuplicates(
-        candidates: [(id: Int32, url: URL, size: Int64)]
-    ) async -> [DuplicateGroup] {
-        await scan(candidates).groups
+        candidates: [(id: Int32, url: URL, size: Int64)],
+        progress: (@Sendable (DuplicateScanPhase, Int, Int) -> Void)? = nil
+    ) async throws -> [DuplicateGroup] {
+        try await scan(candidates, progress: progress).groups
     }
 
     /// Regular files under `root`, skipping directories, empty files, and
     /// not-downloaded iCloud placeholders (opening those would download).
     public static func candidates(in tree: FileTree, root: URL) -> [(id: Int32, url: URL, size: Int64)] {
+        (try? cancellableCandidates(in: tree, root: root, progress: nil)) ?? []
+    }
+
+    /// Builds candidate paths away from the main actor and cooperates with
+    /// cancellation during very large tree walks.
+    public static func candidatesAsync(
+        in tree: FileTree,
+        root: URL,
+        progress: (@Sendable (_ examined: Int, _ candidates: Int) -> Void)? = nil
+    ) async throws -> [(id: Int32, url: URL, size: Int64)] {
+        let worker = Task.detached(priority: .userInitiated) {
+            try cancellableCandidates(in: tree, root: root, progress: progress)
+        }
+        return try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+    }
+
+    private static func cancellableCandidates(
+        in tree: FileTree,
+        root: URL,
+        progress: (@Sendable (_ examined: Int, _ candidates: Int) -> Void)?
+    ) throws -> [(id: Int32, url: URL, size: Int64)] {
         var result: [(id: Int32, url: URL, size: Int64)] = []
-        func walk(_ id: Int32) {
+        guard tree.count > 0 else { return result }
+        var stack: [Int32] = [0]
+        var examined = 0
+        while let id = stack.popLast() {
+            if examined & 2_047 == 0 {
+                try Task.checkCancellation()
+                progress?(examined, result.count)
+            }
             let index = Int(id)
             if index > 0 {
                 let notDownloaded = tree.flags[index] & NodeFlags.notDownloaded != 0
@@ -76,49 +138,67 @@ public enum DuplicateFinder {
                     result.append((id, tree.path(of: id, root: root), tree.logicalSize[index]))
                 }
             }
+            var children: [Int32] = []
             var child = tree.firstChild[index]
             while child != -1 {
-                walk(child)
+                children.append(child)
                 child = tree.nextSibling[Int(child)]
             }
+            stack.append(contentsOf: children.reversed())
+            examined += 1
         }
-        if tree.count > 0 { walk(0) }
+        try Task.checkCancellation()
+        progress?(examined, result.count)
         return result
     }
 
     public static func scan(
-        _ candidates: [(id: Int32, url: URL, size: Int64)]
-    ) async -> DuplicateScanResult {
+        _ candidates: [(id: Int32, url: URL, size: Int64)],
+        progress: (@Sendable (DuplicateScanPhase, Int, Int) -> Void)? = nil
+    ) async throws -> DuplicateScanResult {
+        progress?(.grouping, 0, 0)
         var bySize: [Int64: [(id: Int32, url: URL)]] = [:]
         for candidate in candidates where candidate.size > 0 {
+            try Task.checkCancellation()
             bySize[candidate.size, default: []].append((candidate.id, candidate.url))
         }
 
+        let colliding = bySize.filter { $0.value.count > 1 }
+        let totalBuckets = colliding.count
+        progress?(.hashing, 0, totalBuckets)
+
         var groups: [DuplicateGroup] = []
         var fullContentHashCalls = 0
+        var done = 0
 
-        await withTaskGroup(of: DuplicateScanResult.self) { taskGroup in
-            for (size, files) in bySize where files.count > 1 {
+        try await withThrowingTaskGroup(of: DuplicateScanResult.self) { taskGroup in
+            for (size, files) in colliding {
                 taskGroup.addTask {
-                    hashAndGroup(files: files, size: size)
+                    try Task.checkCancellation()
+                    return try hashAndGroup(files: files, size: size)
                 }
             }
-            for await partial in taskGroup {
+            for try await partial in taskGroup {
+                try Task.checkCancellation()
                 groups.append(contentsOf: partial.groups)
                 fullContentHashCalls += partial.fullContentHashCalls
+                done += 1
+                progress?(.hashing, done, totalBuckets)
             }
         }
 
+        progress?(.complete, totalBuckets, totalBuckets)
         return DuplicateScanResult(groups: groups, fullContentHashCalls: fullContentHashCalls)
     }
 
     private static func hashAndGroup(
         files: [(id: Int32, url: URL)],
         size: Int64
-    ) -> DuplicateScanResult {
+    ) throws -> DuplicateScanResult {
         var byPartialHash: [String: [(id: Int32, url: URL)]] = [:]
         for file in files {
-            guard let partial = partialHash(url: file.url, bytes: 65_536) else { continue }
+            try Task.checkCancellation()
+            guard let partial = try partialHash(url: file.url, bytes: 65_536) else { continue }
             byPartialHash[partial, default: []].append(file)
         }
 
@@ -136,8 +216,9 @@ public enum DuplicateFinder {
             }
             var byFullHash: [String: [Int32]] = [:]
             for file in partitioned.needsFullHash {
+                try Task.checkCancellation()
                 fullContentHashCalls += 1
-                guard let full = fullHash(url: file.url) else { continue }
+                guard let full = try fullHash(url: file.url) else { continue }
                 byFullHash[full, default: []].append(file.id)
             }
             for (hash, ids) in byFullHash where ids.count > 1 {
@@ -184,21 +265,24 @@ public enum DuplicateFinder {
 
     /// First-pass filter only. MD5 is fine here because colliding files still
     /// go through streaming SHA256 before they become a duplicate group.
-    private static func partialHash(url: URL, bytes: Int) -> String? {
+    private static func partialHash(url: URL, bytes: Int) throws -> String? {
+        try Task.checkCancellation()
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let data = try? handle.read(upToCount: bytes) else { return nil }
+        try Task.checkCancellation()
         return Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     /// Streaming SHA256 — same digest as hashing a full `Data`, without
     /// holding the whole file in a contiguous buffer.
-    private static func fullHash(url: URL) -> String? {
+    private static func fullHash(url: URL) throws -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         var hasher = SHA256()
         let chunkSize = 1024 * 1024
         while true {
+            try Task.checkCancellation()
             let chunk: Data?
             do {
                 chunk = try handle.read(upToCount: chunkSize)

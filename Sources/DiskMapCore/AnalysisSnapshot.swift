@@ -1,0 +1,291 @@
+import Foundation
+
+/// High-level storage category for Overview / Home.
+public struct StorageCategory: Sendable, Equatable, Identifiable {
+    public var id: String { key }
+    public var key: String
+    public var title: String
+    public var bytes: Int64
+    public var colorHint: String // semantic: library, downloads, developer, caches, apps, documents, other
+    public var nodeID: Int32? // primary folder when known
+
+    public init(key: String, title: String, bytes: Int64, colorHint: String, nodeID: Int32? = nil) {
+        self.key = key
+        self.title = title
+        self.bytes = bytes
+        self.colorHint = colorHint
+        self.nodeID = nodeID
+    }
+}
+
+public struct StorageFileHit: Sendable, Equatable, Identifiable {
+    public var id: Int32 { nodeID }
+    public var nodeID: Int32
+    public var name: String
+    public var bytes: Int64
+    public var relativePath: String
+    public var modifiedDay: Int32
+
+    public init(nodeID: Int32, name: String, bytes: Int64, relativePath: String, modifiedDay: Int32) {
+        self.nodeID = nodeID
+        self.name = name
+        self.bytes = bytes
+        self.relativePath = relativePath
+        self.modifiedDay = modifiedDay
+    }
+}
+
+public enum StorageHealth: String, Sendable, Equatable {
+    case healthy
+    case tight
+    case low
+    case critical
+
+    public var title: String {
+        switch self {
+        case .healthy: return "Healthy"
+        case .tight: return "Getting full"
+        case .low: return "Low on space"
+        case .critical: return "Critically full"
+        }
+    }
+}
+
+/// Canonical post-scan summary consumed by Overview and inspectors.
+public struct AnalysisSnapshot: Sendable, Equatable {
+    public var scanRootPath: String
+    public var volume: VolumeStats?
+    public var scannedBytes: Int64
+    public var categories: [StorageCategory]
+    public var topFiles: [StorageFileHit]
+    public var topFolders: [StorageFileHit]
+    public var reviewableBytes: Int64
+    public var forgottenBytes: Int64
+    public var quickWinBytes: Int64
+    public var health: StorageHealth
+    public var fileCount: Int
+    public var folderCount: Int
+
+    public static let empty = AnalysisSnapshot(
+        scanRootPath: "",
+        volume: nil,
+        scannedBytes: 0,
+        categories: [],
+        topFiles: [],
+        topFolders: [],
+        reviewableBytes: 0,
+        forgottenBytes: 0,
+        quickWinBytes: 0,
+        health: .healthy,
+        fileCount: 0,
+        folderCount: 0
+    )
+
+    public static func build(
+        tree: FileTree,
+        root: URL,
+        allocated: [Int64],
+        logical: [Int64],
+        basis: SizeBasis = .allocated,
+        quickWins: [QuickWins.Hit] = [],
+        today: Int32 = AgeMap.today()
+    ) -> AnalysisSnapshot {
+        let totals = basis == .logical ? logical : allocated
+        guard tree.count > 0, totals.count == tree.count else {
+            return .empty
+        }
+        let volume = VolumeStats.forPath(root.path)
+        let scanned = totals[0]
+        let cats = categorize(tree: tree, root: root, totals: totals)
+        let topFiles = topFileHits(tree: tree, root: root, totals: totals, limit: 12)
+        let topFolders = topFolderHits(tree: tree, root: root, totals: totals, limit: 12)
+        let forgottenCandidates = ForgottenFiles.candidates(
+            tree: tree,
+            root: root,
+            totals: totals,
+            today: today,
+            limit: 200
+        )
+        let forgottenBytes = ForgottenFiles.summary(from: forgottenCandidates).reviewableBytes
+        let qwBytes = quickWins.reduce(Int64(0)) { partial, hit in
+            let i = Int(hit.id)
+            return partial + (i < totals.count ? totals[i] : 0)
+        }
+        // Conservative: caches/quick-wins + half of forgotten (not "guaranteed reclaim").
+        let reviewable = qwBytes + forgottenBytes / 2
+        let health = health(for: volume)
+        var files = 0
+        var folders = 0
+        for i in 0..<tree.count {
+            if tree.isDirectory[i] { folders += 1 } else { files += 1 }
+        }
+        return AnalysisSnapshot(
+            scanRootPath: root.path,
+            volume: volume,
+            scannedBytes: scanned,
+            categories: cats,
+            topFiles: topFiles,
+            topFolders: topFolders,
+            reviewableBytes: reviewable,
+            forgottenBytes: forgottenBytes,
+            quickWinBytes: qwBytes,
+            health: health,
+            fileCount: files,
+            folderCount: folders
+        )
+    }
+
+    private static func health(for volume: VolumeStats?) -> StorageHealth {
+        guard let volume, volume.totalBytes > 0 else { return .healthy }
+        let freeFrac = Double(volume.freeBytes) / Double(volume.totalBytes)
+        if freeFrac < 0.05 { return .critical }
+        if freeFrac < 0.12 { return .low }
+        if freeFrac < 0.20 { return .tight }
+        return .healthy
+    }
+
+    /// Exclusive partition of **immediate children** of the scan root.
+    /// One child contributes to exactly one category. Library peels Caches/Logs
+    /// into caches (subtracted from library) so bytes stay exclusive.
+    /// Skips empty Data-volume firmlink twin dirs (size 0 after skip-descend).
+    private static func categorize(tree: FileTree, root: URL, totals: [Int64]) -> [StorageCategory] {
+        var buckets: [String: (title: String, hint: String, bytes: Int64, node: Int32?)] = [
+            "applications": ("Applications", "apps", 0, nil),
+            "library": ("Library", "library", 0, nil),
+            "downloads": ("Downloads", "downloads", 0, nil),
+            "documents": ("Personal", "documents", 0, nil),
+            "developer": ("Developer", "developer", 0, nil),
+            "caches": ("Caches & Logs", "caches", 0, nil),
+            "system": ("System", "system", 0, nil),
+            "other": ("Other", "other", 0, nil),
+        ]
+
+        func add(_ key: String, bytes: Int64, node: Int32) {
+            guard bytes > 0, var b = buckets[key] else { return }
+            b.bytes += bytes
+            if b.node == nil { b.node = node }
+            buckets[key] = b
+        }
+
+        let children = tree.children(of: 0, totals: totals)
+        for entry in children {
+            let child = entry.id
+            let name = tree.name(of: child)
+            let bytes = entry.size
+            guard bytes > 0 else { continue }
+            let lower = name.lowercased()
+            let path = tree.path(of: child, root: root).path
+
+            // Ignore empty firmlink-twin shells under Data if present.
+            if CanonicalPath.shouldSkipDescend(absolutePath: path, scanRootPath: root.path) {
+                continue
+            }
+
+            if lower == "library" {
+                var libBytes = bytes
+                for gentry in tree.children(of: child, totals: totals) {
+                    let gn = tree.name(of: gentry.id).lowercased()
+                    if gn == "caches" || gn == "logs" {
+                        add("caches", bytes: gentry.size, node: gentry.id)
+                        libBytes = max(0, libBytes - gentry.size)
+                    } else if gn == "developer" {
+                        // Xcode under ~/Library/Developer
+                        add("developer", bytes: gentry.size, node: gentry.id)
+                        libBytes = max(0, libBytes - gentry.size)
+                    }
+                }
+                add("library", bytes: libBytes, node: child)
+            } else if lower == "downloads" {
+                add("downloads", bytes: bytes, node: child)
+            } else if lower == "documents" || lower == "desktop" || lower == "movies" || lower == "music" || lower == "pictures" {
+                add("documents", bytes: bytes, node: child)
+            } else if lower == "applications" || lower == "applications (parallels)" {
+                add("applications", bytes: bytes, node: child)
+            } else if lower.hasPrefix(".") && isDeveloperDot(lower) {
+                add("developer", bytes: bytes, node: child)
+            } else if lower == "developer" || lower == "dev" {
+                add("developer", bytes: bytes, node: child)
+            } else if lower == "caches" || lower.hasSuffix(".cache") {
+                add("caches", bytes: bytes, node: child)
+            } else if lower == "system" || lower == "private" || path.hasPrefix("/System") {
+                add("system", bytes: bytes, node: child)
+            } else if lower == "users" {
+                // Whole-disk scan: attribute Users to personal/other breakdown via its children if shallow;
+                // otherwise count as Personal container.
+                add("documents", bytes: bytes, node: child)
+            } else {
+                add("other", bytes: bytes, node: child)
+            }
+        }
+
+        let order = ["applications", "library", "downloads", "documents", "developer", "caches", "system", "other"]
+        let cats = order.compactMap { key -> StorageCategory? in
+            guard let b = buckets[key], b.bytes > 0 else { return nil }
+            return StorageCategory(key: key, title: b.title, bytes: b.bytes, colorHint: b.hint, nodeID: b.node)
+        }
+        // Guarantee sum(categories) == sum of positive root children accounted
+        // (exclusive by construction). Callers must use sum as bar denominator
+        // when comparing to volume used — never inflate Other to fill volume.
+        return cats
+    }
+
+    private static func relativePath(_ url: URL, under root: URL) -> String {
+        let full = url.path
+        let prefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        if full.hasPrefix(prefix) { return String(full.dropFirst(prefix.count)) }
+        if full == root.path { return root.lastPathComponent }
+        return url.lastPathComponent
+    }
+
+    private static func isDeveloperDot(_ lower: String) -> Bool {
+        [
+            ".npm", ".nvm", ".yarn", ".pnpm", ".cache", ".cargo", ".rustup",
+            ".gradle", ".cocoapods", ".pub-cache", ".local", ".cursor", ".codex",
+            ".docker", ".pyenv", ".conda", ".vscode"
+        ].contains(lower)
+    }
+
+    private static func topFileHits(tree: FileTree, root: URL, totals: [Int64], limit: Int) -> [StorageFileHit] {
+        var ids: [Int32] = []
+        for id in 1..<Int32(tree.count) {
+            let i = Int(id)
+            guard !tree.isDirectory[i], totals[i] > 0 else { continue }
+            ids.append(id)
+        }
+        ids.sort { totals[Int($0)] > totals[Int($1)] }
+        if ids.count > limit { ids = Array(ids.prefix(limit)) }
+        return ids.map { id in
+            let i = Int(id)
+            let abs = tree.path(of: id, root: root).path
+            return StorageFileHit(
+                nodeID: id,
+                name: tree.name(of: id),
+                bytes: totals[i],
+                relativePath: CanonicalPath.displayPath(absolutePath: abs),
+                modifiedDay: tree.modifiedDay[i]
+            )
+        }
+    }
+
+    private static func topFolderHits(tree: FileTree, root: URL, totals: [Int64], limit: Int) -> [StorageFileHit] {
+        var ids: [Int32] = []
+        for id in 1..<Int32(tree.count) {
+            let i = Int(id)
+            guard tree.isDirectory[i], totals[i] > 0 else { continue }
+            ids.append(id)
+        }
+        ids.sort { totals[Int($0)] > totals[Int($1)] }
+        if ids.count > limit { ids = Array(ids.prefix(limit)) }
+        return ids.map { id in
+            let i = Int(id)
+            let abs = tree.path(of: id, root: root).path
+            return StorageFileHit(
+                nodeID: id,
+                name: tree.name(of: id),
+                bytes: totals[i],
+                relativePath: CanonicalPath.displayPath(absolutePath: abs),
+                modifiedDay: tree.modifiedDay[i]
+            )
+        }
+    }
+}

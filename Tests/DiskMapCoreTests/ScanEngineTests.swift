@@ -405,7 +405,7 @@ struct EdgeCaseRobustnessTests {
         #expect(sawLeaf)
         #expect(sawSecret)
 
-        let groups = await DuplicateFinder.findDuplicates(
+        let groups = try await DuplicateFinder.findDuplicates(
             candidates: DuplicateFinder.candidates(in: result.tree, root: root)
         )
         #expect(groups.contains { !$0.sharesStorage && $0.fileIDs.count == 2 })
