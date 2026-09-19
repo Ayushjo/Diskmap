@@ -25,7 +25,8 @@ where that's realistic for a community project to sustain.
 | Staged cleanup queue (never auto-delete) | ✅ | ✅ | queue UI confirms to Trash only (TASK-017) |
 | Quick Look integration | ✅ | ✅ | from the cleanup queue (TASK-017) |
 | Snapshots / compare over time | ✅ | ✅ | versioned binary file, path-matched diff (TASK-018, TASK-019) |
-| Quick Wins (node_modules, caches, DerivedData, iOS Simulators) | ✅ | ✅ | JSON patterns on the existing tree (TASK-016) |
+| Quick Wins (node_modules, caches, DerivedData, iOS Simulators) | ✅ | ✅ | categorized JSON patterns on the existing tree (TASK-016; Developer page 2026-09-19) |
+| Find-as-you-type search | partial | ✅ | name-table index, ms-scale queries on 1M+ trees (2026-09-19) |
 | External/network volume scanning | ✅ | ✅ | should fall out of ScanEngine already, needs testing |
 | Offline, no telemetry | ✅ | ✅ | design principle from day one |
 

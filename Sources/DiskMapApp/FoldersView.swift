@@ -17,7 +17,9 @@ struct FoldersView: View {
             DrillHeader(tree: tree, currentNode: currentNode, totals: totals) { currentNode = $0 }
             List(rows, id: \.id) { row in
                 HStack {
-                    Image(systemName: tree.isDirectory[Int(row.id)] ? "folder" : "doc")
+                    Image(systemName: tree.flags[Int(row.id)] & NodeFlags.notDownloaded != 0
+                          ? "icloud"
+                          : tree.isDirectory[Int(row.id)] ? "folder" : "doc")
                         .foregroundStyle(.secondary)
                     Text(tree.name(of: row.id))
                         .lineLimit(1)

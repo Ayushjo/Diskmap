@@ -7,16 +7,13 @@ struct QuickWinsView: View {
     let totals: [Int64]
     let rootURL: URL
 
+    @State private var hits: [QuickWins.Hit]?
     @State private var checked: Set<Int32> = []
-
-    private var hits: [QuickWins.Hit] {
-        QuickWins.find(in: tree, root: rootURL, patterns: QuickWins.bundledPatterns())
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("\(hits.count) regenerable folders · \(diskByteString(checkedSize)) selected")
+                Text("\(hits?.count ?? 0) regenerable folders · \(diskByteString(checkedSize)) selected")
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Stage Selected") { Task { await stageSelected() } }
@@ -24,12 +21,12 @@ struct QuickWinsView: View {
             }
             .padding(8)
 
-            if hits.isEmpty {
+            if let hits, hits.isEmpty {
                 Text("No Quick Wins in this scan. The list is quick-wins-patterns.json — directory names like node_modules, plus a few cache paths.")
                     .foregroundStyle(.secondary)
                     .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
+            } else if let hits {
                 List(hits) { hit in
                     Toggle(isOn: binding(hit.id)) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -40,7 +37,17 @@ struct QuickWinsView: View {
                         }
                     }
                 }
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        // The pattern walk covers the whole tree — once per scan, not per render.
+        .task(id: model.scanID) {
+            checked = []
+            hits = await Task.detached(priority: .userInitiated) {
+                QuickWins.find(in: tree, root: rootURL, patterns: QuickWins.bundledPatterns())
+            }.value
         }
     }
 
@@ -64,13 +71,14 @@ struct QuickWinsView: View {
     }
 
     private func stageSelected() async {
-        for hit in hits where checked.contains(hit.id) {
+        for hit in hits ?? [] where checked.contains(hit.id) {
             _ = await model.cleanupQueue.stage(
                 tree.path(of: hit.id, root: rootURL),
                 size: size(of: hit.id),
                 reason: "quick win"
             )
         }
+        checked = []
         await model.refreshQueue()
     }
 }
