@@ -110,7 +110,7 @@ struct CachesReviewView: View {
                     Image(systemName: "chevron.left")
                     Text("Safe to Review")
                 }
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             .buttonStyle(.plain)
@@ -142,7 +142,7 @@ struct CachesReviewView: View {
             Image(systemName: "info.circle.fill")
                 .foregroundStyle(Color(red: 0.25, green: 0.45, blue: 0.90))
             Text("Clearing caches won’t delete your documents. Apps may take longer to start or re-download data the first time afterward.")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -150,14 +150,14 @@ struct CachesReviewView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(red: 0.90, green: 0.94, blue: 1.0))
+                .fill(DiskMapTheme.infoSurface)
         )
     }
 
     private var summaryBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("\(ByteFormat.string(totalBytes)) across \(caches.count.formatted()) cache groups")
-                .font(.system(size: 14, weight: .semibold))
+                .font(DiskMapType.callout)
                 .foregroundStyle(DiskMapTheme.ink)
 
             Color.clear
@@ -181,7 +181,7 @@ struct CachesReviewView: View {
                     HStack(spacing: 5) {
                         Circle().fill(row.2).frame(width: 7, height: 7)
                         Text("\(row.0) \(ByteFormat.string(row.1))")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(DiskMapType.microMedium)
                             .foregroundStyle(DiskMapTheme.ink)
                     }
                 }
@@ -205,7 +205,7 @@ struct CachesReviewView: View {
                 DiskMapSearchField(placeholder: "Search cache groups…", text: $query)
                 Spacer()
                 Text("Sort: Largest")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             ScrollView(.horizontal, showsIndicators: false) {
@@ -223,10 +223,10 @@ struct CachesReviewView: View {
     private func pill(_ title: String, _ on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 6)
-                .foregroundStyle(on ? Color.white : DiskMapTheme.ink)
+                .foregroundStyle(on ? DiskMapTheme.onInk : DiskMapTheme.ink)
                 .background(Capsule().fill(on ? DiskMapTheme.ink : DiskMapTheme.navSelected))
         }
         .buttonStyle(.plain)
@@ -240,7 +240,7 @@ struct CachesReviewView: View {
             Text("Size").frame(width: 72, alignment: .trailing)
             Text("Safety").frame(width: 110, alignment: .leading)
         }
-        .font(.system(size: 10, weight: .semibold))
+        .font(DiskMapType.microStrong)
         .foregroundStyle(DiskMapTheme.mutedLabel)
         .padding(.horizontal, 28)
         .frame(height: DiskMapMetric.tableHeaderHeight)
@@ -283,20 +283,20 @@ struct CachesReviewView: View {
                 HStack(spacing: 10) {
                     appIcon(t)
                     Text(t.displayName)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(DiskMapType.bodyStrong)
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(t.detail)
-                        .font(.system(size: 11))
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .lineLimit(1)
                         .frame(width: 140, alignment: .leading)
                     Text(ByteFormat.string(t.bytes))
-                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                        .font(DiskMapType.smallStrong.monospacedDigit())
                         .frame(width: 72, alignment: .trailing)
                     Text(t.isGenerallySafe ? "Generally safe" : "Review first")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(DiskMapType.microStrong)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .foregroundStyle(t.isGenerallySafe ? DiskMapTheme.safe : DiskMapTheme.review)
@@ -325,7 +325,7 @@ struct CachesReviewView: View {
                     .frame(width: 22, height: 22)
             } else {
                 Image(systemName: t.symbolName)
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.ink)
                     .frame(width: 22, height: 22)
             }
@@ -347,22 +347,22 @@ struct CachesReviewView: View {
         HStack {
             if checked.isEmpty {
                 Text("\(visible.count.formatted()) cache groups")
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Spacer()
                 Button("Select all generally safe") {
                     checked = Set(visible.filter(\.isGenerallySafe).map(\.id))
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.ink)
             } else {
                 Text("\(checked.count.formatted()) selected · \(ByteFormat.string(selectedBytes))")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                 Spacer()
                 Button("Clear") { checked.removeAll() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 if let t = active {
                     Button("Reveal in Finder") {
@@ -447,12 +447,12 @@ struct ReviewableInspector: View {
                         .background(RoundedRectangle(cornerRadius: 14).fill(DiskMapTheme.ink.opacity(0.08)))
                     VStack(alignment: .leading, spacing: 4) {
                         Text(target.displayName)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(DiskMapType.callout)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(ByteFormat.string(target.bytes))
                             .font(.system(size: 26, weight: .semibold).monospacedDigit())
                         Text(target.detail)
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
@@ -462,10 +462,10 @@ struct ReviewableInspector: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(target.isGenerallySafe ? "Generally safe to clear" : target.safety.level.title)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                         .foregroundStyle(target.isGenerallySafe ? DiskMapTheme.safe : DiskMapTheme.review)
                     Text(target.safety.recommendedAction)
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -479,10 +479,10 @@ struct ReviewableInspector: View {
                 if !target.paths.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Locations")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(DiskMapType.smallStrong)
                         ForEach(target.paths.prefix(6), id: \.self) { path in
                             Text(CanonicalPath.displayPath(absolutePath: path))
-                                .font(.system(size: 11))
+                                .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .textSelection(.enabled)
                                 .lineLimit(2)
@@ -490,7 +490,7 @@ struct ReviewableInspector: View {
                         }
                         if target.paths.count > 6 {
                             Text("+\(target.paths.count - 6) more")
-                                .font(.system(size: 11))
+                                .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                         }
                     }
@@ -525,10 +525,10 @@ struct ReviewableInspector: View {
     private func block(title: String, body: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.ink)
             Text(body)
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -536,7 +536,7 @@ struct ReviewableInspector: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(red: 0.93, green: 0.95, blue: 0.99))
+                .fill(DiskMapTheme.infoSurface)
         )
     }
 }

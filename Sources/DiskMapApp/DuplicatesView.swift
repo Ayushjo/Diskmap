@@ -81,7 +81,7 @@ struct DuplicatesView: View {
                 if model.duplicateDidRun || !model.duplicateGroups.isEmpty {
                     VStack(alignment: .trailing, spacing: DiskMapSpace.xxs) {
                         Text("Estimated \(diskByteString(reclaimable))")
-                            .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                            .font(DiskMapType.bodyStrong.monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
                         Text("\(model.duplicateGroups.count) groups")
                             .font(DiskMapType.caption)
@@ -208,11 +208,11 @@ struct DuplicatesView: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(tree.name(of: id))
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(DiskMapType.bodyStrong)
                                 .foregroundStyle(DiskMapTheme.ink)
                                 .lineLimit(1)
                             Text(CanonicalPath.displayPath(absolutePath: tree.path(of: id, root: rootURL).path))
-                                .font(.system(size: 11).monospaced())
+                                .font(DiskMapType.caption.monospaced())
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
@@ -221,7 +221,7 @@ struct DuplicatesView: View {
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                             if id == keeper {
                                 Text("Suggested keeper")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(DiskMapType.microStrong)
                                     .foregroundStyle(DiskMapTheme.safe)
                             }
                         }

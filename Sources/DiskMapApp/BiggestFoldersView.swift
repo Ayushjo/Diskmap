@@ -110,7 +110,7 @@ struct BiggestFoldersView: View {
                     .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Text(ByteFormat.string(parentTotal))
-                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .font(DiskMapType.bodyStrong.monospacedDigit())
                     .foregroundStyle(DiskMapTheme.ink)
             }
         }
@@ -123,11 +123,11 @@ struct BiggestFoldersView: View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(DiskMapType.bodyMedium)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 TextField("Search folders by name or path…", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(DiskMapType.body)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -143,7 +143,7 @@ struct BiggestFoldersView: View {
             if model.currentNode == 0, rootURL.path == "/" || rootURL.standardizedFileURL.path == "/" {
                 Toggle(isOn: $showTechnical) {
                     Text("Show technical")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(DiskMapType.captionStrong)
                 }
                 .toggleStyle(.checkbox)
                 .help("Show zero-size and technical system stubs at the volume root")
@@ -159,7 +159,7 @@ struct BiggestFoldersView: View {
                 goBack()
             } label: {
                 Label("Back", systemImage: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
             }
             .buttonStyle(.plain)
             .foregroundStyle(canGoBack ? DiskMapTheme.ink : DiskMapTheme.mutedLabel.opacity(0.5))
@@ -252,20 +252,20 @@ struct BiggestFoldersView: View {
                                     .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
                             )
                         Image(systemName: isDir ? "folder.fill" : "doc")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(selected ? Color.white : DiskMapTheme.mutedLabel)
+                            .font(DiskMapType.bodyStrong)
+                            .foregroundStyle(selected ? DiskMapTheme.onInk : DiskMapTheme.mutedLabel)
                     }
                     .frame(width: 32, height: 32)
 
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .firstTextBaseline) {
                             Text(name)
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(DiskMapType.bodyStrong)
                                 .foregroundStyle(DiskMapTheme.ink)
                                 .lineLimit(1)
                             if safety.level == .protected {
                                 Text("Protected")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(DiskMapType.microStrong)
                                     .foregroundStyle(DiskMapTheme.danger)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -273,13 +273,13 @@ struct BiggestFoldersView: View {
                             }
                             Spacer(minLength: 8)
                             Text(ByteFormat.string(row.size))
-                                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                                .font(DiskMapType.smallStrong.monospacedDigit())
                                 .foregroundStyle(DiskMapTheme.ink)
                         }
                         HStack(spacing: 8) {
                             if isDir {
                                 Text("\(fileCount.formatted()) files · \(folderCount.formatted()) folders")
-                                    .font(.system(size: 11))
+                                    .font(DiskMapType.caption)
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                                     .lineLimit(1)
                             }
@@ -310,7 +310,7 @@ struct BiggestFoldersView: View {
                     drill(into: row.id)
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .frame(width: 36, height: 44)
                         .contentShape(Rectangle())
@@ -388,7 +388,7 @@ private struct FolderInspectorPanel: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(insight.name)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(DiskMapType.callout)
                             .foregroundStyle(DiskMapTheme.ink)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
@@ -396,7 +396,7 @@ private struct FolderInspectorPanel: View {
                             .font(.system(size: 26, weight: .semibold).monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(String(format: "%.1f%% of used storage", min(100, pct * 100)))
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -413,7 +413,7 @@ private struct FolderInspectorPanel: View {
                 if !insight.composition.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Composition")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(DiskMapType.smallStrong)
                             .foregroundStyle(DiskMapTheme.ink)
                         ForEach(Array(insight.composition.prefix(5).enumerated()), id: \.element.categoryID) { _, row in
                             HStack(spacing: 8) {
@@ -421,12 +421,12 @@ private struct FolderInspectorPanel: View {
                                     .fill(DiskMapTheme.hex(row.colorHex))
                                     .frame(width: 8, height: 8)
                                 Text(row.label)
-                                    .font(.system(size: 12))
+                                    .font(DiskMapType.small)
                                     .foregroundStyle(DiskMapTheme.ink)
                                     .lineLimit(1)
                                 Spacer(minLength: 4)
                                 Text(ByteFormat.string(row.bytes))
-                                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                    .font(DiskMapType.captionMedium.monospacedDigit())
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                             ProportionBar(
@@ -443,17 +443,17 @@ private struct FolderInspectorPanel: View {
                 if insight.reviewableBytes > 0 {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Potentially reviewable")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(DiskMapType.smallStrong)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(ByteFormat.string(insight.reviewableBytes))
-                            .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                            .font(DiskMapType.headline.monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(
                             insight.safety.level == .safe
                                 ? "This folder looks like regenerable cache or temp data."
                                 : "Old files (not modified in over a year) under this folder. Review before removing."
                         )
-                        .font(.system(size: 11))
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -464,17 +464,17 @@ private struct FolderInspectorPanel: View {
                 if !insight.largestFiles.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Largest files")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(DiskMapType.smallStrong)
                             .foregroundStyle(DiskMapTheme.ink)
                         ForEach(insight.largestFiles, id: \.id) { file in
                             HStack {
                                 Text(file.name)
-                                    .font(.system(size: 12))
+                                    .font(DiskMapType.small)
                                     .foregroundStyle(DiskMapTheme.ink)
                                     .lineLimit(1)
                                 Spacer(minLength: 6)
                                 Text(ByteFormat.string(file.bytes))
-                                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                    .font(DiskMapType.captionMedium.monospacedDigit())
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                         }
@@ -483,7 +483,7 @@ private struct FolderInspectorPanel: View {
                             model.destination = .biggestFiles
                         }
                         .buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                         .foregroundStyle(DiskMapTheme.ink)
                         .padding(.top, 2)
                     }
@@ -513,7 +513,7 @@ private struct FolderInspectorPanel: View {
 
                     if !allowStage {
                         Text("Cleanup staging is disabled for protected system folders.")
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -543,10 +543,10 @@ private struct FolderInspectorPanel: View {
     private func metaBlock(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(value)
-                .font(.system(size: 13, weight: .medium))
+                .font(DiskMapType.bodyMedium)
                 .foregroundStyle(DiskMapTheme.ink)
                 .textSelection(.enabled)
                 .lineLimit(3)

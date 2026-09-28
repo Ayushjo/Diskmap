@@ -156,7 +156,7 @@ struct SnapshotsView: View {
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .multilineTextAlignment(.center)
             Text("A DiskMap snapshot records your storage analysis. It does not copy or back up your files.")
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .multilineTextAlignment(.center)
                 .padding(.top, 4)
@@ -209,7 +209,7 @@ struct SnapshotsView: View {
             Image(systemName: "info.circle")
                 .foregroundStyle(DiskMapTheme.info)
             Text("Save a snapshot to start history. Comparing later shows what grew or shrank — snapshots are analytical, not backups.")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -228,12 +228,12 @@ struct SnapshotsView: View {
     private var firstUseBanner: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Storage History")
-                .font(.system(size: 13, weight: .semibold))
+                .font(DiskMapType.bodyStrong)
             Text("Save a snapshot now, then compare it with a future scan to see exactly what grew or shrank.")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text("A DiskMap snapshot records your storage analysis. It does not copy or back up your files.")
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.info)
         }
         .padding(14)
@@ -271,7 +271,7 @@ struct SnapshotsView: View {
 
             if visibleRecords.isEmpty {
                 Text("No saved snapshots yet.")
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .padding(.vertical, 20)
             } else {
@@ -281,7 +281,7 @@ struct SnapshotsView: View {
             }
 
             Text("DiskMap snapshots are analytical checkpoints — not Time Machine or APFS filesystem snapshots.")
-                .font(.system(size: 10))
+                .font(DiskMapType.micro)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .padding(.top, 8)
         }
@@ -304,7 +304,7 @@ struct SnapshotsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
                         Text(rec.displayName)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(DiskMapType.smallStrong)
                             .foregroundStyle(DiskMapTheme.ink)
                             .lineLimit(1)
                         if rec.isCurrent {
@@ -317,14 +317,14 @@ struct SnapshotsView: View {
                         }
                     }
                     Text(rec.header.capturedAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 10))
+                        .font(DiskMapType.micro)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     Text("\(ByteFormat.string(rec.usedBytes)) used")
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .font(DiskMapType.captionMedium.monospacedDigit())
                         .foregroundStyle(DiskMapTheme.ink)
                     if rec.freeBytes > 0 {
                         Text("\(ByteFormat.string(rec.freeBytes)) free")
-                            .font(.system(size: 10))
+                            .font(DiskMapType.micro)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
@@ -336,7 +336,7 @@ struct SnapshotsView: View {
                         Button("Add to Cleanup…") { confirmDelete = rec }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(DiskMapType.smallStrong)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .frame(width: 24, height: 24)
                     }
@@ -365,13 +365,13 @@ struct SnapshotsView: View {
                 changesTable
             } else {
                 Text("Choose Before and After snapshots, then Compare.")
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .padding(.vertical, 24)
             }
             if let statusMessage {
                 Text(statusMessage)
-                    .font(.system(size: 11))
+                    .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
         }
@@ -381,11 +381,11 @@ struct SnapshotsView: View {
     private var compareSelectors: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Compare storage")
-                .font(.system(size: 13, weight: .semibold))
+                .font(DiskMapType.bodyStrong)
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Before")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(DiskMapType.microStrong)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     Picker("", selection: $beforeID) {
                         Text("Select…").tag(String?.none)
@@ -400,7 +400,7 @@ struct SnapshotsView: View {
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("After")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(DiskMapType.microStrong)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     Picker("", selection: $afterID) {
                         Text("Select…").tag(String?.none)
@@ -433,26 +433,26 @@ struct SnapshotsView: View {
     private var deltaSummary: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Storage changed")
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(signed(report.usedDelta) + " used")
                 .font(.system(size: 28, weight: .semibold).monospacedDigit())
                 .foregroundStyle(report.usedDelta > 0 ? DiskMapTheme.review : DiskMapTheme.safe)
             Text("\(ByteFormat.string(report.beforeUsed)) → \(ByteFormat.string(report.afterUsed))")
-                .font(.system(size: 13))
+                .font(DiskMapType.body)
                 .foregroundStyle(DiskMapTheme.ink)
             if report.beforeFree > 0 || report.afterFree > 0 {
                 Text("Free space \(ByteFormat.string(report.beforeFree)) → \(ByteFormat.string(report.afterFree)) (\(signed(report.freeDelta)))")
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             Text(SnapshotCompare.narrative(for: report))
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
             if report.incomplete, let reason = report.incompleteReason {
                 Text(reason)
-                    .font(.system(size: 11))
+                    .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.review)
             }
         }
@@ -464,9 +464,9 @@ struct SnapshotsView: View {
     private var noChangeCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("No meaningful storage changes")
-                .font(.system(size: 14, weight: .semibold))
+                .font(DiskMapType.callout)
             Text("Your storage is effectively unchanged between these snapshots.")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
         }
         .padding(14)
@@ -477,7 +477,7 @@ struct SnapshotsView: View {
     private var categorySection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Where did the change happen?")
-                .font(.system(size: 13, weight: .semibold))
+                .font(DiskMapType.bodyStrong)
             let maxAbs = max(1, report.categoryDeltas.map { abs($0.delta) }.max() ?? 1)
             ForEach(report.categoryDeltas.prefix(8)) { cat in
                 Button {
@@ -489,11 +489,11 @@ struct SnapshotsView: View {
                             .fill(DiskMapTheme.color(forHint: cat.colorHint))
                             .frame(width: 8, height: 8)
                         Text(cat.title)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(DiskMapType.smallMedium)
                             .foregroundStyle(DiskMapTheme.ink)
                             .frame(width: 110, alignment: .leading)
                         Text(signed(cat.delta))
-                            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                            .font(DiskMapType.smallStrong.monospacedDigit())
                             .foregroundStyle(cat.delta >= 0 ? DiskMapTheme.review : DiskMapTheme.safe)
                             .frame(width: 80, alignment: .trailing)
                         GeometryReader { geo in
@@ -515,7 +515,7 @@ struct SnapshotsView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Largest changes")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(DiskMapType.bodyStrong)
                 Spacer()
                 Picker("", selection: $minDelta) {
                     Text("> 10 MB").tag(Int64(10_000_000))
@@ -557,12 +557,12 @@ struct SnapshotsView: View {
                 Text("AFTER").frame(width: 80, alignment: .trailing)
                 Text("TYPE").frame(width: 70, alignment: .leading)
             }
-            .font(.system(size: 10, weight: .semibold))
+            .font(DiskMapType.microStrong)
             .foregroundStyle(DiskMapTheme.mutedLabel)
 
             if visibleChanges.isEmpty {
                 Text("No changes match this filter.")
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .padding(.vertical, 12)
             } else {
@@ -573,24 +573,24 @@ struct SnapshotsView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(URL(fileURLWithPath: change.path).lastPathComponent)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(DiskMapType.smallStrong)
                                     .foregroundStyle(DiskMapTheme.ink)
                                     .lineLimit(1)
                                 Text(change.displayPath)
-                                    .font(.system(size: 10))
+                                    .font(DiskMapType.micro)
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                                     .lineLimit(1)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             Text(signed(change.delta))
-                                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                                .font(DiskMapType.smallStrong.monospacedDigit())
                                 .foregroundStyle(change.delta >= 0 ? DiskMapTheme.review : DiskMapTheme.safe)
                                 .frame(width: 90, alignment: .trailing)
                             Text(ByteFormat.string(change.after))
-                                .font(.system(size: 11).monospacedDigit())
+                                .font(DiskMapType.caption.monospacedDigit())
                                 .frame(width: 80, alignment: .trailing)
                             Text(change.kind.title)
-                                .font(.system(size: 11))
+                                .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .frame(width: 70, alignment: .leading)
                         }
@@ -606,7 +606,7 @@ struct SnapshotsView: View {
                 }
                 if report.folderChanges.count > 80 {
                     Text("Showing top matches — \(Self.formatCount(report.folderChanges.count)) folder changes total.")
-                        .font(.system(size: 11))
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
             }
@@ -624,7 +624,7 @@ struct SnapshotsView: View {
                     snapshotInspector(rec)
                 } else {
                     Text("Select a snapshot or change")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(DiskMapType.bodyStrong)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
             }
@@ -636,17 +636,17 @@ struct SnapshotsView: View {
     private func snapshotInspector(_ rec: SnapshotRecord) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(rec.displayName)
-                .font(.system(size: 16, weight: .semibold))
+                .font(DiskMapType.headline)
             if rec.isCurrent {
                 Text("Current")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(DiskMapType.microStrong)
                     .foregroundStyle(DiskMapTheme.info)
             }
             Text(ByteFormat.string(rec.usedBytes) + " used")
-                .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                .font(DiskMapType.title.monospacedDigit())
             if !rec.meta.note.isEmpty {
                 Text(rec.meta.note)
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             VStack(alignment: .leading, spacing: 6) {
@@ -686,12 +686,12 @@ struct SnapshotsView: View {
     private func changeInspector(_ change: SnapshotChange) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(URL(fileURLWithPath: change.path).lastPathComponent)
-                .font(.system(size: 16, weight: .semibold))
+                .font(DiskMapType.headline)
             Text(signed(change.delta))
                 .font(.system(size: 24, weight: .semibold).monospacedDigit())
                 .foregroundStyle(change.delta >= 0 ? DiskMapTheme.review : DiskMapTheme.safe)
             Text(change.displayPath)
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             VStack(alignment: .leading, spacing: 6) {
                 StatRow(label: "Before", value: ByteFormat.string(change.before))
@@ -727,17 +727,17 @@ struct SnapshotsView: View {
     private var saveSheet: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Save Snapshot")
-                .font(.system(size: 16, weight: .semibold))
+                .font(DiskMapType.headline)
             Text("Save the current scan so you can compare your storage later. This does not copy or back up your files.")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text("Name")
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             TextField("Snapshot name", text: $saveName)
                 .textFieldStyle(.roundedBorder)
             Text("Optional note")
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             TextField("e.g. Before cleaning Docker caches", text: $saveNote, axis: .vertical)
                 .lineLimit(3...5)

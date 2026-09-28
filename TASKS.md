@@ -850,7 +850,7 @@ identity to exist.
 `Color(nsColor:)` and zero `@Environment(\.colorScheme)` uses — nothing reads
 the ambient appearance. Do this before more views exist to retrofit.
 
-- [ ] **TASK-047: Consolidate the duplicated palettes first**
+- [x] **TASK-047: Consolidate the duplicated palettes first**
   Or it gets done four times. The same 8-case file-type colour switch exists in
   `BiggestFilesView.swift:330-337` **and** `:513-520` (byte-identical),
   `ForgottenFilesView.swift:594`, and `FileBrowserView.swift:803-807` with
@@ -862,7 +862,7 @@ the ambient appearance. Do this before more views exist to retrofit.
   `ExploreColoring.topLevelHues(tree:)` is dead code.
   Acceptance: one source of truth per palette; no behavioural change on screen.
 
-- [ ] **TASK-048: Semantic tokens with light and dark values**
+- [x] **TASK-048: Semantic tokens with light and dark values**
   Convert `DiskMapTheme`'s literal `Color(red:green:blue:)` values to semantic
   tokens that resolve per appearance. Nine are light-only by construction
   (`cream`, `cardFill`, `cardStroke`, `inspectorFill`, `sidebarFill`,
@@ -876,7 +876,7 @@ the ambient appearance. Do this before more views exist to retrofit.
   Acceptance: every destination checked by hand in both appearances (dark mode
   cannot be verified by tests); `docs/ACCESSIBILITY.md` updated.
 
-- [ ] **TASK-049: Re-tune the visualization palettes, don't just re-tint**
+- [x] **TASK-049: Re-tune the visualization palettes, don't just re-tint**
   `ExploreColoring` encodes two cues that **invert** on dark: `.folder` fades
   descendants by opacity (reads lighter on cream, darker on near-black — the
   depth cue reverses), and `.age` uses HSB brightness 0.55–0.80 with the oldest
@@ -884,12 +884,41 @@ the ambient appearance. Do this before more views exist to retrofit.
   `Sources/DiskMapCore/file-type-categories.json` — the one palette themeable
   without touching Swift, via a second colour field in the schema.
 
-- [ ] **TASK-050: Type scale adoption**
+- [x] **TASK-050: Type scale adoption**
   606 `.font(.system(size:` call sites across 27 files; `DiskMapType` is used
   only 99 times — 86% bypass the scale. Sizes cluster at 11/12/13 (405 of 606)
   and there is no 12 pt token, which likely explains 184 hand-rolled sites. Add
   one, adopt the scale, and the Dynamic Type pass listed as "still open" in
   `docs/ACCESSIBILITY.md` becomes tractable instead of a 606-site edit.
+
+  **Milestone 10 done 2026-09-28** on `feat/dark-mode`, verified by rendering
+  all 14 screens and all 8 Visualize modes in light and dark with the snapshot
+  harness (`--appearance`, `--explore-modes all`).
+  - TASK-047: one file-kind palette (`DiskMapTheme.kindColor`; File Browser's
+    copy had drifted — documents teal instead of gold), one age ramp
+    (`ageColor`; two copies with drifted saturation), the treemap folder
+    palette moved into DesignSystem, stray "link blue" ×13 → `folderTint`,
+    `DiskMapSpace` moved in, dead `topLevelHues` removed. Pale-blue/warm-cream
+    panel fills that glared in dark mode → `infoSurface`/`reviewSurface`.
+  - TASK-048: adaptive tokens via an AppKit dynamic colour (light values
+    unchanged); new `onInk` for text on ink fills (13 sites were white, which
+    vanishes once ink turns light); forced light schemes removed. The primary
+    CTA keeps a fixed green — the lifted dark `safe` would drop white text to
+    ~2.3:1.
+  - TASK-049: **the real dark-mode chart bug was not the one predicted.**
+    Tile labels used `ink`, which turns light in dark mode → light text on
+    pastel tiles; now a fixed `tileLabel`. And translucent fills (bubble
+    containers, depth fades) darken over a dark canvas, dropping label
+    contrast; `DiskMapTheme.wash` composites them against the light canvas so
+    tiles are opaque and identical in both appearances. The plan's claim that
+    the depth fade "inverts" was wrong in itself — it reads as "recedes" in
+    both — but its translucency was the problem.
+  - TASK-050: `DiskMapType` scale with 12 pt (the most hand-rolled size) and
+    weight variants behind one `scale`; 524 of 612 raw sizes adopted, the rest
+    are icon glyphs and one-off display numbers.
+  - Also: Increase Contrast variants for low-contrast tokens; a pre-existing
+    legend wrap ("Dependenci/es") fixed; "1 items" pluralisation fixed; the
+    scanning count no longer forces an en_US number format.
 
 ## Milestone 11 — Developer Storage v2
 

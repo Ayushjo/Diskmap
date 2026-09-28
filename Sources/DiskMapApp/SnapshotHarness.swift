@@ -21,7 +21,10 @@ enum SnapshotHarness {
     static func startIfRequested() {
         guard let dir = value(after: "--snapshot-dir") else { return }
         if let appearance = value(after: "--appearance") {
-            NSApp.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua)
+            // hc-* renders the Increase Contrast token values via an in-app
+            // override; the system setting itself is left alone.
+            DiskMapTheme.forceIncreasedContrast = appearance.hasPrefix("hc-")
+            NSApp.appearance = NSAppearance(named: appearance.hasSuffix("dark") ? .darkAqua : .aqua)
         }
         Task { await run(into: URL(fileURLWithPath: dir, isDirectory: true)) }
     }
@@ -54,6 +57,17 @@ enum SnapshotHarness {
             // Let SwiftUI lay out and run the destination's `.task` work.
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             write(window: window, to: dir.appendingPathComponent("\(key(destination))-\(appearanceName).png"))
+        }
+        // `--explore-modes all` (or a comma list) also captures every
+        // Visualize mode, since the harness otherwise only sees the default.
+        if let modes = value(after: "--explore-modes") {
+            let wanted = modes == "all" ? Set(ExploreViewMode.allCases.map(\.rawValue)) : Set(modes.split(separator: ",").map(String.init))
+            model.destination = .visualize
+            for mode in ExploreViewMode.allCases where wanted.contains(mode.rawValue) {
+                model.exploreMode = mode
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                write(window: window, to: dir.appendingPathComponent("mode-\(mode.rawValue)-\(appearanceName).png"))
+            }
         }
         NSApp.terminate(nil)
     }

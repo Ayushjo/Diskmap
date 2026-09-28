@@ -622,3 +622,23 @@ the background. It would still spend seconds of CPU on screens most sessions
 never open, and it contends with the user's first interactions.
 
 **Status:** real app, 2.25M-item home: walk-finished to first paint 0.92 s.
+
+### Dark mode: adaptive chrome, fixed data (2026-09-28)
+
+**Chosen.** Surface, text and semantic tokens are AppKit dynamic colours
+(`DiskMapTheme.adaptive`), so the app follows the system appearance. Data
+colours — treemap/chart tiles, file-kind and age palettes — are fixed, and text
+drawn on tiles uses a fixed dark `tileLabel`. Translucent tile fills are made
+opaque by compositing against the light canvas (`DiskMapTheme.wash`).
+
+**Why data does not adapt.** A tile's colour is its identity across screens
+and sessions; re-tinting it per appearance changes what the user learned
+("Downloads is pink"). And adapting the label colour instead broke legibility:
+`ink` turns light in dark mode, which put light text on pastel tiles.
+
+**Why opaque washes.** `color.opacity(x)` over a dark canvas darkens the fill,
+so the fixed dark label lost contrast on bubble containers and deep rings.
+Found by rendering every Visualize mode in both appearances, not predicted.
+
+**Verification** is visual by nature: the snapshot harness renders any screen
+in `light`, `dark`, `hc-light` or `hc-dark` from inside the app.

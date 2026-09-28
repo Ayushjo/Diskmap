@@ -29,7 +29,7 @@ struct FirstScanHero: View {
 
             VStack(spacing: DiskMapSpace.sm) {
                 Text("Understand where your storage is going.")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(DiskMapType.title)
                     .foregroundStyle(DiskMapTheme.ink)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -66,7 +66,7 @@ struct FirstScanHero: View {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 9))
                 Text("Nothing is uploaded. Your scan stays on this Mac.")
-                    .font(.system(size: 11))
+                    .font(DiskMapType.caption)
             }
             .foregroundStyle(DiskMapTheme.mutedLabel)
 
@@ -113,13 +113,13 @@ struct FirstScanHero: View {
             if let folders = model.liveProgress?.topFolders, !folders.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Largest so far")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(DiskMapType.captionStrong)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     let largest = max(folders.first?.bytes ?? 1, 1)
                     ForEach(folders.prefix(8), id: \.name) { folder in
                         HStack(spacing: 10) {
                             Text(folder.name)
-                                .font(.system(size: 12))
+                                .font(DiskMapType.small)
                                 .foregroundStyle(DiskMapTheme.ink)
                                 .lineLimit(1)
                                 .frame(width: 150, alignment: .leading)
@@ -130,7 +130,7 @@ struct FirstScanHero: View {
                             }
                             .frame(height: 8)
                             Text(ByteFormat.string(folder.bytes))
-                                .font(.system(size: 11).monospacedDigit())
+                                .font(DiskMapType.caption.monospacedDigit())
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .frame(width: 80, alignment: .trailing)
                         }
@@ -185,10 +185,10 @@ struct FirstScanHero: View {
     private func reassurance(symbol: String, label: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
+                .font(DiskMapType.microStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(label)
-                .font(.system(size: 11, weight: .medium))
+                .font(DiskMapType.captionMedium)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
         }
         .accessibilityElement(children: .combine)
@@ -207,9 +207,9 @@ struct FirstScanHero: View {
     private func hint(symbol: String, title: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: symbol)
-                .font(.system(size: 10))
+                .font(DiskMapType.micro)
             Text(title)
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
         }
         .foregroundStyle(DiskMapTheme.mutedLabel)
     }

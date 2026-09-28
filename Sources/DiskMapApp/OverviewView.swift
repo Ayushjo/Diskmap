@@ -73,7 +73,7 @@ struct OverviewView: View {
                             .foregroundStyle(DiskMapTheme.ink)
                         if snap.health == .low || snap.health == .critical {
                             Text(snap.health.title)
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(DiskMapType.captionStrong)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
                                 .foregroundStyle(DiskMapTheme.danger)
@@ -190,7 +190,7 @@ struct OverviewView: View {
                 .foregroundStyle(DiskMapTheme.developer)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Not sure where to start?")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(DiskMapType.callout)
                     .foregroundStyle(Color.white)
                 Text("Diskmap can explain what's taking up space and point you toward things worth reviewing.")
                     .font(DiskMapType.caption)
@@ -205,7 +205,7 @@ struct OverviewView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(red: 0.18, green: 0.18, blue: 0.22))
+                .fill(DiskMapTheme.inverseSurface)
         )
     }
 
@@ -226,15 +226,15 @@ struct OverviewView: View {
                             .frame(width: 28, height: 28)
                             .overlay(
                                 Image(systemName: "folder.fill")
-                                    .font(.system(size: 12))
+                                    .font(DiskMapType.small)
                                     .foregroundStyle(DiskMapTheme.categoryColor(cat.colorHint))
                             )
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text(cat.title).font(.system(size: 13, weight: .medium)).foregroundStyle(DiskMapTheme.ink)
+                                Text(cat.title).font(DiskMapType.bodyMedium).foregroundStyle(DiskMapTheme.ink)
                                 Spacer()
                                 Text(ByteFormat.string(cat.bytes))
-                                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                                    .font(DiskMapType.bodyStrong.monospacedDigit())
                                     .foregroundStyle(DiskMapTheme.ink)
                             }
                             ProportionBar(fraction: Double(cat.bytes) / Double(denom), tint: DiskMapTheme.categoryColor(cat.colorHint))
@@ -247,7 +247,7 @@ struct OverviewView: View {
                 }
                 Button("View in Visualizations →", action: onOpenVisualize)
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.info)
                     .padding(.top, 4)
             }
@@ -264,7 +264,7 @@ struct OverviewView: View {
                     Spacer()
                     Button("View all →", action: onOpenBiggestFiles)
                         .buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                         .foregroundStyle(DiskMapTheme.info)
                 }
                 ForEach(snap.topFiles.prefix(5)) { file in
@@ -277,7 +277,7 @@ struct OverviewView: View {
                                 .frame(width: 20)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(file.name)
-                                    .font(.system(size: 13, weight: .medium))
+                                    .font(DiskMapType.bodyMedium)
                                     .foregroundStyle(DiskMapTheme.ink)
                                     .lineLimit(1)
                                 Text(file.relativePath)
@@ -287,7 +287,7 @@ struct OverviewView: View {
                             }
                             Spacer()
                             Text(ByteFormat.string(file.bytes))
-                                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                                .font(DiskMapType.smallStrong.monospacedDigit())
                                 .foregroundStyle(DiskMapTheme.ink)
                         }
                     }
@@ -313,7 +313,7 @@ struct OverviewView: View {
                         .rotationEffect(.degrees(-90))
                     VStack(spacing: 2) {
                         Text(pct(snap.volume?.usedFraction ?? 0))
-                            .font(.system(size: 14, weight: .semibold).monospacedDigit())
+                            .font(DiskMapType.callout.monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
                     }
                 }
@@ -325,7 +325,7 @@ struct OverviewView: View {
                         .foregroundStyle(DiskMapTheme.ink)
                 }
                 Text(snap.health.title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(healthColor)
             }
         }
@@ -340,7 +340,7 @@ struct OverviewView: View {
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 if let top {
                     Text(top.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(DiskMapType.callout)
                         .foregroundStyle(DiskMapTheme.ink)
                     Text("\(top.detail) · \(ByteFormat.string(top.bytes))")
                         .font(DiskMapType.body)
@@ -372,7 +372,7 @@ struct OverviewView: View {
                             Text(cat.title).font(DiskMapType.body).foregroundStyle(DiskMapTheme.ink)
                             Spacer()
                             Text(ByteFormat.string(cat.bytes))
-                                .font(.system(size: 12).monospacedDigit())
+                                .font(DiskMapType.small.monospacedDigit())
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                         }
                     }
@@ -386,7 +386,7 @@ struct OverviewView: View {
                                     .lineLimit(1)
                                 Spacer()
                                 Text(ByteFormat.string(story.bytes))
-                                    .font(.system(size: 12).monospacedDigit())
+                                    .font(DiskMapType.small.monospacedDigit())
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                             Text(story.detail)
@@ -412,7 +412,7 @@ struct OverviewView: View {
                     .font(.system(size: 18, weight: .semibold).monospacedDigit())
                     .foregroundStyle(DiskMapTheme.safe)
                 Text("Estimated — review before deleting.")
-                    .font(.system(size: 10))
+                    .font(DiskMapType.micro)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             Spacer()

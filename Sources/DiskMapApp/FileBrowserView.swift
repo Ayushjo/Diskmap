@@ -182,10 +182,10 @@ struct FileBrowserView: View {
     private var pageTitle: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("File Browser")
-                .font(.system(size: 22, weight: .semibold))
+                .font(DiskMapType.title)
                 .foregroundStyle(DiskMapTheme.ink)
             Text("Explore your filesystem with storage context. Select an item to understand it.")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -209,7 +209,7 @@ struct FileBrowserView: View {
                 withAnimation(.easeInOut(duration: 0.15)) { showInspector.toggle() }
             } label: {
                 Image(systemName: "sidebar.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(showInspector ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
                     .frame(width: 28, height: 28)
                     .background(
@@ -228,7 +228,7 @@ struct FileBrowserView: View {
     private func navButton(_ system: String, enabled: Bool, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: system)
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .frame(width: 28, height: 28)
                 .foregroundStyle(enabled ? DiskMapTheme.ink : DiskMapTheme.mutedLabel.opacity(0.45))
                 .background(
@@ -280,12 +280,12 @@ struct FileBrowserView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "folder.fill")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.32, green: 0.56, blue: 0.98))
+                    .font(DiskMapType.title)
+                    .foregroundStyle(DiskMapTheme.folderTint)
                     .frame(width: 44, height: 44)
                     .background(
                         RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .fill(Color(red: 0.32, green: 0.56, blue: 0.98).opacity(0.12))
+                            .fill(DiskMapTheme.folderTint.opacity(0.12))
                     )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(folderName)
@@ -293,7 +293,7 @@ struct FileBrowserView: View {
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
                     Text("\(ByteFormat.string(folderBytes)) · \(formatCount(itemCount)) items")
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
                 Spacer(minLength: 8)
@@ -308,7 +308,7 @@ struct FileBrowserView: View {
                 compositionLegend(folderComposition)
             } else if !compositionLoading {
                 Text("Composition unavailable for this folder yet.")
-                    .font(.system(size: 11))
+                    .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
         }
@@ -350,7 +350,7 @@ struct FileBrowserView: View {
                 HStack(spacing: 5) {
                     Circle().fill(DiskMapTheme.hex(row.colorHex)).frame(width: 7, height: 7)
                     Text("\(row.label) \(ByteFormat.string(row.bytes))")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(DiskMapType.microMedium)
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
                 }
@@ -368,7 +368,7 @@ struct FileBrowserView: View {
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 TextField("Search in this folder…", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(DiskMapType.body)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -388,7 +388,7 @@ struct FileBrowserView: View {
             } label: {
                 HStack(spacing: 4) {
                     Text("Sort: \(sortMode.title)")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .bold))
                 }
@@ -408,8 +408,8 @@ struct FileBrowserView: View {
             .menuIndicator(.hidden)
 
             Image(systemName: "list.bullet")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.white)
+                .font(DiskMapType.smallStrong)
+                .foregroundStyle(DiskMapTheme.onInk)
                 .frame(width: 30, height: 30)
                 .background(RoundedRectangle(cornerRadius: 8).fill(DiskMapTheme.ink))
                 .help("List view")
@@ -443,7 +443,7 @@ struct FileBrowserView: View {
             Text("Modified")
                 .frame(width: Col.modified, alignment: .trailing)
         }
-        .font(.system(size: 11, weight: .semibold))
+        .font(DiskMapType.captionStrong)
         .foregroundStyle(DiskMapTheme.mutedLabel)
         .padding(.horizontal, Col.hPad)
         .padding(.vertical, 8)
@@ -489,12 +489,12 @@ struct FileBrowserView: View {
             .frame(width: Col.check, height: 28)
 
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(isDir ? Color(red: 0.32, green: 0.56, blue: 0.98) : tint)
+                .font(DiskMapType.callout)
+                .foregroundStyle(isDir ? DiskMapTheme.folderTint : tint)
                 .frame(width: Col.icon, height: 22)
 
             Text(name)
-                .font(.system(size: 13, weight: .semibold))
+                .font(DiskMapType.bodyStrong)
                 .foregroundStyle(DiskMapTheme.ink)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -502,24 +502,24 @@ struct FileBrowserView: View {
                 .help(name)
 
             Text(kind)
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .lineLimit(1)
                 .frame(width: Col.kind, alignment: .leading)
 
             // Bar and size are SIDE BY SIDE — never stacked/overlapping.
-            ProportionBar(fraction: frac, tint: Color(red: 0.32, green: 0.56, blue: 0.98).opacity(0.55))
+            ProportionBar(fraction: frac, tint: DiskMapTheme.folderTint.opacity(0.55))
                 .frame(width: Col.sizeBar, height: 6)
                 .clipShape(Capsule())
 
             Text(ByteFormat.string(row.size))
-                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .font(DiskMapType.smallStrong.monospacedDigit())
                 .foregroundStyle(DiskMapTheme.ink)
                 .frame(width: Col.sizeText, alignment: .trailing)
                 .lineLimit(1)
 
             Text(modified)
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .frame(width: Col.modified, alignment: .trailing)
                 .lineLimit(1)
@@ -604,11 +604,11 @@ struct FileBrowserView: View {
     private var selectionBar: some View {
         HStack {
             Text("\(formatCount(checked.count)) selected")
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
             Spacer()
             Button("Clear") { checked.removeAll() }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Button("Add to Cleanup") {
                 Task { await stageChecked() }
@@ -794,19 +794,10 @@ struct FileBrowserView: View {
     }
 
     private func kindTint(of id: Int32) -> Color {
-        if tree.isDirectory[Int(id)] {
-            return Color(red: 0.32, green: 0.56, blue: 0.98)
-        }
+        if tree.isDirectory[Int(id)] { return DiskMapTheme.folderTint }
         let name = tree.name(of: id)
         let abs = tree.path(of: id, root: rootURL).path
-        switch FileKind.classify(fileName: name, path: abs) {
-        case .video: return Color(red: 0.62, green: 0.40, blue: 0.90)
-        case .archive: return Color(red: 0.95, green: 0.55, blue: 0.25)
-        case .diskImage: return Color(red: 0.30, green: 0.55, blue: 0.95)
-        case .document: return Color(red: 0.25, green: 0.70, blue: 0.55)
-        case .application: return Color(red: 0.35, green: 0.55, blue: 0.95)
-        default: return DiskMapTheme.mutedLabel
-        }
+        return DiskMapTheme.kindColor(FileKind.classify(fileName: name, path: abs))
     }
 
     private func relativeModified(_ day: Int32) -> String {
@@ -946,20 +937,20 @@ private struct FolderBrowserInspector: View {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "folder.fill")
                         .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(Color(red: 0.32, green: 0.56, blue: 0.98))
+                        .foregroundStyle(DiskMapTheme.folderTint)
                         .frame(width: 52, height: 52)
                         .background(
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(red: 0.32, green: 0.56, blue: 0.98).opacity(0.12))
+                                .fill(DiskMapTheme.folderTint.opacity(0.12))
                         )
                     VStack(alignment: .leading, spacing: 2) {
                         Text(name)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(DiskMapType.callout)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(ByteFormat.string(bytes))
                             .font(.system(size: 24, weight: .semibold).monospacedDigit())
                         Text(String(format: "%.1f%% of used storage", min(100, Double(bytes) / Double(usedDenominator) * 100)))
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
@@ -967,13 +958,13 @@ private struct FolderBrowserInspector: View {
                 meta("Location", displayPath)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Size")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(DiskMapType.microStrong)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     Text(ByteFormat.string(bytes))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                     ProportionBar(
                         fraction: Double(bytes) / Double(usedDenominator),
-                        tint: Color(red: 0.32, green: 0.56, blue: 0.98).opacity(0.45)
+                        tint: DiskMapTheme.folderTint.opacity(0.45)
                     )
                     .frame(height: 4)
                 }
@@ -985,24 +976,24 @@ private struct FolderBrowserInspector: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("What's inside?")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                     if compositionLoading && composition.isEmpty {
                         ProgressView()
                             .controlSize(.small)
                     } else if composition.isEmpty {
                         Text("No categorized files found under this folder.")
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     } else {
                         ForEach(Array(composition.prefix(5)), id: \.categoryID) { row in
                             HStack(spacing: 8) {
                                 Circle().fill(DiskMapTheme.hex(row.colorHex)).frame(width: 8, height: 8)
                                 Text(row.label)
-                                    .font(.system(size: 12))
+                                    .font(DiskMapType.small)
                                     .lineLimit(1)
                                 Spacer(minLength: 4)
                                 Text(ByteFormat.string(row.bytes))
-                                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                    .font(DiskMapType.captionMedium.monospacedDigit())
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                             ProportionBar(
@@ -1017,19 +1008,19 @@ private struct FolderBrowserInspector: View {
                 if !topChildren.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Largest items")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(DiskMapType.smallStrong)
                         ForEach(topChildren, id: \.id) { child in
                             Button {
                                 model.selectedNode = child.id
                             } label: {
                                 HStack {
                                     Text(tree.name(of: child.id))
-                                        .font(.system(size: 12))
+                                        .font(DiskMapType.small)
                                         .foregroundStyle(DiskMapTheme.ink)
                                         .lineLimit(1)
                                     Spacer(minLength: 6)
                                     Text(ByteFormat.string(child.size))
-                                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                        .font(DiskMapType.captionMedium.monospacedDigit())
                                         .foregroundStyle(DiskMapTheme.mutedLabel)
                                 }
                             }
@@ -1040,9 +1031,9 @@ private struct FolderBrowserInspector: View {
 
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "lightbulb.fill")
-                        .foregroundStyle(Color(red: 0.85, green: 0.55, blue: 0.15))
+                        .foregroundStyle(DiskMapTheme.review)
                     Text(whyLarge)
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .foregroundStyle(DiskMapTheme.ink)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1050,12 +1041,12 @@ private struct FolderBrowserInspector: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(red: 1.0, green: 0.96, blue: 0.90))
+                        .fill(DiskMapTheme.reviewSurface)
                 )
 
                 if safety.level == .protected {
                     Text("Protected / system location. Diskmap does not recommend deleting items here.")
-                        .font(.system(size: 11))
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1063,16 +1054,16 @@ private struct FolderBrowserInspector: View {
                 DisclosureGroup("Technical details", isExpanded: $showTechnical) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(abs)
-                            .font(.system(size: 11).monospaced())
+                            .font(DiskMapType.caption.monospaced())
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .textSelection(.enabled)
                         Text("Node \(nodeID)")
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                     .padding(.top, 6)
                 }
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
 
                 VStack(spacing: 8) {
                     if safety.level != .protected {
@@ -1122,10 +1113,10 @@ private struct FolderBrowserInspector: View {
     private func meta(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(DiskMapType.microStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(value)
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.ink)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1192,14 +1183,14 @@ private struct FileBrowserInspector: View {
                         .background(RoundedRectangle(cornerRadius: 12).fill(DiskMapTheme.ink.opacity(0.08)))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(name)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(DiskMapType.callout)
                             .foregroundStyle(DiskMapTheme.ink)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                         Text(ByteFormat.string(size))
                             .font(.system(size: 24, weight: .semibold).monospacedDigit())
                         Text(kind.title)
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
@@ -1213,9 +1204,9 @@ private struct FileBrowserInspector: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Why is it large?")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                     Text(FileKind.whyLarge(kind: kind, name: name))
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1223,12 +1214,12 @@ private struct FileBrowserInspector: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(red: 0.93, green: 0.95, blue: 0.99))
+                        .fill(DiskMapTheme.infoSurface)
                 )
 
                 if safety.level == .protected {
                     Text("Not recommended for cleanup.")
-                        .font(.system(size: 11))
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
 
@@ -1272,10 +1263,10 @@ private struct FileBrowserInspector: View {
     private func meta(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(DiskMapType.microStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(value)
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.ink)
                 .textSelection(.enabled)
         }

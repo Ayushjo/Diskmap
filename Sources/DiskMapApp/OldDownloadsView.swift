@@ -136,19 +136,19 @@ struct OldDownloadsView: View {
     private func metricCard(icon: String, tint: Color, value: String, title: String, subtitle: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
+                .font(DiskMapType.callout)
                 .foregroundStyle(tint)
                 .frame(width: 28, height: 28)
                 .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
-                    .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                    .font(DiskMapType.headline.monospacedDigit())
                     .foregroundStyle(DiskMapTheme.ink)
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DiskMapType.captionStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text(subtitle)
-                    .font(.system(size: 10))
+                    .font(DiskMapType.micro)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             Spacer(minLength: 0)
@@ -169,11 +169,11 @@ struct OldDownloadsView: View {
                     Image(systemName: "leaf.fill")
                         .foregroundStyle(DiskMapTheme.safe)
                     Text("Insights")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                 }
                 ForEach(summary.insightLines, id: \.self) { line in
                     Text(line)
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -192,11 +192,11 @@ struct OldDownloadsView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Age distribution")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DiskMapType.captionStrong)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 distributionBars(summary.ageBuckets.map { ($0.title, $0.bytes) })
                 Text("File type breakdown")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DiskMapType.captionStrong)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .padding(.top, 4)
                 ForEach(summary.typeBuckets.prefix(5)) { bucket in
@@ -205,11 +205,11 @@ struct OldDownloadsView: View {
                     } label: {
                         HStack {
                             Text(bucket.kind.title)
-                                .font(.system(size: 11))
+                                .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.ink)
                             Spacer()
                             Text(ByteFormat.string(bucket.bytes))
-                                .font(.system(size: 11).monospacedDigit())
+                                .font(DiskMapType.caption.monospacedDigit())
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                         }
                     }
@@ -229,7 +229,7 @@ struct OldDownloadsView: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(spacing: 8) {
                     Text(item.0)
-                        .font(.system(size: 10))
+                        .font(DiskMapType.micro)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .frame(width: 72, alignment: .leading)
                     GeometryReader { geo in
@@ -239,7 +239,7 @@ struct OldDownloadsView: View {
                     }
                     .frame(height: 8)
                     Text(ByteFormat.string(item.1))
-                        .font(.system(size: 10).monospacedDigit())
+                        .font(DiskMapType.micro.monospacedDigit())
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .frame(width: 56, alignment: .trailing)
                 }
@@ -286,7 +286,7 @@ struct OldDownloadsView: View {
             Text("TYPE").frame(width: 72, alignment: .leading)
             Text("STATUS").frame(width: 100, alignment: .leading)
         }
-        .font(.system(size: 10, weight: .semibold))
+        .font(DiskMapType.microStrong)
         .foregroundStyle(DiskMapTheme.mutedLabel)
         .padding(.horizontal, 4)
     }
@@ -329,11 +329,11 @@ struct OldDownloadsView: View {
                     .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
                     Text(parentDisplay(item.displayPath))
-                        .font(.system(size: 10))
+                        .font(DiskMapType.micro)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .lineLimit(1)
                 }
@@ -341,16 +341,16 @@ struct OldDownloadsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(ByteFormat.string(item.bytes))
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .font(DiskMapType.smallMedium.monospacedDigit())
                 .frame(width: 80, alignment: .trailing)
 
             Text(OldDownloadsCatalog.ageLabel(item.ageDays))
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .frame(width: 64, alignment: .leading)
 
             Text(item.kind.title)
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .frame(width: 72, alignment: .leading)
                 .lineLimit(1)
@@ -363,7 +363,7 @@ struct OldDownloadsView: View {
                 Button("Add to Cleanup") { Task { await stage([item]) } }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                     .frame(width: 30, height: 30)
                     .background(DiskMapTheme.cardFill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -391,11 +391,11 @@ struct OldDownloadsView: View {
     private var emptyResults: some View {
         VStack(spacing: 8) {
             Text(catalog.candidates.isEmpty ? "Nothing old enough to review" : "No files match these filters")
-                .font(.system(size: 14, weight: .semibold))
+                .font(DiskMapType.callout)
             Text(catalog.candidates.isEmpty
                  ? "Your Downloads folder doesn’t currently contain files matching this view. That’s a good thing."
                  : "Try another age, size, or type filter.")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .multilineTextAlignment(.center)
             if catalog.candidates.isEmpty {
@@ -434,16 +434,16 @@ struct OldDownloadsView: View {
                     Text("\(checkedItems.count) selected · \(ByteFormat.string(checkedBytes))")
                 }
             }
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Spacer()
             Text("Showing \(visible.count) of \(catalog.candidates.count) · \(ByteFormat.string(visible.reduce(Int64(0)) { $0 + $1.bytes }))")
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Button("Rescan") {
                 Task { await model.rebuildCatalog(.oldDownloads) }
             }
-            .font(.system(size: 11, weight: .semibold))
+            .font(DiskMapType.captionStrong)
             .foregroundStyle(DiskMapTheme.info)
             .buttonStyle(.plain)
         }
@@ -466,12 +466,12 @@ struct OldDownloadsView: View {
                                 .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.name)
-                                    .font(.system(size: 15, weight: .semibold))
+                                    .font(DiskMapType.section)
                                     .foregroundStyle(DiskMapTheme.ink)
                                 Text(ByteFormat.string(item.bytes))
                                     .font(.system(size: 20, weight: .semibold).monospacedDigit())
                                 Text("\(item.kind.title)")
-                                    .font(.system(size: 11))
+                                    .font(DiskMapType.caption)
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                                 statusPill(item.status)
                             }
@@ -511,9 +511,9 @@ struct OldDownloadsView: View {
             } else {
                 VStack(spacing: 8) {
                     Text("Select a file")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(DiskMapType.bodyStrong)
                     Text("Pick a Downloads file to see why it’s here and what you can do.")
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .multilineTextAlignment(.center)
                 }

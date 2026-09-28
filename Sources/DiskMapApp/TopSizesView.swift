@@ -70,7 +70,7 @@ struct TopSizesView: View {
             HStack(alignment: .center, spacing: 12) {
                 Text("\(index + 1)")
                     .font(.system(size: 12, weight: .bold).monospacedDigit())
-                    .foregroundStyle(selected ? Color.white : DiskMapTheme.mutedLabel)
+                    .foregroundStyle(selected ? DiskMapTheme.onInk : DiskMapTheme.mutedLabel)
                     .frame(width: 28, height: 28)
                     .background(
                         Circle().fill(selected ? DiskMapTheme.ink : DiskMapTheme.cardFill)
@@ -79,18 +79,18 @@ struct TopSizesView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(tree.name(of: id))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
                     Text(CanonicalPath.parentDisplay(of: tree.path(of: id, root: rootURL).path))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(DiskMapType.captionMedium)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 Spacer(minLength: 8)
                 Text(diskByteString(size))
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .font(DiskMapType.smallStrong.monospacedDigit())
                     .foregroundStyle(DiskMapTheme.ink)
             }
             .padding(.horizontal, 10)

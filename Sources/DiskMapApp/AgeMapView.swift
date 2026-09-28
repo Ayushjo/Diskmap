@@ -98,7 +98,7 @@ struct AgeMapView: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Forgotten files")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(DiskMapType.callout)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text("Not modified in over a year · based on modification date")
                     .font(DiskMapType.caption)
@@ -107,7 +107,7 @@ struct AgeMapView: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
                 Text(ByteFormat.string(forgottenBytes))
-                    .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                    .font(DiskMapType.headline.monospacedDigit())
                     .foregroundStyle(DiskMapTheme.ink)
                 Text("\(filteredUntouched.count) candidates")
                     .font(DiskMapType.caption)
@@ -147,14 +147,14 @@ struct AgeMapView: View {
         } label: {
             HStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DiskMapType.captionStrong)
                 if bytes > 0 {
                     Text(ByteFormat.string(bytes))
-                        .font(.system(size: 10, weight: .medium).monospacedDigit())
+                        .font(DiskMapType.microMedium.monospacedDigit())
                         .opacity(0.85)
                 }
             }
-            .foregroundStyle(selected ? Color.white : DiskMapTheme.ink)
+            .foregroundStyle(selected ? DiskMapTheme.onInk : DiskMapTheme.ink)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
@@ -168,7 +168,7 @@ struct AgeMapView: View {
     private var listHeader: some View {
         HStack {
             Text("Largest forgotten files")
-                .font(.system(size: 13, weight: .semibold))
+                .font(DiskMapType.bodyStrong)
                 .foregroundStyle(DiskMapTheme.ink)
             Spacer()
             Button("Add selected to review") { Task { await stageSelected() } }
@@ -191,7 +191,7 @@ struct AgeMapView: View {
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             if untouched.isEmpty {
                 Text("No forgotten files in this scan")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(DiskMapType.callout)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text("Nothing larger than zero bytes was unmodified for over a year. Try another folder, or check Age Map after a broader scan.")
                     .font(DiskMapType.body)
@@ -200,7 +200,7 @@ struct AgeMapView: View {
                     .frame(maxWidth: 420)
             } else {
                 Text("No files in this age bucket")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(DiskMapType.callout)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text("Clear the filter or pick another age chip.")
                     .font(DiskMapType.body)
@@ -236,17 +236,17 @@ struct AgeMapView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(tree.name(of: id))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(DiskMapType.bodyStrong)
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
                     Text(tree.path(of: id, root: rootURL).path)
-                        .font(.system(size: 11).monospaced())
+                        .font(DiskMapType.caption.monospaced())
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     HStack(spacing: 8) {
                         Text(bucket.shortTitle)
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(DiskMapType.microStrong)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(heatColor(bucket).opacity(0.18)))
@@ -262,7 +262,7 @@ struct AgeMapView: View {
             .buttonStyle(.plain)
 
             Text(ByteFormat.string(size))
-                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .font(DiskMapType.smallStrong.monospacedDigit())
                 .foregroundStyle(DiskMapTheme.ink)
 
             Menu {
@@ -316,16 +316,7 @@ struct AgeMapView: View {
         )
     }
 
-    private func heatColor(_ bucket: AgeBucket) -> Color {
-        switch bucket {
-        case .under30: return Color(hue: 0.42, saturation: 0.45, brightness: 0.72)
-        case .days30to90: return Color(hue: 0.38, saturation: 0.5, brightness: 0.62)
-        case .days90to365: return Color(hue: 0.12, saturation: 0.55, brightness: 0.78)
-        case .oneToTwoYears: return Color(hue: 0.06, saturation: 0.65, brightness: 0.72)
-        case .overTwoYears: return Color(hue: 0.02, saturation: 0.7, brightness: 0.55)
-        case .unknown: return Color.gray.opacity(0.7)
-        }
-    }
+    private func heatColor(_ bucket: AgeBucket) -> Color { DiskMapTheme.ageColor(bucket) }
 
     private func relativeAge(_ day: Int32) -> String {
         guard day > 0 else { return "No modification date" }

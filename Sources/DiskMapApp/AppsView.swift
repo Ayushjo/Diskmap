@@ -117,7 +117,7 @@ struct AppsView: View {
                 HStack(spacing: 8) {
                     if let active {
                         Text(active.name)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(DiskMapType.captionStrong)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .lineLimit(1)
                             .frame(maxWidth: 140)
@@ -138,7 +138,7 @@ struct AppsView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(DiskMapType.bodyStrong)
                             .frame(width: 32, height: 32)
                             .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
@@ -182,13 +182,13 @@ struct AppsView: View {
     private func summaryCard(value: String, title: String, subtitle: String, tint: Color = DiskMapTheme.ink) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                .font(DiskMapType.title.monospacedDigit())
                 .foregroundStyle(tint)
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.ink)
             Text(subtitle)
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .lineLimit(2)
         }
@@ -263,7 +263,7 @@ struct AppsView: View {
                 }
             } label: {
                 Label("Sort: \(sort.title)", systemImage: "arrow.up.arrow.down")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DiskMapType.captionStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
@@ -289,7 +289,7 @@ struct AppsView: View {
             Text("SOURCE").frame(width: 80, alignment: .leading)
             Text("STATUS").frame(width: 90, alignment: .leading)
         }
-        .font(.system(size: 10, weight: .semibold))
+        .font(DiskMapType.microStrong)
         .foregroundStyle(DiskMapTheme.mutedLabel)
         .padding(.vertical, 8)
     }
@@ -326,7 +326,7 @@ struct AppsView: View {
             .frame(width: 22)
 
             Text("\(index)")
-                .font(.system(size: 11).monospacedDigit())
+                .font(DiskMapType.caption.monospacedDigit())
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .frame(width: 28, alignment: .leading)
 
@@ -334,12 +334,12 @@ struct AppsView: View {
                 AppIconView(path: app.bundlePath, size: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(app.name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(DiskMapType.bodyStrong)
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
                     if let publisher = app.publisher, !publisher.isEmpty {
                         Text(publisher)
-                            .font(.system(size: 10))
+                            .font(DiskMapType.micro)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .lineLimit(1)
                     }
@@ -356,17 +356,17 @@ struct AppsView: View {
                         .foregroundStyle(DiskMapTheme.ink)
                 }
             }
-            .font(.system(size: 12, weight: .medium).monospacedDigit())
+            .font(DiskMapType.smallMedium.monospacedDigit())
             .frame(width: 88, alignment: .trailing)
 
             Text(lastUsedLabel(app.lastUsed))
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .frame(width: 100, alignment: .leading)
                 .lineLimit(1)
 
             Text(app.source.title)
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .frame(width: 80, alignment: .leading)
 
@@ -388,7 +388,7 @@ struct AppsView: View {
 
     private func statusPill(_ status: ApplicationStatus) -> some View {
         Text(status.title)
-            .font(.system(size: 10, weight: .semibold))
+            .font(DiskMapType.microStrong)
             .foregroundStyle(statusColor(status))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
@@ -406,7 +406,7 @@ struct AppsView: View {
     private var multiSelectBar: some View {
         HStack {
             Text("\(checkedApps.count) applications selected · \(ByteFormat.string(checkedBytes))")
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.ink)
             Spacer()
             Button("Clear Selection") { checked.removeAll() }
@@ -432,12 +432,12 @@ struct AppsView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Text(apps.isEmpty ? "No applications found" : "No applications found")
-                .font(.system(size: 14, weight: .semibold))
+                .font(DiskMapType.callout)
                 .foregroundStyle(DiskMapTheme.ink)
             Text(apps.isEmpty
                  ? "DiskMap couldn’t find installed applications in the scanned locations."
                  : "Try another name or change your filters.")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .multilineTextAlignment(.center)
         }
@@ -471,9 +471,9 @@ struct AppsView: View {
             } else {
                 VStack(spacing: 8) {
                     Text("Select an application")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(DiskMapType.bodyStrong)
                     Text("Pick an app to see size breakdown, related storage, and cleanup guidance.")
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .multilineTextAlignment(.center)
                 }
@@ -492,13 +492,13 @@ struct AppsView: View {
                         AppIconView(path: app.bundlePath, size: 64)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(app.name)
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(DiskMapType.headline)
                                 .foregroundStyle(DiskMapTheme.ink)
                             Text(app.sizePending ? "Measuring…" : ByteFormat.string(app.totalBytes))
                                 .font(.system(size: 20, weight: .semibold).monospacedDigit())
                             if let publisher = app.publisher {
                                 Text(publisher)
-                                    .font(.system(size: 11))
+                                    .font(DiskMapType.caption)
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                             statusPill(app.status)
@@ -577,16 +577,16 @@ struct AppsView: View {
             ForEach(app.related.prefix(12)) { item in
                 HStack {
                     Text(item.displayName)
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                     Spacer()
                     Text(ByteFormat.string(item.bytes))
-                        .font(.system(size: 12).monospacedDigit())
+                        .font(DiskMapType.small.monospacedDigit())
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
             }
             if app.related.isEmpty && !app.sizePending {
                 Text("No related Library files matched this app’s bundle ID or name.")
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
         }
@@ -611,14 +611,14 @@ struct AppsView: View {
                 Button("View in Developer Storage →") {
                     model.destination = .developerStorage
                 }
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.info)
                 .buttonStyle(.plain)
             }
             Button("View what’s inside →") {
                 openInFileBrowser(app)
             }
-            .font(.system(size: 12, weight: .semibold))
+            .font(DiskMapType.smallStrong)
             .foregroundStyle(DiskMapTheme.info)
             .buttonStyle(.plain)
         }
@@ -644,7 +644,7 @@ struct AppsView: View {
         let relatedFrac = Double(app.relatedBytes) / Double(total)
         return VStack(alignment: .leading, spacing: 8) {
             Text("Size breakdown")
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             GeometryReader { geo in
                 HStack(spacing: 2) {
@@ -667,20 +667,20 @@ struct AppsView: View {
     private func relatedBlock(_ app: ApplicationEntry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Related files")
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             if app.related.isEmpty {
                 Text(app.sizePending ? "Measuring related storage…" : "No confident related files found.")
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
                 ForEach(ApplicationsCatalog.relatedRollups(from: app.related).prefix(6), id: \.kind) { roll in
                     HStack {
                         Text(roll.kind.title)
-                            .font(.system(size: 12))
+                            .font(DiskMapType.small)
                         Spacer()
                         Text(ByteFormat.string(roll.bytes))
-                            .font(.system(size: 12).monospacedDigit())
+                            .font(DiskMapType.small.monospacedDigit())
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
@@ -688,7 +688,7 @@ struct AppsView: View {
                     Button("View in Developer Storage →") {
                         model.destination = .developerStorage
                     }
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.info)
                     .buttonStyle(.plain)
                     .padding(.top, 4)
@@ -703,16 +703,16 @@ struct AppsView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DiskMapType.captionStrong)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 if let badge {
                     Text(badge)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(DiskMapType.microStrong)
                         .foregroundStyle(DiskMapTheme.review)
                 }
             }
             Text(body)
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.ink.opacity(0.88))
                 .fixedSize(horizontal: false, vertical: true)
         }

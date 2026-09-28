@@ -15,14 +15,14 @@ struct CleanupQueueView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Cleanup Queue")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(DiskMapType.headline)
                         .foregroundStyle(DiskMapTheme.ink)
                     Text(freeSummary)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(DiskMapType.smallMedium)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     if model.reclaimEstimate.heldByUnqueuedCopies > 0 {
                         Text("\(diskByteString(model.reclaimEstimate.heldByUnqueuedCopies)) stays in use by copies or links that aren’t queued")
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
@@ -52,10 +52,10 @@ struct CleanupQueueView: View {
                         .font(.system(size: 28, weight: .light))
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     Text("Nothing staged")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(DiskMapType.callout)
                         .foregroundStyle(DiskMapTheme.ink)
                     Text("Duplicates, Quick Wins, and app leftovers land here for review. Confirm moves them to the Trash — nothing is deleted directly.")
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 420)
@@ -71,11 +71,11 @@ struct CleanupQueueView: View {
                                     FileIdentityIcon(url: item.url, size: 34)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(item.url.lastPathComponent)
-                                            .font(.system(size: 13, weight: .medium))
+                                            .font(DiskMapType.bodyMedium)
                                             .foregroundStyle(DiskMapTheme.ink)
                                             .lineLimit(1)
                                         Text(item.url.path)
-                                            .font(.system(size: 11))
+                                            .font(DiskMapType.caption)
                                             .foregroundStyle(DiskMapTheme.mutedLabel)
                                             .lineLimit(1)
                                             .truncationMode(.middle)
@@ -116,7 +116,6 @@ struct CleanupQueueView: View {
             }
         }
         .background(DiskMapTheme.cream)
-        .preferredColorScheme(.light)
         .frame(minWidth: 640, minHeight: 480)
         .task { await model.refreshQueue() }
         .confirmationDialog(

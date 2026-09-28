@@ -53,8 +53,8 @@ struct AppShellView: View {
 
                 if let toast = model.toastMessage {
                     Text(toast)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .font(DiskMapType.bodyStrong)
+                        .foregroundStyle(DiskMapTheme.onInk)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .background(Capsule().fill(DiskMapTheme.ink.opacity(0.92)))
@@ -69,17 +69,14 @@ struct AppShellView: View {
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.toastMessage)
         .background(DiskMapTheme.cream)
-        .preferredColorScheme(.light)
         .frame(minWidth: 880, minHeight: 600)
         .sheet(isPresented: $showCleanup) {
             CleanupQueueView(model: model)
                 .frame(minWidth: 640, minHeight: 480)
-                .preferredColorScheme(.light)
         }
         .sheet(isPresented: $showExplain) {
             ExplainStorageSheet(model: model)
                 .frame(minWidth: 520, minHeight: 420)
-                .preferredColorScheme(.light)
         }
         .overlay {
             if showPalette {
@@ -119,7 +116,7 @@ struct AppShellView: View {
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             TextField("Search files, folders and actions…", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(DiskMapType.body)
                 .accessibilityLabel("Search storage")
                 .disabled(!hasCompletedScan)
                 .opacity(hasCompletedScan ? 1 : 0.45)
@@ -132,7 +129,7 @@ struct AppShellView: View {
                 showPalette = true
             } label: {
                 Text("⌘K")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DiskMapType.captionStrong)
                     .padding(.horizontal, 8)
                     .frame(height: DiskMapMetric.controlHeight)
                     .background(RoundedRectangle(cornerRadius: 6).fill(DiskMapTheme.navSelected))
@@ -147,7 +144,7 @@ struct AppShellView: View {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
                     Text(model.tree == nil ? "Scanning… \(model.scannedCount.formatted())" : "Rescanning… \(model.scannedCount.formatted())")
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .font(DiskMapType.captionMedium.monospacedDigit())
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .lineLimit(1)
                 }
@@ -169,7 +166,7 @@ struct AppShellView: View {
                         }
                     }
                 }
-                .font(.system(size: 12, weight: .medium))
+                .font(DiskMapType.smallMedium)
             }
             .buttonStyle(InkButtonStyle(filled: !model.stagedItems.isEmpty))
             .disabled(!hasCompletedScan)
@@ -178,8 +175,8 @@ struct AppShellView: View {
                   ? "Scan first to stage cleanup"
                   : (model.stagedItems.isEmpty
                      ? "Review items staged for Trash"
-                     : "\(model.stagedItems.count) items · \(ByteFormat.string(model.reclaimableBytes)) reclaimable"))
-            .accessibilityLabel(model.stagedItems.isEmpty ? "Cleanup" : "Cleanup, \(model.stagedItems.count) items")
+                     : "\(countLabel(model.stagedItems.count, "item")) · \(ByteFormat.string(model.reclaimableBytes)) reclaimable"))
+            .accessibilityLabel(model.stagedItems.isEmpty ? "Cleanup" : "Cleanup, \(countLabel(model.stagedItems.count, "item"))")
             if hasCompletedScan {
                 Button {
                     if let root = model.rootURL {
@@ -189,7 +186,7 @@ struct AppShellView: View {
                     }
                 } label: {
                     Label("Rescan", systemImage: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(DiskMapType.smallMedium)
                 }
                 .buttonStyle(InkButtonStyle(filled: false))
                 .disabled(model.isScanning)
@@ -206,13 +203,13 @@ struct AppShellView: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(DiskMapTheme.ink)
                     .frame(width: 28, height: 28)
-                    .overlay(Text("D").font(.system(size: 13, weight: .bold)).foregroundStyle(.white))
+                    .overlay(Text("D").font(.system(size: 13, weight: .bold)).foregroundStyle(DiskMapTheme.onInk))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("DiskMap")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(DiskMapType.callout)
                         .foregroundStyle(DiskMapTheme.ink)
                     Text("Understand your storage.")
-                        .font(.system(size: 10))
+                        .font(DiskMapType.micro)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
             }
@@ -224,7 +221,7 @@ struct AppShellView: View {
                     ForEach(AppNavSection.allCases) { section in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(section.rawValue.uppercased())
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(DiskMapType.microStrong)
                                 .tracking(0.8)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .padding(.horizontal, 12)
@@ -261,7 +258,7 @@ struct AppShellView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: dest.symbol)
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .frame(width: 18)
                 Text(dest.label)
                     .font(.system(size: 13, weight: model.destination == dest ? .semibold : .regular))
@@ -290,18 +287,18 @@ struct AppShellView: View {
                 Image(systemName: "internaldrive.fill")
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Text(vol?.volumeName ?? "Macintosh HD")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.ink)
             }
             if let vol {
                 ProportionBar(fraction: vol.usedFraction, tint: DiskMapTheme.ink.opacity(0.45))
                 Text("\(ByteFormat.string(Int64(vol.totalBytes))) total · \(ByteFormat.string(Int64(vol.freeBytes))) free")
-                    .font(.system(size: 10))
+                    .font(DiskMapType.micro)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
                 ProportionBar(fraction: 0, tint: DiskMapTheme.ink.opacity(0.12))
                 Text("Capacity appears after you scan")
-                    .font(.system(size: 10))
+                    .font(DiskMapType.micro)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
         }
@@ -405,7 +402,7 @@ struct AppShellView: View {
         if model.tree != nil {
             if model.analysis.forgottenBytes > 0 {
                 Text(ByteFormat.string(model.analysis.forgottenBytes) + " forgotten")
-                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .font(DiskMapType.bodyStrong.monospacedDigit())
                     .foregroundStyle(DiskMapTheme.ink)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -508,7 +505,7 @@ struct ExplainStorageSheet: View {
                 ForEach(stories) { story in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(story.title)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(DiskMapType.bodyStrong)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(story.detail)
                             .font(DiskMapType.caption)
@@ -524,7 +521,7 @@ struct ExplainStorageSheet: View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(rec.title)
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(DiskMapType.bodyStrong)
                                 .foregroundStyle(DiskMapTheme.ink)
                             Text(rec.detail)
                                 .font(DiskMapType.caption)
@@ -532,7 +529,7 @@ struct ExplainStorageSheet: View {
                         }
                         Spacer()
                         Text(ByteFormat.string(rec.bytes))
-                            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                            .font(DiskMapType.smallStrong.monospacedDigit())
                     }
                 }
                 Text("Every figure above comes from your last local scan — nothing was invented.")

@@ -116,13 +116,13 @@ struct DeveloperStorageView: View {
     private func summaryCard(title: String, value: String, subtitle: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(value)
-                .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                .font(DiskMapType.title.monospacedDigit())
                 .foregroundStyle(tint)
             Text(subtitle)
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -141,7 +141,7 @@ struct DeveloperStorageView: View {
         let total = max(1, summary.totalBytes)
         return VStack(alignment: .leading, spacing: 10) {
             Text("Storage breakdown")
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.ink)
             GeometryReader { geo in
                 HStack(spacing: 2) {
@@ -157,7 +157,9 @@ struct DeveloperStorageView: View {
             .frame(height: 14)
             .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], alignment: .leading, spacing: 6) {
+            // 200 pt: at 140 a label like "Dependencies 14.7 MB 39%" wrapped
+            // mid-word ("Dependenci / es").
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 8)], alignment: .leading, spacing: 6) {
                 ForEach(summary.categories) { roll in
                     Button {
                         categoryFilter = categoryFilter == roll.category ? nil : roll.category
@@ -167,6 +169,8 @@ struct DeveloperStorageView: View {
                             Circle().fill(color(for: roll.category)).frame(width: 7, height: 7)
                             Text(roll.category.title)
                                 .foregroundStyle(DiskMapTheme.ink)
+                                .lineLimit(1)
+                                .fixedSize()
                             Text(ByteFormat.string(roll.bytes))
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .monospacedDigit()
@@ -175,7 +179,7 @@ struct DeveloperStorageView: View {
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                         }
-                        .font(.system(size: 11))
+                        .font(DiskMapType.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .background(
@@ -194,7 +198,7 @@ struct DeveloperStorageView: View {
     private var ecosystemsRow: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Developer ecosystems")
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.ink)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -202,17 +206,17 @@ struct DeveloperStorageView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 6) {
                                 Image(systemName: eco.ecosystem.symbolName)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(DiskMapType.smallStrong)
                                     .foregroundStyle(DiskMapTheme.developer)
                                 Text(eco.ecosystem.title)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(DiskMapType.smallStrong)
                                     .foregroundStyle(DiskMapTheme.ink)
                             }
                             Text(ByteFormat.string(eco.bytes))
-                                .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                                .font(DiskMapType.headline.monospacedDigit())
                                 .foregroundStyle(DiskMapTheme.ink)
-                            Text("\(eco.itemCount) items")
-                                .font(.system(size: 10))
+                            Text(countLabel(eco.itemCount, "item"))
+                                .font(DiskMapType.micro)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                         }
                         .padding(12)
@@ -228,19 +232,19 @@ struct DeveloperStorageView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Best opportunities")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                 Spacer()
                 Button("Review all") {
                     tableTab = .opportunities
                 }
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.developer)
                 .buttonStyle(.plain)
             }
             if catalog.opportunities.isEmpty {
                 Text("No clear reclaim opportunities in this scan root.")
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 10)], spacing: 10) {
@@ -251,16 +255,16 @@ struct DeveloperStorageView: View {
                             HStack(alignment: .top, spacing: 10) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.displayName)
-                                        .font(.system(size: 13, weight: .semibold))
+                                        .font(DiskMapType.bodyStrong)
                                         .foregroundStyle(DiskMapTheme.ink)
                                         .lineLimit(1)
                                     Text(item.safety.level.title)
-                                        .font(.system(size: 10, weight: .semibold))
+                                        .font(DiskMapType.microStrong)
                                         .foregroundStyle(safetyColor(item.safety.level))
                                 }
                                 Spacer(minLength: 0)
                                 Text(ByteFormat.string(item.bytes))
-                                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                                    .font(DiskMapType.smallStrong.monospacedDigit())
                                     .foregroundStyle(DiskMapTheme.ink)
                             }
                             .padding(12)
@@ -374,13 +378,13 @@ struct DeveloperStorageView: View {
                 Text("Reclaimable").frame(width: 80, alignment: .trailing)
                 Text("Status").frame(width: 110, alignment: .leading)
             }
-            .font(.system(size: 10, weight: .semibold))
+            .font(DiskMapType.microStrong)
             .foregroundStyle(DiskMapTheme.mutedLabel)
             .padding(.vertical, 8)
 
             if filteredProjects.isEmpty {
                 Text("No project-scoped developer folders found (e.g. node_modules, Pods, .venv).")
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .padding(.vertical, 20)
                     .frame(maxWidth: .infinity)
@@ -392,32 +396,32 @@ struct DeveloperStorageView: View {
                         HStack(spacing: 8) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(proj.name)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(DiskMapType.smallStrong)
                                     .foregroundStyle(DiskMapTheme.ink)
                                     .lineLimit(1)
                                 Text(proj.displayPath)
-                                    .font(.system(size: 10))
+                                    .font(DiskMapType.micro)
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                                     .lineLimit(1)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             Text(proj.ecosystem.title)
-                                .font(.system(size: 11))
+                                .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .frame(width: 72, alignment: .leading)
                                 .lineLimit(1)
                             Text(ByteFormat.string(proj.bytes))
-                                .font(.system(size: 11).monospacedDigit())
+                                .font(DiskMapType.caption.monospacedDigit())
                                 .frame(width: 72, alignment: .trailing)
                             Text("\(proj.itemCount)")
-                                .font(.system(size: 11).monospacedDigit())
+                                .font(DiskMapType.caption.monospacedDigit())
                                 .frame(width: 44, alignment: .trailing)
                             Text(ByteFormat.string(proj.reclaimableBytes))
-                                .font(.system(size: 11).monospacedDigit())
+                                .font(DiskMapType.caption.monospacedDigit())
                                 .foregroundStyle(DiskMapTheme.safe)
                                 .frame(width: 80, alignment: .trailing)
                             Text(proj.status)
-                                .font(.system(size: 11))
+                                .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .frame(width: 110, alignment: .leading)
                                 .lineLimit(1)
@@ -445,13 +449,13 @@ struct DeveloperStorageView: View {
                 Text("Size").frame(width: 72, alignment: .trailing)
                 Text("Safety").frame(width: 100, alignment: .leading)
             }
-            .font(.system(size: 10, weight: .semibold))
+            .font(DiskMapType.microStrong)
             .foregroundStyle(DiskMapTheme.mutedLabel)
             .padding(.vertical, 8)
 
             if items.isEmpty {
                 Text("No matching developer items.")
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .padding(.vertical, 20)
                     .frame(maxWidth: .infinity)
@@ -463,29 +467,29 @@ struct DeveloperStorageView: View {
                         HStack(spacing: 8) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.displayName)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(DiskMapType.smallStrong)
                                     .foregroundStyle(DiskMapTheme.ink)
                                     .lineLimit(1)
                                 Text(item.displayPath)
-                                    .font(.system(size: 10))
+                                    .font(DiskMapType.micro)
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                                     .lineLimit(1)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             Text(item.category.shortTitle)
-                                .font(.system(size: 11))
+                                .font(DiskMapType.caption)
                                 .frame(width: 100, alignment: .leading)
                                 .lineLimit(1)
                             Text(item.ecosystem.title)
-                                .font(.system(size: 11))
+                                .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .frame(width: 72, alignment: .leading)
                                 .lineLimit(1)
                             Text(ByteFormat.string(item.bytes))
-                                .font(.system(size: 11).monospacedDigit())
+                                .font(DiskMapType.caption.monospacedDigit())
                                 .frame(width: 72, alignment: .trailing)
                             Text(item.safety.level.title)
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(DiskMapType.captionStrong)
                                 .foregroundStyle(safetyColor(item.safety.level))
                                 .frame(width: 100, alignment: .leading)
                                 .lineLimit(1)
@@ -515,10 +519,10 @@ struct DeveloperStorageView: View {
             } else {
                 VStack(spacing: 8) {
                     Text("Select an item")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(DiskMapType.bodyStrong)
                         .foregroundStyle(DiskMapTheme.ink)
                     Text("Pick an opportunity, project, or developer folder to see why it’s large and whether it’s safe to clear.")
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .multilineTextAlignment(.center)
                 }
@@ -582,19 +586,19 @@ private struct DeveloperInspector: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top) {
                     Image(systemName: item.ecosystem.symbolName)
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(DiskMapType.title)
                         .foregroundStyle(DiskMapTheme.developer)
                         .frame(width: 40, height: 40)
                         .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.displayName)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(DiskMapType.headline)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(ByteFormat.string(item.bytes))
                             .font(.system(size: 20, weight: .semibold).monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(item.safety.level.title)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(DiskMapType.captionStrong)
                             .foregroundStyle(badgeColor)
                     }
                     Spacer(minLength: 0)
@@ -615,11 +619,11 @@ private struct DeveloperInspector: View {
 
                 section("What happens if I remove it?") {
                     Text(item.safety.consequences)
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
                     Text(item.safety.recommendedAction)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(DiskMapType.captionMedium)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .padding(.top, 4)
                         .fixedSize(horizontal: false, vertical: true)
@@ -685,7 +689,7 @@ private struct DeveloperInspector: View {
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             content()
         }

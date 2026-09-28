@@ -139,19 +139,19 @@ struct LargeMediaView: View {
     private func metricCard(icon: String, tint: Color, value: String, title: String, subtitle: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
+                .font(DiskMapType.callout)
                 .foregroundStyle(tint)
                 .frame(width: 28, height: 28)
                 .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
-                    .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                    .font(DiskMapType.headline.monospacedDigit())
                     .foregroundStyle(DiskMapTheme.ink)
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DiskMapType.captionStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text(subtitle)
-                    .font(.system(size: 10))
+                    .font(DiskMapType.micro)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             Spacer(minLength: 0)
@@ -191,11 +191,11 @@ struct LargeMediaView: View {
     private func breakdownPanel(title: String, buckets: [MediaBucket], onSelect: @escaping (MediaBucket) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.ink)
             if buckets.isEmpty {
                 Text("No data yet")
-                    .font(.system(size: 11))
+                    .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
                 ForEach(buckets) { bucket in
@@ -205,15 +205,15 @@ struct LargeMediaView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Text(bucket.title)
-                                    .font(.system(size: 11, weight: .medium))
+                                    .font(DiskMapType.captionMedium)
                                     .foregroundStyle(DiskMapTheme.ink)
                                 Spacer()
                                 Text(ByteFormat.string(bucket.bytes))
-                                    .font(.system(size: 11).monospacedDigit())
+                                    .font(DiskMapType.caption.monospacedDigit())
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                                 if bucket.fraction > 0 {
                                     Text(String(format: "%.0f%%", bucket.fraction * 100))
-                                        .font(.system(size: 10, weight: .semibold))
+                                        .font(DiskMapType.microStrong)
                                         .foregroundStyle(DiskMapTheme.mutedLabel)
                                         .frame(width: 36, alignment: .trailing)
                                 }
@@ -252,7 +252,7 @@ struct LargeMediaView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Biggest media files")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(DiskMapType.bodyStrong)
                 Spacer()
                 Button("View all media") {
                     typeFilter = .all
@@ -261,7 +261,7 @@ struct LargeMediaView: View {
                     locationFilter = .any
                     sort = .largest
                 }
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.info)
                 .buttonStyle(.plain)
             }
@@ -288,16 +288,16 @@ struct LargeMediaView: View {
                     showPlayBadge: item.kind == .video
                 )
                 Text(item.name)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                     .lineLimit(2)
                     .frame(height: 30, alignment: .topLeading)
                     .frame(width: 160, alignment: .leading)
                 Text("\(ByteFormat.string(item.bytes)) · \(item.location.title)")
-                    .font(.system(size: 10))
+                    .font(DiskMapType.micro)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Text(MediaCatalog.ageLabel(item.ageDays) + " old")
-                    .font(.system(size: 10))
+                    .font(DiskMapType.micro)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             .padding(10)
@@ -342,7 +342,7 @@ struct LargeMediaView: View {
             Text("STATUS").frame(width: 100, alignment: .leading)
             Text("").frame(width: 24)
         }
-        .font(.system(size: 10, weight: .semibold))
+        .font(DiskMapType.microStrong)
         .foregroundStyle(DiskMapTheme.mutedLabel)
         .padding(.horizontal, 4)
     }
@@ -355,7 +355,7 @@ struct LargeMediaView: View {
             }
             if visible.count > 300 {
                 Text("Showing first 300 of \(visible.count). Refine filters to narrow.")
-                    .font(.system(size: 11))
+                    .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .padding(.top, 8)
             }
@@ -391,33 +391,33 @@ struct LargeMediaView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                     .lineLimit(1)
                 Text(parentDisplay(item.displayPath))
-                    .font(.system(size: 10))
+                    .font(DiskMapType.micro)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(item.kind.shortTitle)
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .frame(width: 70, alignment: .leading)
 
             Text(item.location.title)
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .frame(width: 88, alignment: .leading)
                 .lineLimit(1)
 
             Text(ByteFormat.string(item.bytes))
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .font(DiskMapType.smallMedium.monospacedDigit())
                 .frame(width: 72, alignment: .trailing)
 
             Text(MediaCatalog.ageLabel(item.ageDays))
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .frame(width: 52, alignment: .leading)
 
@@ -436,7 +436,7 @@ struct LargeMediaView: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .frame(width: 24, height: 24)
             }
@@ -458,11 +458,11 @@ struct LargeMediaView: View {
     private var emptyResults: some View {
         VStack(spacing: 10) {
             Text(catalog.candidates.isEmpty ? "No large media found" : "No media matches these filters")
-                .font(.system(size: 14, weight: .semibold))
+                .font(DiskMapType.callout)
             Text(catalog.candidates.isEmpty
                  ? "DiskMap couldn’t find media above the size threshold in this scan."
                  : "Try clearing filters or broadening search.")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .multilineTextAlignment(.center)
             if !catalog.candidates.isEmpty {
@@ -498,7 +498,7 @@ struct LargeMediaView: View {
             Text(checked.isEmpty
                  ? (active != nil ? "Inspecting · check boxes to multi-select" : "Check boxes to select for Cleanup")
                  : "\(checkedItems.count) selected · \(ByteFormat.string(checkedBytes))")
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Spacer()
             Button("Add to Cleanup") {
@@ -507,10 +507,10 @@ struct LargeMediaView: View {
             .buttonStyle(PrimaryCTAStyle())
             .disabled(active == nil)
             Text("\(visible.count) files · \(ByteFormat.string(visible.reduce(Int64(0)) { $0 + $1.bytes }))")
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Button("Rescan") { Task { await model.rebuildCatalog(.largeMedia) } }
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.info)
                 .buttonStyle(.plain)
         }
@@ -535,18 +535,18 @@ struct LargeMediaView: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.name)
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(DiskMapType.section)
                             Text(ByteFormat.string(item.bytes))
-                                .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                                .font(DiskMapType.title.monospacedDigit())
                             Text("\(item.kind.shortTitle) · \(extLabel(item.name))")
-                                .font(.system(size: 11))
+                                .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                             statusPill(item.status)
                         }
 
                         HStack {
                             Text(parentDisplay(item.displayPath))
-                                .font(.system(size: 11))
+                                .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .lineLimit(2)
                             Spacer()
@@ -556,7 +556,7 @@ struct LargeMediaView: View {
                                 model.showToast("Path copied")
                             } label: {
                                 Image(systemName: "doc.on.doc")
-                                    .font(.system(size: 12))
+                                    .font(DiskMapType.small)
                             }
                             .buttonStyle(.plain)
                         }

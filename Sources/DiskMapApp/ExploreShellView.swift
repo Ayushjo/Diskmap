@@ -23,8 +23,8 @@ struct ExploreShellView: View {
             }
             if let toast = model.toastMessage {
                 Text(toast)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .font(DiskMapType.bodyStrong)
+                    .foregroundStyle(DiskMapTheme.onInk)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(Capsule().fill(DiskMapTheme.ink.opacity(0.92)))
@@ -38,7 +38,6 @@ struct ExploreShellView: View {
         .sheet(isPresented: $showCleanup) {
             CleanupQueueView(model: model)
                 .frame(minWidth: 640, minHeight: 480)
-                .preferredColorScheme(.light)
         }
     }
 
@@ -64,14 +63,14 @@ struct ExploreShellView: View {
         } else if model.isScanning {
             VStack(spacing: 12) {
                 ProgressView()
-                Text("Scanning… \(model.scannedCount) items")
+                Text("Scanning… \(countLabel(model.scannedCount, "item"))")
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 14) {
                 Text("Scan first to explore")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(DiskMapType.headline)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text("Where is the space? What have I forgotten? Pick a folder to open Treemap, Age Map, and the other views.")
                     .font(DiskMapType.body)
@@ -121,14 +120,14 @@ struct ExploreShellView: View {
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("Visualize Storage")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(DiskMapType.headline)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text("This folder uses \(ByteFormat.string(size)) (\(String(format: "%.1f%%", ofDisk * 100)) of scan)")
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Spacer(minLength: 8)
                 Text("\(files.formatted()) files · \(folders.formatted()) folders")
-                    .font(.system(size: 11))
+                    .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
         }
@@ -145,8 +144,8 @@ struct ExploreShellView: View {
                         model.exploreMode = mode
                     } label: {
                         Image(systemName: mode.symbol)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(model.exploreMode == mode ? Color.white : DiskMapTheme.ink.opacity(0.7))
+                            .font(DiskMapType.smallStrong)
+                            .foregroundStyle(model.exploreMode == mode ? DiskMapTheme.onInk : DiskMapTheme.ink.opacity(0.7))
                             .frame(width: 32, height: 28)
                             .background(
                                 RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -170,12 +169,12 @@ struct ExploreShellView: View {
 
             HStack(spacing: 6) {
                 Text(model.exploreMode.rawValue)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text("·")
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Text(model.exploreMode.blurb)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(DiskMapType.smallMedium)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .lineLimit(1)
             }
@@ -193,7 +192,7 @@ struct ExploreShellView: View {
 
                 HStack(spacing: 8) {
                     Image(systemName: "square.3.layers.3d")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(DiskMapType.captionStrong)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     Slider(value: $model.depthLevel, in: 1...12, step: 1)
                         .frame(width: 110)
@@ -271,7 +270,7 @@ struct ExploreSidebar: View {
                         Task { await model.scan(url) }
                     } label: {
                         Label(url.lastPathComponent, systemImage: "clock")
-                            .font(.system(size: 12))
+                            .font(DiskMapType.small)
                             .foregroundStyle(DiskMapTheme.ink)
                     }
                     .buttonStyle(.plain)
@@ -298,12 +297,12 @@ struct ExploreSidebar: View {
                         }
                         .frame(width: 56, height: 56)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(volume.volumeName).font(.system(size: 13, weight: .semibold))
+                            Text(volume.volumeName).font(DiskMapType.bodyStrong)
                             Text("Total \(byte(volume.totalBytes))")
                             Text("Used \(byte(volume.usedBytes))")
                             Text("Free \(byte(volume.freeBytes))")
                         }
-                        .font(.system(size: 11))
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.ink)
                     }
                 }
@@ -318,11 +317,11 @@ struct ExploreSidebar: View {
                 VStack(alignment: .leading, spacing: 4) {
                     if let tree = model.tree, model.currentNode < tree.count {
                         Text(tree.name(of: model.currentNode))
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(DiskMapType.bodyStrong)
                             .foregroundStyle(DiskMapTheme.ink)
                         if let root = model.rootURL {
                             Text(tree.path(of: model.currentNode, root: root).path)
-                                .font(.system(size: 10))
+                                .font(DiskMapType.micro)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .lineLimit(2)
                         }
@@ -357,14 +356,14 @@ struct ExploreSidebar: View {
                             Image(systemName: "bolt.fill").foregroundStyle(DiskMapTheme.ink.opacity(0.7))
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(hit.name)
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(DiskMapType.smallMedium)
                                     .foregroundStyle(DiskMapTheme.ink)
                                     .lineLimit(1)
                             }
                             Spacer()
                             if model.tree != nil, Int(hit.id) < model.allocatedTotals.count {
                                 Text(byte(UInt64(max(0, model.allocatedTotals[Int(hit.id)]))))
-                                    .font(.system(size: 11).monospacedDigit())
+                                    .font(DiskMapType.caption.monospacedDigit())
                             }
                             Image(systemName: "chevron.right")
                                 .font(.caption2)
@@ -403,12 +402,12 @@ struct ExploreSidebar: View {
                             HStack(spacing: 8) {
                                 Circle().fill(DiskMapTheme.hex(row.colorHex)).frame(width: 8, height: 8)
                                 Text(row.label)
-                                    .font(.system(size: 11))
+                                    .font(DiskMapType.caption)
                                     .foregroundStyle(DiskMapTheme.ink)
                                     .lineLimit(1)
                                 Spacer(minLength: 4)
                                 Text(byte(UInt64(row.bytes)))
-                                    .font(.system(size: 11).monospacedDigit())
+                                    .font(DiskMapType.caption.monospacedDigit())
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                         }
@@ -438,14 +437,14 @@ struct ExploreInspector: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Storage context")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(DiskMapType.callout)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text("Select a file or folder to see what it is, why it’s large, and whether it’s safe to review.")
-                            .font(.system(size: 12))
+                            .font(DiskMapType.small)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                         if model.analysis.reviewableBytes > 0 {
                             Text("\(ByteFormat.string(model.analysis.reviewableBytes)) worth reviewing in this scan.")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(DiskMapType.smallMedium)
                                 .foregroundStyle(DiskMapTheme.safe)
                         }
                     }
@@ -493,7 +492,7 @@ struct ExploreInspector: View {
                             .font(.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                         Text(tree.path(of: id, root: root).path)
-                            .font(.system(size: 10))
+                            .font(DiskMapType.micro)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .textSelection(.enabled)
                     }
@@ -526,19 +525,19 @@ struct ExploreInspector: View {
                 PanelCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("What is this?")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(DiskMapType.smallStrong)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(safety.title == tree.name(of: id) ? (tree.isDirectory[idx] ? "Folder in your scan." : "File in your scan.") : safety.title)
-                            .font(.system(size: 12))
+                            .font(DiskMapType.small)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                         HStack {
                             Text(safety.level.title)
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(DiskMapType.captionStrong)
                                 .foregroundStyle(safety.level == .safe ? DiskMapTheme.safe : (safety.level == .protected ? DiskMapTheme.danger : DiskMapTheme.review))
                             Spacer()
                         }
                         Text(safety.reason)
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -548,22 +547,22 @@ struct ExploreInspector: View {
                     PanelCard {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Why is it large?")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(DiskMapType.smallStrong)
                                 .foregroundStyle(DiskMapTheme.ink)
                             ForEach(Array(children.prefix(3).enumerated()), id: \.element.id) { _, child in
                                 HStack {
                                     Text(tree.name(of: child.id))
-                                        .font(.system(size: 12))
+                                        .font(DiskMapType.small)
                                         .foregroundStyle(DiskMapTheme.ink)
                                         .lineLimit(1)
                                     Spacer()
                                     Text(byte(child.size))
-                                        .font(.system(size: 11).monospacedDigit())
+                                        .font(DiskMapType.caption.monospacedDigit())
                                         .foregroundStyle(DiskMapTheme.mutedLabel)
                                 }
                             }
                             Text("Dominant contributor: \(tree.name(of: top.id))")
-                                .font(.system(size: 11))
+                                .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                         }
                     }
@@ -571,7 +570,7 @@ struct ExploreInspector: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("What's inside?")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DiskMapType.smallStrong)
                         .foregroundStyle(DiskMapTheme.ink)
                     PanelCard {
                         VStack(spacing: 8) {
@@ -583,12 +582,12 @@ struct ExploreInspector: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         HStack {
                                             Text(tree.name(of: child.id))
-                                                .font(.system(size: 12))
+                                                .font(DiskMapType.small)
                                                 .foregroundStyle(DiskMapTheme.ink)
                                                 .lineLimit(1)
                                             Spacer()
                                             Text(byte(child.size))
-                                                .font(.system(size: 11).monospacedDigit())
+                                                .font(DiskMapType.caption.monospacedDigit())
                                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                         }
                                         ProportionBar(fraction: frac)
@@ -626,10 +625,10 @@ struct ExploreInspector: View {
                     confirmCleanup = true
                 } label: {
                     Text(alreadyStaged ? "Already in review" : "Review cleanup")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(DiskMapType.bodyStrong)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .foregroundStyle(alreadyStaged ? DiskMapTheme.mutedLabel : .white)
+                        .foregroundStyle(alreadyStaged ? DiskMapTheme.mutedLabel : DiskMapTheme.onInk)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(alreadyStaged ? DiskMapTheme.cardStroke : DiskMapTheme.ink)
@@ -657,7 +656,7 @@ struct ExploreInspector: View {
                 }
 
                 Button("Open Cleanup Queue") { showCleanup = true }
-                    .font(.system(size: 12, weight: .medium))
+                    .font(DiskMapType.smallMedium)
                     .foregroundStyle(DiskMapTheme.ink)
             }
             .padding(14)
@@ -666,7 +665,7 @@ struct ExploreInspector: View {
 
     private func actionButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(title, action: action)
-            .font(.system(size: 11, weight: .semibold))
+            .font(DiskMapType.captionStrong)
             .foregroundStyle(DiskMapTheme.ink)
             .buttonStyle(.bordered)
             .tint(DiskMapTheme.ink)
@@ -775,17 +774,17 @@ struct ExploreTreemapView: View {
                     let path = Path(roundedRect: inset, cornerRadius: 5)
                     let selected = r.id == selectedNode
                     context.fill(path, with: .color(colorFor(id: r.id)))
-                    context.stroke(path, with: .color(selected ? DiskMapTheme.ink : .black.opacity(0.25)), lineWidth: selected ? 2 : 1)
+                    context.stroke(path, with: .color(selected ? DiskMapTheme.tileLabel : .black.opacity(0.25)), lineWidth: selected ? 2 : 1)
                     if inset.width > 52 && inset.height > 20 {
                         context.draw(
-                            Text(String(tree.name(of: r.id).prefix(max(4, Int(inset.width / 7) - 3)))).font(.system(size: 12, weight: .semibold)).foregroundStyle(DiskMapTheme.ink),
+                            Text(String(tree.name(of: r.id).prefix(max(4, Int(inset.width / 7) - 3)))).font(DiskMapType.smallStrong).foregroundStyle(DiskMapTheme.tileLabel),
                             at: CGPoint(x: inset.minX + 4, y: inset.minY + 4),
                             anchor: .topLeading
                         )
                     }
                     if inset.width > 90 && inset.height > 48 {
                         context.draw(Text(ByteFormat.string(totals[Int(r.id)]))
-                            .font(.system(size: 11).monospacedDigit()).foregroundStyle(DiskMapTheme.ink.opacity(0.75)),
+                            .font(DiskMapType.caption.monospacedDigit()).foregroundStyle(DiskMapTheme.tileLabel.opacity(0.75)),
                             at: CGPoint(x: inset.minX + 4, y: inset.minY + 23), anchor: .topLeading)
                     }
                 }
@@ -880,7 +879,7 @@ struct LargestItemsStrip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Largest items in this folder")
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.ink)
                 .padding(.horizontal, 14)
             ScrollView(.horizontal, showsIndicators: false) {
@@ -894,14 +893,14 @@ struct LargestItemsStrip: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(tree.name(of: row.id))
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(DiskMapType.smallMedium)
                                     .foregroundStyle(DiskMapTheme.ink)
                                     .lineLimit(1)
                                 Text(ByteFormat.string(row.size))
-                                    .font(.system(size: 11).monospacedDigit())
+                                    .font(DiskMapType.caption.monospacedDigit())
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                                 Text(tree.isDirectory[Int(row.id)] ? "Folder" : "File")
-                                    .font(.system(size: 10))
+                                    .font(DiskMapType.micro)
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                             .padding(10)

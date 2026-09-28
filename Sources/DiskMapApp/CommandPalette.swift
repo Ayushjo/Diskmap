@@ -126,7 +126,7 @@ struct CommandPalette: View {
                         let section = filtered.filter { $0.category == category }
                         if !section.isEmpty {
                             Text(category.rawValue.uppercased())
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(DiskMapType.microStrong)
                                 .tracking(0.8)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .padding(.horizontal, 12)
@@ -143,10 +143,10 @@ struct CommandPalette: View {
                                     .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(cmd.title)
-                                        .font(.system(size: 13, weight: .medium))
+                                        .font(DiskMapType.bodyMedium)
                                         .foregroundStyle(DiskMapTheme.ink)
                                     Text(cmd.subtitle)
-                                        .font(.system(size: 11))
+                                        .font(DiskMapType.caption)
                                         .foregroundStyle(DiskMapTheme.mutedLabel)
                                 }
                                 Spacer()
@@ -169,7 +169,7 @@ struct CommandPalette: View {
                 .padding(8)
             }
             Text("Destructive actions never run from here — they only open review flows.")
-                .font(.system(size: 10))
+                .font(DiskMapType.micro)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .padding(10)
                 .accessibilityLabel("Safety note: destructive actions never run from the command palette")

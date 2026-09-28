@@ -151,7 +151,7 @@ struct BiggestFilesView: View {
                     .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Text("Total \(ByteFormat.string(totalBytes))")
-                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .font(DiskMapType.bodyStrong.monospacedDigit())
                     .foregroundStyle(DiskMapTheme.ink)
             }
         }
@@ -170,7 +170,7 @@ struct BiggestFilesView: View {
             if let pathPrefix = model.folderFilterPath {
                 HStack(spacing: 8) {
                     Text("In " + CanonicalPath.displayPath(absolutePath: pathPrefix))
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(DiskMapType.captionStrong)
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -178,7 +178,7 @@ struct BiggestFilesView: View {
                         model.folderFilterPath = nil
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DiskMapType.captionStrong)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
                 .padding(.horizontal, 11)
@@ -214,10 +214,10 @@ struct BiggestFilesView: View {
     private func filterChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 6)
-                .foregroundStyle(selected ? Color.white : DiskMapTheme.ink)
+                .foregroundStyle(selected ? DiskMapTheme.onInk : DiskMapTheme.ink)
                 .background(Capsule().fill(selected ? DiskMapTheme.ink : DiskMapTheme.navSelected))
         }
         .buttonStyle(.plain)
@@ -283,11 +283,11 @@ struct BiggestFilesView: View {
                 FileIdentityIcon(url: URL(fileURLWithPath: abs), kind: kind, size: 34)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(DiskMapType.bodyStrong)
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
                     Text(parent)
-                        .font(.system(size: 11))
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -295,11 +295,11 @@ struct BiggestFilesView: View {
                 .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
                 kindPill(kind)
                 Text(modified)
-                    .font(.system(size: 11))
+                    .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .frame(width: 88, alignment: .trailing)
                 Text(ByteFormat.string(size))
-                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .font(DiskMapType.bodyStrong.monospacedDigit())
                     .foregroundStyle(DiskMapTheme.ink)
                     .frame(width: 84, alignment: .trailing)
             }
@@ -317,7 +317,7 @@ struct BiggestFilesView: View {
 
     private func kindPill(_ kind: FileKind) -> some View {
         Text(kind.title)
-            .font(.system(size: 10, weight: .semibold))
+            .font(DiskMapType.microStrong)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .foregroundStyle(kindTint(kind))
@@ -326,17 +326,7 @@ struct BiggestFilesView: View {
     }
 
     private func kindTint(_ kind: FileKind) -> Color {
-        switch kind {
-        case .video: return Color(red: 0.55, green: 0.35, blue: 0.85)
-        case .diskImage: return Color(red: 0.25, green: 0.45, blue: 0.90)
-        case .archive: return Color(red: 0.92, green: 0.50, blue: 0.20)
-        case .application: return Color(red: 0.20, green: 0.55, blue: 0.85)
-        case .document: return Color(red: 0.85, green: 0.65, blue: 0.15)
-        case .virtualDisk: return Color(red: 0.50, green: 0.35, blue: 0.80)
-        case .deviceBackup: return Color(red: 0.20, green: 0.65, blue: 0.45)
-        case .database: return Color(red: 0.40, green: 0.50, blue: 0.60)
-        case .other: return DiskMapTheme.mutedLabel
-        }
+        DiskMapTheme.kindColor(kind)
     }
 
     private var inspector: some View {
@@ -409,7 +399,7 @@ private struct FileInspectorPanel: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(name)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(DiskMapType.callout)
                             .foregroundStyle(DiskMapTheme.ink)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
@@ -417,7 +407,7 @@ private struct FileInspectorPanel: View {
                             .font(.system(size: 26, weight: .semibold).monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(kind.title + " · " + String(format: "%.1f%% of used storage", min(100, pct * 100)))
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -433,7 +423,7 @@ private struct FileInspectorPanel: View {
                 SafetyCard(assessment: safety)
                 if kind == FileKind.virtualDisk || name.lowercased().hasSuffix(".raw") {
                     Text("Do not delete this file directly — manage storage in the owning app.")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(DiskMapType.smallMedium)
                         .foregroundStyle(DiskMapTheme.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -489,10 +479,10 @@ private struct FileInspectorPanel: View {
     private func metaBlock(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.system(size: 11))
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(value)
-                .font(.system(size: 13, weight: .medium))
+                .font(DiskMapType.bodyMedium)
                 .foregroundStyle(DiskMapTheme.ink)
                 .textSelection(.enabled)
                 .lineLimit(2)
@@ -509,17 +499,7 @@ private struct FileInspectorPanel: View {
     }
 
     private func tint(_ kind: FileKind) -> Color {
-        switch kind {
-        case .video: return Color(red: 0.55, green: 0.35, blue: 0.85)
-        case .diskImage: return Color(red: 0.25, green: 0.45, blue: 0.90)
-        case .archive: return Color(red: 0.92, green: 0.50, blue: 0.20)
-        case .application: return Color(red: 0.20, green: 0.55, blue: 0.85)
-        case .document: return Color(red: 0.85, green: 0.65, blue: 0.15)
-        case .virtualDisk: return Color(red: 0.50, green: 0.35, blue: 0.80)
-        case .deviceBackup: return Color(red: 0.20, green: 0.65, blue: 0.45)
-        case .database: return Color(red: 0.40, green: 0.50, blue: 0.60)
-        case .other: return DiskMapTheme.mutedLabel
-        }
+        DiskMapTheme.kindColor(kind)
     }
 
     private func relativeModified(_ day: Int32) -> String {

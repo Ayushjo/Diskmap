@@ -77,11 +77,11 @@ struct CleanReviewView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(safety.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(DiskMapType.callout)
                         .foregroundStyle(DiskMapTheme.ink)
                     Spacer()
                     Text(ByteFormat.string(size))
-                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                        .font(DiskMapType.bodyStrong.monospacedDigit())
                     safetyBadge(safety.level)
                 }
                 Text(safety.reason)
@@ -89,7 +89,7 @@ struct CleanReviewView: View {
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(path)
-                    .font(.system(size: 11).monospaced())
+                    .font(DiskMapType.caption.monospaced())
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .lineLimit(2)
                 HStack {
@@ -126,19 +126,19 @@ struct CleanReviewView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(file.name)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(DiskMapType.callout)
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
                     Spacer()
                     Text(ByteFormat.string(file.bytes))
-                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                        .font(DiskMapType.bodyStrong.monospacedDigit())
                     safetyBadge(safety.level)
                 }
                 Text(safety.reason)
                     .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Text(file.relativePath)
-                    .font(.system(size: 11).monospaced())
+                    .font(DiskMapType.caption.monospaced())
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .lineLimit(2)
                 Button("Add to review") {
@@ -197,7 +197,7 @@ struct CleanReviewView: View {
                 .tracking(0.6)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(value)
-                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .font(DiskMapType.bodyStrong.monospacedDigit())
                 .foregroundStyle(DiskMapTheme.ink)
         }
         .padding(.horizontal, 10)
@@ -233,7 +233,7 @@ struct CleanReviewView: View {
 
     private func safetyBadge(_ level: SafetyLevel) -> some View {
         Text(level.title)
-            .font(.system(size: 10, weight: .semibold))
+            .font(DiskMapType.microStrong)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .foregroundStyle(badgeColor(level))

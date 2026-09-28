@@ -67,20 +67,20 @@ struct FoldersView: View {
                                 .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
                         )
                     Image(systemName: tree.isDirectory[Int(row.id)] ? "folder.fill" : "doc")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(selected ? Color.white : DiskMapTheme.mutedLabel)
+                        .font(DiskMapType.bodyStrong)
+                        .foregroundStyle(selected ? DiskMapTheme.onInk : DiskMapTheme.mutedLabel)
                 }
                 .frame(width: 32, height: 32)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(tree.name(of: row.id))
-                            .font(.system(size: 13, weight: .medium))
+                            .font(DiskMapType.bodyMedium)
                             .foregroundStyle(DiskMapTheme.ink)
                             .lineLimit(1)
                         Spacer(minLength: 8)
                         Text(diskByteString(row.size))
-                            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                            .font(DiskMapType.smallStrong.monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
                     }
                     ProportionBar(fraction: frac, tint: DiskMapTheme.ink.opacity(0.28))

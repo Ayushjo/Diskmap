@@ -115,8 +115,8 @@ struct VisualizeView: View {
                 if let tree = model.tree, let root = model.rootURL, totals.count == tree.count {
                     HStack(spacing: 8) {
                         Image(systemName: "folder.fill").foregroundStyle(DiskMapTheme.info)
-                        Text(tree.name(of: currentID)).font(.system(size: 14, weight: .semibold)).lineLimit(1)
-                        Text(ByteFormat.string(folderBytes)).font(.system(size: 14, weight: .semibold).monospacedDigit())
+                        Text(tree.name(of: currentID)).font(DiskMapType.callout).lineLimit(1)
+                        Text(ByteFormat.string(folderBytes)).font(DiskMapType.callout.monospacedDigit())
                         Text("· \(formatCount(fileCount + folderCount)) items")
                             .font(DiskMapType.caption).foregroundStyle(DiskMapTheme.mutedLabel)
                         Spacer()
@@ -159,22 +159,22 @@ struct VisualizeView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Visualize Storage")
-                .font(.system(size: 22, weight: .semibold))
+                .font(DiskMapType.title)
                 .foregroundStyle(DiskMapTheme.ink)
             Text("Explore where your Mac’s storage is going. Click any item to drill down.")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             HStack(spacing: 6) {
                 Circle()
                     .fill(model.isScanning ? DiskMapTheme.review : DiskMapTheme.safe)
                     .frame(width: 7, height: 7)
                 if model.isScanning {
-                    Text("Scanning… \(model.scannedCount.formatted(.number.locale(Locale(identifier: "en_US")))) items")
-                        .font(.system(size: 11, weight: .medium))
+                    Text("Scanning… \(countLabel(model.scannedCount, "item"))")
+                        .font(DiskMapType.captionMedium)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 } else {
                     Text("Scan completed · \(formatCount(model.analysis.fileCount)) files · \(formatCount(model.analysis.folderCount)) folders")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(DiskMapType.captionMedium)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
             }
@@ -197,7 +197,7 @@ struct VisualizeView: View {
     private func navBtn(_ system: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: system)
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .frame(width: 28, height: 28)
                 .foregroundStyle(enabled ? DiskMapTheme.ink : DiskMapTheme.mutedLabel.opacity(0.4))
                 .background(
@@ -254,9 +254,9 @@ struct VisualizeView: View {
                 ForEach(ExploreViewMode.visualizeModes) { mode in
                     Button { model.exploreMode = mode } label: {
                         Label(mode.rawValue, systemImage: mode.symbol)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(DiskMapType.smallMedium)
                             .padding(.horizontal, 10).frame(height: 32)
-                            .foregroundStyle(model.exploreMode == mode ? Color.white : DiskMapTheme.ink)
+                            .foregroundStyle(model.exploreMode == mode ? DiskMapTheme.onInk : DiskMapTheme.ink)
                             .background(model.exploreMode == mode ? DiskMapTheme.ink : Color.clear,
                                         in: RoundedRectangle(cornerRadius: 8))
                     }.buttonStyle(.plain).help(mode.blurb)
@@ -274,17 +274,17 @@ struct VisualizeView: View {
             HStack(spacing: 12) {
                 Image(systemName: "folder.fill")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.32, green: 0.56, blue: 0.98))
+                    .foregroundStyle(DiskMapTheme.folderTint)
                     .frame(width: 40, height: 40)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(red: 0.32, green: 0.56, blue: 0.98).opacity(0.12))
+                            .fill(DiskMapTheme.folderTint.opacity(0.12))
                     )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(folderName)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(DiskMapType.headline)
                     Text("\(ByteFormat.string(folderBytes)) · \(formatCount(fileCount + folderCount)) items (\(formatCount(fileCount)) files, \(formatCount(folderCount)) folders)")
-                        .font(.system(size: 11))
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
                 Spacer()
@@ -299,7 +299,7 @@ struct VisualizeView: View {
                         HStack(spacing: 4) {
                             Circle().fill(DiskMapTheme.hex(row.colorHex)).frame(width: 6, height: 6)
                             Text("\(row.label) \(ByteFormat.string(row.bytes))")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(DiskMapType.microMedium)
                                 .lineLimit(1)
                         }
                     }
@@ -346,13 +346,13 @@ struct VisualizeView: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Largest items in this folder")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                 Spacer()
                 Button("View in File Browser →") {
                     model.destination = .fileBrowser
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.info)
             }
             .padding(.horizontal, 16)
@@ -366,7 +366,7 @@ struct VisualizeView: View {
                     Text("%").frame(width: 48, alignment: .trailing)
                     Text("Modified").frame(width: 90, alignment: .trailing)
                 }
-                .font(.system(size: 10, weight: .semibold))
+                .font(DiskMapType.microStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)
@@ -378,31 +378,31 @@ struct VisualizeView: View {
                     let pct = Double(row.size) / Double(parent) * 100
                     HStack(spacing: 8) {
                         Text("\(idx + 1)")
-                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .font(DiskMapType.captionMedium.monospacedDigit())
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .frame(width: 22, alignment: .leading)
                         HStack(spacing: 6) {
                             Image(systemName: isDir ? "folder.fill" : "doc")
-                                .font(.system(size: 11))
-                                .foregroundStyle(isDir ? Color(red: 0.32, green: 0.56, blue: 0.98) : DiskMapTheme.mutedLabel)
+                                .font(DiskMapType.caption)
+                                .foregroundStyle(isDir ? DiskMapTheme.folderTint : DiskMapTheme.mutedLabel)
                             Text(name)
-                                .font(.system(size: 12, weight: .medium))
+                                .font(DiskMapType.smallMedium)
                                 .lineLimit(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         Text(isDir ? "Folder" : FileKind.classify(fileName: name, path: tree.path(of: row.id, root: root).path).title)
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .frame(width: 80, alignment: .leading)
                         Text(ByteFormat.string(row.size))
-                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                            .font(DiskMapType.captionStrong.monospacedDigit())
                             .frame(width: 72, alignment: .trailing)
                         Text(String(format: "%.1f%%", pct))
-                            .font(.system(size: 11).monospacedDigit())
+                            .font(DiskMapType.caption.monospacedDigit())
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .frame(width: 48, alignment: .trailing)
                         Text(relativeModified(tree.modifiedDay[Int(row.id)]))
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .frame(width: 90, alignment: .trailing)
                     }
@@ -467,7 +467,7 @@ struct VisualizeView: View {
     private var emptyScan: some View {
         VStack(spacing: 14) {
             Text("Scan your Mac to visualize storage")
-                .font(.system(size: 16, weight: .semibold))
+                .font(DiskMapType.headline)
             Text("Treemap and the other views use the same scan as Overview and Find.")
                 .font(DiskMapType.body)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
@@ -487,9 +487,9 @@ struct VisualizeView: View {
         VStack(spacing: 12) {
             ProgressView()
             Text("Scanning your Mac…")
-                .font(.system(size: 14, weight: .semibold))
+                .font(DiskMapType.callout)
             Text("\(model.scannedCount.formatted(.number.locale(Locale(identifier: "en_US")))) items discovered")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -650,15 +650,15 @@ private struct VisualizeFolderInspector: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "folder.fill")
                         .font(.system(size: 20))
-                        .foregroundStyle(Color(red: 0.32, green: 0.56, blue: 0.98))
+                        .foregroundStyle(DiskMapTheme.folderTint)
                         .frame(width: 48, height: 48)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Color(red: 0.32, green: 0.56, blue: 0.98).opacity(0.12)))
+                        .background(RoundedRectangle(cornerRadius: 12).fill(DiskMapTheme.folderTint.opacity(0.12)))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(name).font(.system(size: 14, weight: .semibold))
+                        Text(name).font(DiskMapType.callout)
                         Text(ByteFormat.string(bytes))
-                            .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                            .font(DiskMapType.title.monospacedDigit())
                         Text(String(format: "%.1f%% of used storage", min(100, Double(bytes) / Double(usedDenominator) * 100)))
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
@@ -670,17 +670,17 @@ private struct VisualizeFolderInspector: View {
                 )
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("What's inside?").font(.system(size: 12, weight: .semibold))
+                    Text("What's inside?").font(DiskMapType.smallStrong)
                     if compositionLoading && composition.isEmpty {
                         ProgressView().controlSize(.small)
                     } else {
                         ForEach(Array(composition.prefix(5)), id: \.categoryID) { row in
                             HStack {
                                 Circle().fill(DiskMapTheme.hex(row.colorHex)).frame(width: 7, height: 7)
-                                Text(row.label).font(.system(size: 12))
+                                Text(row.label).font(DiskMapType.small)
                                 Spacer()
                                 Text(ByteFormat.string(row.bytes))
-                                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                    .font(DiskMapType.captionMedium.monospacedDigit())
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                             ProportionBar(
@@ -694,18 +694,18 @@ private struct VisualizeFolderInspector: View {
 
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "lightbulb.fill")
-                        .foregroundStyle(Color(red: 0.85, green: 0.55, blue: 0.15))
+                        .foregroundStyle(DiskMapTheme.review)
                     Text(why)
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(red: 1, green: 0.96, blue: 0.90)))
+                .background(RoundedRectangle(cornerRadius: 12).fill(DiskMapTheme.reviewSurface))
 
                 if safety.level == .protected {
                     Text("Protected / system location. DiskMap won’t offer deletion here.")
-                        .font(.system(size: 11))
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
 
@@ -741,8 +741,8 @@ private struct VisualizeFolderInspector: View {
 
     private func meta(_ l: String, _ v: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(l).font(.system(size: 10, weight: .semibold)).foregroundStyle(DiskMapTheme.mutedLabel)
-            Text(v).font(.system(size: 12)).textSelection(.enabled)
+            Text(l).font(DiskMapType.microStrong).foregroundStyle(DiskMapTheme.mutedLabel)
+            Text(v).font(DiskMapType.small).textSelection(.enabled)
         }
     }
 
@@ -787,24 +787,24 @@ private struct VisualizeFileInspector: View {
                         .frame(width: 48, height: 48)
                         .background(RoundedRectangle(cornerRadius: 12).fill(DiskMapTheme.ink.opacity(0.08)))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(name).font(.system(size: 14, weight: .semibold)).textSelection(.enabled)
+                        Text(name).font(DiskMapType.callout).textSelection(.enabled)
                         Text(ByteFormat.string(size))
-                            .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                            .font(DiskMapType.title.monospacedDigit())
                         Text("\(kind.title) · \(String(format: "%.1f%%", min(100, Double(size) / Double(usedDenominator) * 100))) of used")
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
                 meta("Location", CanonicalPath.parentDisplay(of: abs))
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Why is it large?").font(.system(size: 12, weight: .semibold))
+                    Text("Why is it large?").font(DiskMapType.smallStrong)
                     Text(FileKind.whyLarge(kind: kind, name: name))
-                        .font(.system(size: 12))
+                        .font(DiskMapType.small)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(red: 0.93, green: 0.95, blue: 0.99)))
+                .background(RoundedRectangle(cornerRadius: 12).fill(DiskMapTheme.infoSurface))
 
                 VStack(spacing: 8) {
                     if safety.level != .protected {
@@ -839,8 +839,8 @@ private struct VisualizeFileInspector: View {
 
     private func meta(_ l: String, _ v: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(l).font(.system(size: 10, weight: .semibold)).foregroundStyle(DiskMapTheme.mutedLabel)
-            Text(v).font(.system(size: 12))
+            Text(l).font(DiskMapType.microStrong).foregroundStyle(DiskMapTheme.mutedLabel)
+            Text(v).font(DiskMapType.small)
         }
     }
 

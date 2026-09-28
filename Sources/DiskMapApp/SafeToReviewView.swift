@@ -83,13 +83,13 @@ struct SafeToReviewView: View {
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Potentially reviewable")
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(ByteFormat.string(summary.totalBytes))
                 .font(.system(size: 28, weight: .semibold).monospacedDigit())
                 .foregroundStyle(DiskMapTheme.ink)
             Text("\(summary.targetCount.formatted()) items · \(summary.cacheAppCount.formatted()) cache apps")
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
 
             Color.clear
@@ -136,7 +136,7 @@ struct SafeToReviewView: View {
         HStack(spacing: 5) {
             Circle().fill(color).frame(width: 7, height: 7)
             Text("\(title) · \(ByteFormat.string(bytes))")
-                .font(.system(size: 10, weight: .medium))
+                .font(DiskMapType.microMedium)
                 .foregroundStyle(DiskMapTheme.ink)
         }
     }
@@ -172,17 +172,17 @@ struct SafeToReviewView: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(DiskMapType.bodyStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text(ByteFormat.string(bytes))
                     .font(.system(size: 18, weight: .semibold).monospacedDigit())
                     .foregroundStyle(tint)
                 Text(subtitle)
-                    .font(.system(size: 10))
+                    .font(DiskMapType.micro)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .lineLimit(2)
                 Text("Review →")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DiskMapType.captionStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                     .padding(.top, 4)
             }
@@ -203,7 +203,7 @@ struct SafeToReviewView: View {
     private var listControls: some View {
         HStack {
             Text("Recommended cleanup")
-                .font(.system(size: 13, weight: .semibold))
+                .font(DiskMapType.bodyStrong)
                 .foregroundStyle(DiskMapTheme.ink)
             Spacer()
             HStack(spacing: 8) {
@@ -211,7 +211,7 @@ struct SafeToReviewView: View {
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 TextField("Search…", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .frame(width: 160)
             }
             .padding(.horizontal, 10)
@@ -268,17 +268,17 @@ struct SafeToReviewView: View {
                         .background(RoundedRectangle(cornerRadius: 7).fill(DiskMapTheme.navSelected))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(t.displayName)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(DiskMapType.bodyStrong)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text("\(t.detail) · \(t.category.title)")
-                            .font(.system(size: 11))
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     safetyPill(t.safety.level)
                     Text(ByteFormat.string(t.bytes))
-                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                        .font(DiskMapType.bodyStrong.monospacedDigit())
                         .foregroundStyle(DiskMapTheme.ink)
                         .frame(width: 84, alignment: .trailing)
                 }
@@ -297,7 +297,7 @@ struct SafeToReviewView: View {
 
     private func safetyPill(_ level: SafetyLevel) -> some View {
         Text(level == .safe ? "Generally safe" : level.title)
-            .font(.system(size: 10, weight: .semibold))
+            .font(DiskMapType.microStrong)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .foregroundStyle(color(level))
@@ -333,12 +333,12 @@ struct SafeToReviewView: View {
     private var selectionBar: some View {
         HStack {
             if checked.isEmpty {
-                Text("\(visible.count.formatted()) items")
-                    .font(.system(size: 12))
+                Text(countLabel(visible.count, "item"))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
                 Text("\(checked.count.formatted()) selected · \(ByteFormat.string(selectedBytes))")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.ink)
             }
             Spacer()
@@ -347,12 +347,12 @@ struct SafeToReviewView: View {
                     checked = Set(visible.filter(\.isGenerallySafe).map(\.id))
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.ink)
             } else {
                 Button("Clear") { checked.removeAll() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DiskMapType.smallStrong)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Button("Review selected →") {
                     Task { await stageChecked() }

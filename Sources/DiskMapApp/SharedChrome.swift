@@ -6,20 +6,6 @@ import SwiftUI
 
 // MARK: - Spacing scale (4…32)
 
-enum DiskMapSpace {
-    static let xxs: CGFloat = 4
-    static let xs: CGFloat = 8
-    static let sm: CGFloat = 12
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-    static let xl: CGFloat = 24
-    static let xxl: CGFloat = 32
-
-    /// Default page padding.
-    static let page: CGFloat = 20
-    /// Compact list row height target.
-    static let rowMin: CGFloat = 44
-}
 
 // MARK: - Shared compact controls
 
@@ -89,7 +75,7 @@ struct DiskMapMenu<Option: Hashable>: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
-            .font(.system(size: 12, weight: .medium))
+            .font(DiskMapType.smallMedium)
             .foregroundStyle(DiskMapTheme.ink)
             .padding(.horizontal, 10)
             .frame(width: width, height: DiskMapMetric.controlHeight)
@@ -156,7 +142,7 @@ struct ClassificationBadge: View {
 
     var body: some View {
         Text(kind.title)
-            .font(.system(size: 10, weight: .semibold))
+            .font(DiskMapType.microStrong)
             .foregroundStyle(kind.tint)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
@@ -183,7 +169,7 @@ struct DiskMapEmptyState: View {
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .accessibilityHidden(true)
             Text(title)
-                .font(.system(size: 14, weight: .semibold))
+                .font(DiskMapType.callout)
                 .foregroundStyle(DiskMapTheme.ink)
             Text(message)
                 .font(DiskMapType.body)
@@ -228,7 +214,7 @@ struct DiskMapLoadingState: View {
                     .controlSize(.regular)
             }
             Text(title)
-                .font(.system(size: 14, weight: .semibold))
+                .font(DiskMapType.callout)
                 .foregroundStyle(DiskMapTheme.ink)
             if let detail {
                 Text(detail)
@@ -239,7 +225,7 @@ struct DiskMapLoadingState: View {
             }
             if let processed, let total, total > 0 {
                 Text("\(processed.formatted()) of \(total.formatted()) size groups")
-                    .font(.system(size: 12).monospacedDigit())
+                    .font(DiskMapType.small.monospacedDigit())
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             if let onCancel {
@@ -269,7 +255,7 @@ struct SelectionToolbar: View {
     var body: some View {
         HStack(spacing: DiskMapSpace.xs) {
             Text("\(selectedCount) selected · \(ByteFormat.string(selectedBytes))")
-                .font(.system(size: 12, weight: .semibold))
+                .font(DiskMapType.smallStrong)
                 .foregroundStyle(DiskMapTheme.ink)
             Spacer()
             Button("Clear", action: onClear)
@@ -306,20 +292,20 @@ struct DiskMapNoticeBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: DiskMapSpace.sm) {
             Image(systemName: symbol)
-                .font(.system(size: 15, weight: .semibold))
+                .font(DiskMapType.section)
                 .foregroundStyle(tint)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(DiskMapType.bodyStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text(detail)
-                    .font(.system(size: 12))
+                    .font(DiskMapType.small)
                     .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(examples, id: \.self) { example in
                     Text(example)
-                        .font(.system(size: 11).monospaced())
+                        .font(DiskMapType.caption.monospaced())
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -354,10 +340,10 @@ struct WhyCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DiskMapSpace.xs) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(bodyText)
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .foregroundStyle(DiskMapTheme.ink.opacity(0.9))
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -381,17 +367,17 @@ struct SafetyCard: View {
         VStack(alignment: .leading, spacing: DiskMapSpace.xs) {
             HStack {
                 Text("Classification")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DiskMapType.captionStrong)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Spacer()
                 ClassificationBadge(kind: .from(safety: assessment.level))
             }
             Text(assessment.reason)
-                .font(.system(size: 12))
+                .font(DiskMapType.small)
                 .fixedSize(horizontal: false, vertical: true)
             if !assessment.consequences.isEmpty {
                 Text(assessment.consequences)
-                    .font(.system(size: 11))
+                    .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -467,7 +453,7 @@ struct AdaptiveInspectorSplit<Main: View, Inspector: View>: View {
                                     showsDrawer = true
                                 } label: {
                                     Label("Inspector", systemImage: "sidebar.right")
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(DiskMapType.captionStrong)
                                 }
                                 .buttonStyle(InkButtonStyle(filled: false))
                                 .help("Show Inspector")
