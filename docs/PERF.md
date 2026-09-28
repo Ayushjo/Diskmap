@@ -278,3 +278,37 @@ hits both equally, 6 pairs:
 Paired differences ranged −3.96 s to +2.74 s (median −0.10 s). No detectable
 regression; run-to-run variance on this machine is now larger than any effect
 of the trust pass.
+
+## Post-walk phases (TASK-042, 2026-09-28)
+
+`DiskMapScanBench --phases` times every step between "walk finished" and "UI
+can paint", in the order `ContentView.scan` runs them. Warm home, ~2.25M
+items, release, 5 repeats (min / median / max, seconds):
+
+| phase | min | median | max |
+|---|---|---|---|
+| walk | 7.686 | 8.363 | 10.303 |
+| rollUpBoth | 0.043 | 0.049 | 0.054 |
+| rollUpDescendantCounts | 0.015 | 0.017 | 0.019 |
+| QuickWins | 0.065 | 0.068 | 0.266 |
+| FileTypes | 0.604 | 0.614 | 0.636 |
+| AnalysisSnapshot | 0.322 | 0.329 | 0.505 |
+| ForgottenFiles | 0.109 | 0.113 | 0.116 |
+| ReviewableCatalog | 0.053 | 0.055 | 0.076 |
+| DeveloperCatalog | 0.827 | 0.930 | 0.985 |
+| **OldDownloadsCatalog** | 2.790 | **2.835** | 3.020 |
+| **MediaCatalog** | 3.733 | **3.792** | 3.858 |
+| layout | 0.000 | 0.000 | 0.000 |
+| **post-walk total** | 8.826 | **8.875** | 8.977 |
+
+**The post-walk pipeline takes longer than the walk.** Every earlier number in
+this file measured only the walk (and rollup, and layout), so the ~9 s a user
+actually waits after it — frozen on "Almost there…" — was invisible. The
+roadmap guessed "a second hiding in plain sight"; it is nine.
+
+Two catalogs are 6.6 s of it, and each backs exactly one screen. Decision for
+Milestone 9: build only what first paint needs (rollups, QuickWins, FileTypes,
+AnalysisSnapshot ≈ 1.1 s) eagerly; everything else on first visit (TASK-043).
+MediaCatalog and OldDownloadsCatalog are also slow in themselves — a user
+opening those screens would still wait seconds — so their cost gets its own
+look. Raw: `docs/perf-results/task042-phases.txt`.

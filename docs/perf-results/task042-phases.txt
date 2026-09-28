@@ -1,0 +1,19 @@
+phases run=1/5 label=task042-phases walk=7.986 rollUpBoth=0.043 rollUpDescendantCounts=0.015 QuickWins=0.065 FileTypes=0.636 AnalysisSnapshot=0.333 ForgottenFiles=0.116 ReviewableCatalog=0.076 DeveloperCatalog=0.985 OldDownloadsCatalog=2.801 MediaCatalog=3.805 layout=0.000 post_walk_total=8.874
+phases run=2/5 label=task042-phases walk=7.686 rollUpBoth=0.049 rollUpDescendantCounts=0.017 QuickWins=0.066 FileTypes=0.630 AnalysisSnapshot=0.324 ForgottenFiles=0.113 ReviewableCatalog=0.054 DeveloperCatalog=0.930 OldDownloadsCatalog=2.852 MediaCatalog=3.792 layout=0.000 post_walk_total=8.826
+phases run=3/5 label=task042-phases walk=8.363 rollUpBoth=0.048 rollUpDescendantCounts=0.017 QuickWins=0.266 FileTypes=0.604 AnalysisSnapshot=0.322 ForgottenFiles=0.115 ReviewableCatalog=0.055 DeveloperCatalog=0.827 OldDownloadsCatalog=2.835 MediaCatalog=3.858 layout=0.000 post_walk_total=8.949
+phases run=4/5 label=task042-phases walk=9.218 rollUpBoth=0.054 rollUpDescendantCounts=0.019 QuickWins=0.068 FileTypes=0.614 AnalysisSnapshot=0.329 ForgottenFiles=0.112 ReviewableCatalog=0.055 DeveloperCatalog=0.925 OldDownloadsCatalog=3.020 MediaCatalog=3.780 layout=0.000 post_walk_total=8.977
+phases run=5/5 label=task042-phases walk=10.303 rollUpBoth=0.052 rollUpDescendantCounts=0.018 QuickWins=0.072 FileTypes=0.608 AnalysisSnapshot=0.505 ForgottenFiles=0.109 ReviewableCatalog=0.053 DeveloperCatalog=0.934 OldDownloadsCatalog=2.790 MediaCatalog=3.733 layout=0.000 post_walk_total=8.875
+phase summary label=task042-phases n=5  (seconds: min / median / max)
+  walk                     7.686 / 8.363 / 10.303
+  rollUpBoth               0.043 / 0.049 / 0.054
+  rollUpDescendantCounts   0.015 / 0.017 / 0.019
+  QuickWins                0.065 / 0.068 / 0.266
+  FileTypes                0.604 / 0.614 / 0.636
+  AnalysisSnapshot         0.322 / 0.329 / 0.505
+  ForgottenFiles           0.109 / 0.113 / 0.116
+  ReviewableCatalog        0.053 / 0.055 / 0.076
+  DeveloperCatalog         0.827 / 0.930 / 0.985
+  OldDownloadsCatalog      2.790 / 2.835 / 3.020
+  MediaCatalog             3.733 / 3.792 / 3.858
+  layout                   0.000 / 0.000 / 0.000
+  post_walk_total          8.826 / 8.875 / 8.977

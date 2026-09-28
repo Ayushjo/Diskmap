@@ -705,7 +705,7 @@ identity to exist.
 
 ## Milestone 8 — Measure before optimizing
 
-- [ ] **TASK-042: `DiskMapScanBench --phases`**
+- [x] **TASK-042: `DiskMapScanBench --phases`**
   `docs/PERF.md` times the walk (~6 s), `rollUpBoth` (~30 ms) and layout
   (91 ms) but **not** the eight catalog builds between them — exactly the
   stretch between "scan finished" and "UI appears", and the one unmeasured hole
@@ -717,6 +717,13 @@ identity to exist.
   or retires the hypothesis cheaply.
   Acceptance: `--phases` run checked into `docs/perf-results/`, min/median/max
   per phase in `docs/PERF.md`.
+
+  **Done 2026-09-28** on `feat/speed`. Home, 2.25M items, 5 runs: walk median
+  **8.36 s**, post-walk pipeline median **8.88 s** — longer than the walk.
+  MediaCatalog 3.79 s and OldDownloadsCatalog 2.84 s are 6.6 s of it and each
+  backs one screen; DeveloperCatalog 0.93 s, FileTypes 0.61 s, AnalysisSnapshot
+  0.33 s, the rest < 0.12 s each. First paint needs only ≈1.1 s of it. Full
+  table in `docs/PERF.md`.
 
 ## Milestone 9 — Perceived speed
 

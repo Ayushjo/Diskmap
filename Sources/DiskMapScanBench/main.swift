@@ -17,6 +17,9 @@ struct Args {
     var duplicates = false
     /// Time `StorageSharing.profile` (what staging a folder costs) on the path.
     var profileOnly = false
+    /// Time every step between "walk finished" and "UI can paint", in the
+    /// order ContentView.scan runs them (TASK-042).
+    var phases = false
     var json = false
     var label = "scan"
 }
@@ -38,6 +41,8 @@ func parseArgs() -> Args {
             args.duplicates = true
         case "--profile":
             args.profileOnly = true
+        case "--phases":
+            args.phases = true
         case "--json":
             args.json = true
         case "--label":
@@ -115,11 +120,54 @@ if args.profileOnly {
     exit(0)
 }
 var rows: [RunRow] = []
+var phaseRuns: [[(String, Double)]] = []
+
+/// Mirrors the detached `PreparedScan` block in ContentView.scan, step for
+/// step, so the numbers describe what a user waits through after the walk.
+func timePostWalkPhases(tree: FileTree, root: URL) -> [(String, Double)] {
+    var out: [(String, Double)] = []
+    func time<T>(_ name: String, _ body: () -> T) -> T {
+        let started = ContinuousClock.now
+        let value = body()
+        out.append((name, durationSeconds(from: started)))
+        return value
+    }
+    let categories = FileTypeCatalog.loadBundled()
+    let both = time("rollUpBoth") { tree.rollUpBoth() }
+    _ = time("rollUpDescendantCounts") { tree.rollUpDescendantCounts() }
+    let quickWins = time("QuickWins") { QuickWins.find(in: tree, root: root, patterns: QuickWins.bundledPatterns()) }
+    _ = time("FileTypes") { FileTypeCatalog.totals(in: tree, sizes: both.allocated, categories: categories) }
+    _ = time("AnalysisSnapshot") {
+        AnalysisSnapshot.build(tree: tree, root: root, allocated: both.allocated, logical: both.logical,
+                               basis: .allocated, quickWins: quickWins)
+    }
+    _ = time("ForgottenFiles") { ForgottenFiles.candidates(tree: tree, root: root, totals: both.allocated, limit: 400) }
+    _ = time("ReviewableCatalog") { ReviewableCatalog.build(tree: tree, root: root, totals: both.allocated, quickWins: quickWins) }
+    _ = time("DeveloperCatalog") { DeveloperCatalog.build(tree: tree, root: root, totals: both.allocated) }
+    _ = time("OldDownloadsCatalog") { OldDownloadsCatalog.build(tree: tree, root: root, totals: both.allocated) }
+    _ = time("MediaCatalog") { MediaCatalog.build(tree: tree, root: root, totals: both.allocated) }
+    _ = time("layout") {
+        _ = ChartLayout.slices(of: 0, in: tree, totals: both.allocated)
+        let children = tree.children(of: 0, totals: both.allocated)
+        _ = SquarifiedTreemap.layout(items: children, in: CGRect(x: 0, y: 0, width: 1200, height: 800))
+        return 0
+    }
+    return out
+}
 
 for run in 1...args.repeats {
     let engine = ScanEngine()
     let result = await engine.scan(root: root)
     let foot = result.tree.storageFootprint()
+    if args.phases {
+        let phases = [("walk", result.elapsedSeconds)] + timePostWalkPhases(tree: result.tree, root: root)
+        phaseRuns.append(phases)
+        let postWalk = phases.dropFirst().map(\.1).reduce(0, +)
+        print("phases run=\(run)/\(args.repeats) label=\(args.label) "
+            + phases.map { "\($0.0)=\(String(format: "%.3f", $0.1))" }.joined(separator: " ")
+            + " post_walk_total=\(String(format: "%.3f", postWalk))")
+        fflush(stdout)
+    }
     var rollupSeconds: Double?
     var layoutSeconds: Double?
     var totals: (logical: [Int64], allocated: [Int64])?
@@ -202,6 +250,19 @@ for run in 1...args.repeats {
         print(
             "run=\(run)/\(args.repeats) label=\(args.label) items=\(row.items) nodes=\(row.nodes) scan=\(String(format: "%.3f", row.scanSeconds))s\(rollup)\(layout) walk_rss=\(row.walkPeakRSS) after_rss=\(row.afterScanRSS.map(String.init) ?? "n/a") names=\(row.uniqueNames) name_utf8=\(row.nameUTF8Bytes)"
         )
+    }
+}
+
+if args.phases, let first = phaseRuns.first {
+    print("phase summary label=\(args.label) n=\(phaseRuns.count)  (seconds: min / median / max)")
+    var names = first.map(\.0)
+    names.append("post_walk_total")
+    for (index, name) in names.enumerated() {
+        let values: [Double] = phaseRuns.map { run in
+            name == "post_walk_total" ? run.dropFirst().map(\.1).reduce(0, +) : run[index].1
+        }
+        print("  \(name.padding(toLength: 24, withPad: " ", startingAt: 0)) "
+            + "\(String(format: "%.3f", values.min() ?? 0)) / \(String(format: "%.3f", median(values))) / \(String(format: "%.3f", values.max() ?? 0))")
     }
 }
 
