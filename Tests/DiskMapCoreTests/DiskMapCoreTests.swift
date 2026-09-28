@@ -303,6 +303,45 @@ struct CloneDetectorTests {
 
         #expect(!CloneDetector.areLikelyClones(fixture.original, fixture.clone))
     }
+
+    /// A clone edited moments ago must not read as a clone. APFS allocates
+    /// the copy-on-write block at writeback, so without the reader-side
+    /// `fsync` the extent map briefly still shows the shared extent. Under
+    /// concurrent load the unfixed detector got 22 of 200 of these wrong;
+    /// the odds of 0/200 by luck at that rate are about 1 in 10^10.
+    @Test func freshlyEditedClonesAreNeverReportedAsClones() async throws {
+        let wrong = await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<200 {
+                group.addTask {
+                    let dir = NSTemporaryDirectory() + "DiskMap-cow-\(UUID().uuidString)"
+                    guard (try? FileManager.default.createDirectory(
+                        atPath: dir, withIntermediateDirectories: true)) != nil else { return false }
+                    defer { try? FileManager.default.removeItem(atPath: dir) }
+                    let original = dir + "/a.bin", clone = dir + "/b.bin"
+                    FileManager.default.createFile(atPath: original, contents: Data(repeating: 0xAB, count: 65_536))
+                    // `/bin/cp -c`, not `clonefile()` directly: the in-process
+                    // call never reproduced the stale map (0/600 unfixed), the
+                    // cp path does (22/200 unfixed). The process launch shifts
+                    // writeback timing into the window that matters.
+                    let cp = Process()
+                    cp.executableURL = URL(fileURLWithPath: "/bin/cp")
+                    cp.arguments = ["-c", original, clone]
+                    guard (try? cp.run()) != nil else { return false }
+                    cp.waitUntilExit()
+                    guard cp.terminationStatus == 0,
+                          let handle = FileHandle(forWritingAtPath: clone) else { return false }
+                    try? handle.seek(toOffset: 32_768)
+                    try? handle.write(contentsOf: Data(repeating: 0x22, count: 4_096))
+                    try? handle.close()     // no flush: that is the point
+                    return CloneDetector.areLikelyClones(original, clone)
+                }
+            }
+            var count = 0
+            for await reportedClone in group where reportedClone { count += 1 }
+            return count
+        }
+        #expect(wrong == 0, "\(wrong) of 200 edited clones were reported as byte-identical clones")
+    }
 }
 
 private struct CloneCopyFailed: Error {

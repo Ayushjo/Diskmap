@@ -27,6 +27,18 @@ import Darwin
 ///   and a different middle range. First-extent-only would skip hashing
 ///   a file that is no longer a byte copy. Extent maps are compared
 ///   instead.
+///
+/// 2026-09-28 — extent maps lag writes until writeback. APFS allocates the
+/// copy-on-write block when dirty pages are flushed, not at `write()`. Until
+/// then `F_LOG2PHYS_EXT` reports the OLD shared extent for a range whose
+/// contents have already changed, so a freshly edited clone still "matched"
+/// and `DuplicateFinder` grouped it as an identical copy without hashing.
+/// Measured under concurrent load: 18 of 320 edited 8 MB clones and 22 of
+/// 200 edited 64 KB clones were wrongly reported as clones; with an `fsync`
+/// through the reader's own read-only descriptor before mapping, 0 of 320.
+/// `fsync` writes out data the kernel was already going to write; it does
+/// not change contents or metadata. If it fails, the map is treated as
+/// unknown (nil), which falls back to content hashing.
 public enum CloneDetector {
 
     private struct Extent: Equatable {
@@ -44,6 +56,9 @@ public enum CloneDetector {
 
         var info = stat()
         guard fstat(fd, &info) == 0, info.st_size > 0 else { return nil }
+        // Force pending copy-on-write allocation to disk so the extent map
+        // describes the bytes the file actually holds (see header).
+        guard fsync(fd) == 0 else { return nil }
 
         var fileOffset: off_t = 0
         var extents: [Extent] = []
