@@ -2,19 +2,17 @@ import AppKit
 import DiskMapCore
 import SwiftUI
 
-/// First-run / unscanned / scanning / brief-ready hero for Overview (and shell needsScan).
+/// First-run / unscanned / scanning hero for Overview (and shell needsScan).
 struct FirstScanHero: View {
     @ObservedObject var model: ScanModel
     var pickFolder: () -> Void
     var onScanMac: () -> Void
-    @Binding var showReady: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
             if model.isScanning {
                 scanningBody
-            } else if showReady, model.tree != nil {
-                readyBody
             } else {
                 emptyBody
             }
@@ -81,91 +79,108 @@ struct FirstScanHero: View {
         .padding(.bottom, 72)
     }
 
+    /// Live scan view (TASK-044/046): what has been found so far, where the
+    /// walk is, and how fast — instead of an indeterminate spinner and a
+    /// count-based headline that said "Almost there…" at 400k items whatever
+    /// the real progress was.
     private var scanningBody: some View {
-        VStack(spacing: DiskMapSpace.lg) {
-            StorageMapIllustration(mode: .scanning, size: 128)
-                .accessibilityHidden(true)
-
-            VStack(spacing: DiskMapSpace.sm) {
-                Text(scanHeadline)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("DiskMap is building your storage map.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
-
-            VStack(spacing: DiskMapSpace.xs) {
-                ProgressView()
-                    .controlSize(.regular)
-                Text("\(model.scannedCount.formatted()) items scanned")
-                    .font(.system(size: 12).monospacedDigit())
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .accessibilityIdentifier("scan-progress")
-                if let root = model.rootURL {
-                    Text(CanonicalPath.displayPath(absolutePath: root.path))
-                        .font(.system(size: 11).monospaced())
+        VStack(alignment: .leading, spacing: DiskMapSpace.lg) {
+            HStack(alignment: .center, spacing: DiskMapSpace.md) {
+                StorageMapIllustration(mode: .scanning, size: 64)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(scanHeadline)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.ink)
+                    Text(scanSubhead)
+                        .font(DiskMapType.body)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .frame(maxWidth: 420)
                 }
+            }
+
+            HStack(spacing: DiskMapSpace.xl) {
+                liveStat(value: model.scannedCount.formatted(), label: "items")
+                    .accessibilityIdentifier("scan-progress")
+                liveStat(value: ByteFormat.string(model.liveProgress?.bytesFound ?? 0), label: "found")
+                liveStat(
+                    value: model.liveProgress.map { Int($0.itemsPerSecond).formatted() } ?? "—",
+                    label: "items / s"
+                )
+            }
+
+            if let folders = model.liveProgress?.topFolders, !folders.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Largest so far")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                    let largest = max(folders.first?.bytes ?? 1, 1)
+                    ForEach(folders.prefix(8), id: \.name) { folder in
+                        HStack(spacing: 10) {
+                            Text(folder.name)
+                                .font(.system(size: 12))
+                                .foregroundStyle(DiskMapTheme.ink)
+                                .lineLimit(1)
+                                .frame(width: 150, alignment: .leading)
+                            GeometryReader { geo in
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(DiskMapTheme.info.opacity(0.75))
+                                    .frame(width: max(2, geo.size.width * CGFloat(Double(folder.bytes) / Double(largest))))
+                            }
+                            .frame(height: 8)
+                            Text(ByteFormat.string(folder.bytes))
+                                .font(.system(size: 11).monospacedDigit())
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                                .frame(width: 80, alignment: .trailing)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: folders)
+            } else {
+                ProgressView().controlSize(.small)
             }
 
             Button("Cancel Scan") {
                 model.cancelScan()
             }
             .buttonStyle(InkButtonStyle(filled: false))
-            .padding(.top, DiskMapSpace.sm)
         }
-        .frame(maxWidth: 560)
+        .frame(maxWidth: 560, alignment: .leading)
         .padding(DiskMapSpace.xxl)
     }
 
-    private var readyBody: some View {
-        VStack(spacing: DiskMapSpace.lg) {
-            StorageMapIllustration(mode: .ready, size: 120)
-                .accessibilityHidden(true)
-            Text("Your storage map is ready.")
-                .font(.system(size: 20, weight: .semibold))
+    private func liveStat(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.system(size: 18, weight: .semibold).monospacedDigit())
                 .foregroundStyle(DiskMapTheme.ink)
-            Text(readySubtitle)
-                .font(DiskMapType.body)
+                .contentTransition(.numericText())
+            Text(label)
+                .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
-            Button("Explore storage") {
-                showReady = false
-                model.destination = .overview
-            }
-            .buttonStyle(PrimaryCTAStyle())
         }
-        .frame(maxWidth: 560)
-        .padding(DiskMapSpace.xxl)
+        .accessibilityElement(children: .combine)
     }
 
     private var scanHeadline: String {
-        let n = model.scannedCount
-        if n < 2_000 { return "Mapping your Mac…" }
-        if n < 50_000 { return "Scanning folders…" }
-        if n < 400_000 { return "Analyzing files…" }
-        return "Almost there…"
+        switch model.scanPhase {
+        case .summarizing: return "Summarizing…"
+        default:
+            guard let root = model.pendingRootURL ?? model.rootURL else { return "Scanning your Mac…" }
+            if root.path == "/" { return "Scanning your Mac…" }
+            if CanonicalPath.displayPath(absolutePath: root.path) == "~" { return "Scanning your home folder…" }
+            return "Scanning “\(root.lastPathComponent)”…"
+        }
     }
 
-    private var readySubtitle: String {
-        let bytes: Int64 = {
-            if !model.selectedTotals.isEmpty { return model.selectedTotals[0] }
-            return model.analysis.scannedBytes
-        }()
-        let files = model.descendantFileCounts.first ?? 0
-        if bytes > 0, files > 0 {
-            return "DiskMap found \(ByteFormat.string(bytes)) across \(files.formatted()) files."
-        }
-        if bytes > 0 {
-            return "DiskMap mapped \(ByteFormat.string(bytes)) on this Mac."
-        }
-        return "Your scan finished. Explore Overview to see where space is going."
+    private var scanSubhead: String {
+        if model.scanPhase == .summarizing { return "Sizing folders and preparing the first screen." }
+        guard let folder = model.liveProgress?.currentFolder, !folder.isEmpty else { return "Reading folder sizes." }
+        return CanonicalPath.displayPath(absolutePath: folder)
     }
+
 
     private func reassurance(symbol: String, label: String) -> some View {
         HStack(spacing: 5) {

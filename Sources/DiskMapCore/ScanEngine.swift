@@ -6,6 +6,26 @@ import Foundation
 /// enumerator built a `URL` and a resource-value object per file; on a
 /// home folder that was about 373 s. Bulk attributes plus a handful of
 /// worker threads is the macOS API for this.
+/// What a scan has found so far, a few times a second (TASK-044). Byte
+/// figures are running sums of on-disk size and are approximate until the
+/// walk ends (hard links are de-duplicated only in the final rollup).
+public struct ScanProgress: Sendable, Equatable {
+    public struct Folder: Sendable, Equatable {
+        public var name: String
+        public var bytes: Int64
+    }
+    public var itemCount: Int
+    public var bytesFound: Int64
+    public var elapsedSeconds: Double
+    public var currentFolder: String
+    /// Largest folders directly inside the scan root, largest first (≤ 12).
+    public var topFolders: [Folder]
+
+    public var itemsPerSecond: Double {
+        elapsedSeconds > 0 ? Double(itemCount) / elapsedSeconds : 0
+    }
+}
+
 public actor ScanEngine {
 
     public struct Result: Sendable {
@@ -54,7 +74,8 @@ public actor ScanEngine {
     public func scan(
         root: URL,
         crossMounts: Bool = false,
-        progress: (@Sendable (Int) -> Void)? = nil
+        progress: (@Sendable (Int) -> Void)? = nil,
+        live: (@Sendable (ScanProgress) -> Void)? = nil
     ) async -> Result {
         let started = ContinuousClock.now
         // `walk` owns the enumerator. Measuring after it returns is the
@@ -68,7 +89,9 @@ public actor ScanEngine {
         // resume when it finishes.
         let walked = await withCheckedContinuation { (continuation: CheckedContinuation<BulkScan.Result, Never>) in
             BulkScan.startScanThread(name: "DiskMap.scan.coordinator") {
-                continuation.resume(returning: BulkScan.walk(root: root, crossMounts: crossMounts, progress: progress))
+                continuation.resume(returning: BulkScan.walk(
+                    root: root, crossMounts: crossMounts, progress: progress, live: live
+                ))
             }
         }
         var tree = walked.tree

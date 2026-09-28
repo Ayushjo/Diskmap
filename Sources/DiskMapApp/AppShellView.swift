@@ -10,7 +10,6 @@ struct AppShellView: View {
     @State private var showPalette = false
     @State private var showCompactSidebar = false
     @State private var searchText = ""
-    @State private var needsScanReady = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var hasCompletedScan: Bool { model.tree != nil }
@@ -466,8 +465,7 @@ struct AppShellView: View {
                 model.destination = .overview
                 let home = FileManager.default.homeDirectoryForCurrentUser
                 Task { await model.scan(home) }
-            },
-            showReady: $needsScanReady
+            }
         )
     }
 

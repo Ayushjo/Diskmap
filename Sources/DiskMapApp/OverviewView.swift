@@ -11,20 +11,18 @@ struct OverviewView: View {
     var onSelectFile: (Int32) -> Void
     var onOpenBiggestFiles: () -> Void = {}
 
-    @State private var showScanReady = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
-            if model.tree == nil || showScanReady {
+            if model.tree == nil {
                 FirstScanHero(
                     model: model,
                     pickFolder: pickFolder,
                     onScanMac: {
                         let home = FileManager.default.homeDirectoryForCurrentUser
                         Task { await model.scan(home) }
-                    },
-                    showReady: $showScanReady
+                    }
                 )
             } else {
                 loaded
@@ -32,19 +30,6 @@ struct OverviewView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DiskMapTheme.cream)
-        .onChange(of: model.isScanning) { wasScanning, nowScanning in
-            if wasScanning, !nowScanning, model.tree != nil {
-                showScanReady = true
-                if reduceMotion {
-                    showScanReady = false
-                    return
-                }
-                Task {
-                    try? await Task.sleep(nanoseconds: 1_600_000_000)
-                    await MainActor.run { showScanReady = false }
-                }
-            }
-        }
     }
 
     private var snap: AnalysisSnapshot { model.analysis }

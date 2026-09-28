@@ -776,11 +776,21 @@ identity to exist.
   0.92 s, from ~8.9 s** (TASK-042 baseline). 150 tests green, including five
   new `LazyCatalogTests` in the app test target.
 
-- [ ] **TASK-044: Streaming first paint**
+- [x] **TASK-044: Streaming first paint**
   Publish a tree snapshot every ~400 ms during the walk with partial rollups so
   the treemap and Overview grow while scanning. Largest perceived-speed win
   available; needs no engine speedup. Must respect the existing
   `scanGeneration` cancellation guard.
+
+  **Done 2026-09-28**, adapted: publishing whole tree snapshots every 400 ms
+  would copy ~100 MB of node arrays per frame and slow the walk. Instead the
+  publisher keeps running on-disk totals per top-level folder (each job carries
+  its top-level ancestor, so attribution is O(1)) and emits a `ScanProgress`
+  every 250 ms plus one final complete report: items, bytes found, items/s,
+  current folder, largest top-level folders. The scanning screen shows them
+  filling in live. Real home scan at 4 s: 990k items, 217.8 GB found, ~236k
+  items/s, Downloads/Library/… bars growing. Final report is checked against
+  the real rollup in `LiveScanProgressTests`.
 
 - [ ] **TASK-045: Remove confirmed waste in BulkScan**
   None of these move the median much — the walk is I/O-bound and `sample`
@@ -801,7 +811,7 @@ identity to exist.
   Acceptance: bench min/median/max before and after in `docs/PERF.md`; no
   behavioural change; `swift test` green.
 
-- [ ] **TASK-046: Progress that means something, and a p95 goal**
+- [x] **TASK-046: Progress that means something, and a p95 goal**
   Identical runs span 5.88 → 8.95 s (5.87 → 10.77 s in the utf8blob session).
   A user who sees 6 s then 11 s concludes the app is unreliable — that spread
   hurts more than the median. Make p95 a **tracked goal** in `docs/PERF.md`,
@@ -816,6 +826,13 @@ identity to exist.
   Do **not** revisit worker counts (12 < 8), `openat` fd handoff (tried,
   regressed, reverted) or publisher sharding (rejected on `sample` evidence)
   without a profile in hand.
+
+  **UI part done 2026-09-28** with TASK-044: the headline follows the real
+  phase (walking → "Summarizing…") instead of item-count thresholds that said
+  "Almost there…" at 400k items; live stats replace the indeterminate spinner;
+  `scan-progress` identifier kept. The 1.6 s "Your storage map is ready"
+  interstitial is removed — with first paint at ~0.9 s it was pure delay.
+  p95 tracking: see TASK-045's bench notes.
 
 ## Milestone 10 — Dark mode
 

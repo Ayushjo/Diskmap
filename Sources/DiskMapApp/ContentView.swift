@@ -43,6 +43,11 @@ final class ScanModel: ObservableObject {
     @Published var logicalTotals: [Int64] = []
     @Published var isScanning = false
     @Published var scannedCount = 0
+    /// What the walk has found so far, a few times a second (TASK-044).
+    @Published var liveProgress: ScanProgress?
+    enum ScanPhase: Equatable { case idle, walking, summarizing }
+    /// Walking the disk, or turning the walk into the first screen (TASK-046).
+    @Published var scanPhase: ScanPhase = .idle
     @Published var rootURL: URL?
     @Published var pendingRootURL: URL?
     @Published var duplicateGroups: [DuplicateGroup] = []
@@ -120,6 +125,8 @@ final class ScanModel: ObservableObject {
     func cancelScan() {
         scanGeneration += 1
         isScanning = false
+        scanPhase = .idle
+        liveProgress = nil
         pendingRootURL = nil
         if tree == nil {
             rootURL = nil
@@ -136,6 +143,8 @@ final class ScanModel: ObservableObject {
         if !hasCommittedScan { rootURL = url }
         isScanning = true
         scannedCount = 0
+        liveProgress = nil
+        scanPhase = .walking
         cancelDuplicateSearch()
         if !hasCommittedScan {
             currentNode = 0
@@ -160,15 +169,19 @@ final class ScanModel: ObservableObject {
         log("rss_before_scan=\(before?.residentBytes ?? 0)")
 
         let engine = ScanEngine()
-        let result = await engine.scan(root: url) { count in
+        let live: @Sendable (ScanProgress) -> Void = { [weak self] progress in
+            Task { @MainActor in self?.deliverLive(progress, generation: generation) }
+        }
+        let counted: @Sendable (Int) -> Void = { [weak self] count in
             ScanModel.appendLog("scannedCount=\(count)")
             print("scannedCount=\(count)")
             fflush(stdout)
             Task { @MainActor in
-                guard ScanModel.shared.scanGeneration == generation else { return }
-                ScanModel.shared.scannedCount = count
+                guard let self, self.scanGeneration == generation else { return }
+                self.scannedCount = count
             }
         }
+        let result = await engine.scan(root: url, progress: counted, live: live)
         guard generation == scanGeneration else {
             log("scan discarded (cancelled) path=\(url.path)")
             return
@@ -192,6 +205,7 @@ final class ScanModel: ObservableObject {
         fflush(stdout)
         log(summary)
 
+        scanPhase = .summarizing
         let scannedTree = result.tree
         let categories = fileTypeCategories
         let basis = sizeBasis
@@ -241,10 +255,18 @@ final class ScanModel: ObservableObject {
         deniedDirectoryIDs = result.deniedDirectoryIDs
         rememberRecent(url)
         pendingRootURL = nil
+        scanPhase = .idle
+        liveProgress = nil
         isScanning = false
         let postWalk = postWalkStarted.duration(to: .now).components
         let postWalkSeconds = Double(postWalk.seconds) + Double(postWalk.attoseconds) / 1e18
         log("scan finished items=\(result.itemCount) walk_seconds=\(String(format: "%.3f", result.elapsedSeconds)) post_walk_seconds=\(String(format: "%.3f", postWalkSeconds))")
+    }
+
+    /// Drops reports from a scan that was cancelled or superseded.
+    private func deliverLive(_ progress: ScanProgress, generation: Int) {
+        guard scanGeneration == generation, isScanning else { return }
+        liveProgress = progress
     }
 
     /// Display paths for a few unreadable directories, for the notice.

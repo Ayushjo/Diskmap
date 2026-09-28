@@ -222,3 +222,38 @@ struct SnapshotIdentityTests {
         #expect(decoded.tree.logicalSize[1] == 42)
     }
 }
+
+/// TASK-044 — the scan streams what it has found, so the scanning screen can
+/// show storage filling in instead of a bare counter.
+@Suite("Live scan progress")
+struct LiveScanProgressTests {
+    final class Reports: @unchecked Sendable {
+        private let lock = NSLock()
+        private var items: [ScanProgress] = []
+        func add(_ p: ScanProgress) { lock.lock(); items.append(p); lock.unlock() }
+        var all: [ScanProgress] { lock.lock(); defer { lock.unlock() }; return items }
+    }
+
+    @Test func finalReportAttributesBytesToTopLevelFolders() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("diskmap-live-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let big = root.appendingPathComponent("Movies/deep/er")
+        let small = root.appendingPathComponent("Notes")
+        try FileManager.default.createDirectory(at: big, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: small, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 3_000_000).write(to: big.appendingPathComponent("film.bin"))
+        try Data(repeating: 2, count: 200_000).write(to: small.appendingPathComponent("a.txt"))
+
+        let reports = Reports()
+        let result = await ScanEngine().scan(root: root, live: { reports.add($0) })
+        let final = try #require(reports.all.last)
+
+        #expect(final.itemCount == result.itemCount)
+        #expect(final.topFolders.map(\.name) == ["Movies", "Notes"], "largest first, nested bytes rolled to the top")
+        let totals = result.tree.rollUpBoth().allocated
+        let movies = try #require(result.tree.node(named: "Movies", parentNamed: root.lastPathComponent))
+        #expect(final.topFolders.first?.bytes == totals[Int(movies)])
+        #expect(final.bytesFound == totals[0])
+    }
+}

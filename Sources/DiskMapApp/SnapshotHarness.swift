@@ -7,7 +7,8 @@ import SwiftUI
 /// `--snapshot-dir`.
 ///
 ///     DiskMapApp --scan ~/some/folder --snapshot-dir /tmp/shots \
-///         [--snapshot-destinations overview,cleanSafe] [--appearance dark]
+///         [--snapshot-destinations overview,cleanSafe] [--appearance dark] \
+///         [--snapshot-at 3]      # also capture a mid-scan frame
 ///
 /// After the scan finishes it visits each destination, waits for it to
 /// settle, writes `<dir>/<destination>-<appearance>.png`, then quits.
@@ -28,6 +29,14 @@ enum SnapshotHarness {
     private static func run(into dir: URL) async {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let model = ScanModel.shared
+        let appearanceName = value(after: "--appearance") ?? "light"
+        // Optional mid-scan frame: `--snapshot-at 3` captures 3 s after launch.
+        if let at = value(after: "--snapshot-at").flatMap(Double.init),
+           let window = NSApp.windows.first(where: { $0.contentView != nil }) {
+            window.setContentSize(NSSize(width: 1280, height: 820))
+            try? await Task.sleep(nanoseconds: UInt64(at * 1_000_000_000))
+            write(window: window, to: dir.appendingPathComponent("scanning-\(appearanceName).png"))
+        }
         // Wait for the launch scan (--scan) to finish, up to two minutes.
         for _ in 0..<1_200 {
             if model.tree != nil && !model.isScanning { break }
@@ -40,7 +49,6 @@ enum SnapshotHarness {
         }
         window.setContentSize(NSSize(width: 1280, height: 820))
 
-        let appearanceName = value(after: "--appearance") ?? "light"
         for destination in destinations() {
             model.destination = destination
             // Let SwiftUI lay out and run the destination's `.task` work.

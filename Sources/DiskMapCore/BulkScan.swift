@@ -41,7 +41,8 @@ enum BulkScan {
     static func walk(
         root: URL,
         crossMounts: Bool = false,
-        progress: (@Sendable (Int) -> Void)?
+        progress: (@Sendable (Int) -> Void)?,
+        live: (@Sendable (ScanProgress) -> Void)? = nil
     ) -> Result {
         var tree = FileTree()
         // Home scans land near 1.7–2M nodes; reserve once so appends stay O(1).
@@ -55,6 +56,8 @@ enum BulkScan {
             modifiedDaysSinceEpoch: 0
         )
         let state = State(tree: tree, progress: progress)
+        state.live = live
+        state.rootNodeID = rootID
         state.scanRootPath = root.path
         state.crossMounts = crossMounts
         // Device id of the scan root. Children on a different device are
@@ -69,7 +72,7 @@ enum BulkScan {
         // under /System/Volumes. Evaluate that once here instead of building
         // and discarding a path String for every directory in publish().
         state.mayHitFirmlinkTwins = CanonicalPath.mayContainFirmlinkTwins(scanRootPath: root.path)
-        state.enqueue(pathUTF8: nulTerminatedUTF8(root.path), nodeID: rootID)
+        state.enqueue(pathUTF8: nulTerminatedUTF8(root.path), nodeID: rootID, topLevel: -1)
         state.startPublisher()
 
         let workers = configuredWorkers()
@@ -170,7 +173,10 @@ enum BulkScan {
             }
             parse(buffer: buffer, count: Int(count), names: &names, entries: &entries)
         }
-        state.submit(Batch(parentPathUTF8: job.pathUTF8, parent: job.nodeID, names: names, entries: entries))
+        state.submit(Batch(
+            parentPathUTF8: job.pathUTF8, parent: job.nodeID, topLevel: job.topLevel,
+            names: names, entries: entries
+        ))
     }
 
     /// Offsets MEASURED by the `AttrProbe` target, not hand-derived — raw
@@ -276,7 +282,7 @@ enum BulkScan {
         return out
     }
 
-    private static func nulTerminatedUTF8(_ path: String) -> [UInt8] {
+    fileprivate static func nulTerminatedUTF8(_ path: String) -> [UInt8] {
         var bytes = Array(path.utf8)
         bytes.append(0)
         return bytes
@@ -284,6 +290,13 @@ enum BulkScan {
 
     private final class State: @unchecked Sendable {
         var scanRootPath: String = "/"
+        var live: (@Sendable (ScanProgress) -> Void)?
+        var rootNodeID: Int32 = 0
+        // Publisher-thread-only live counters (TASK-044).
+        private var liveBytesFound: Int64 = 0
+        private var liveTopLevelBytes: [Int32: Int64] = [:]
+        private var lastLiveReport: ContinuousClock.Instant?
+        private let liveStarted = ContinuousClock.now
         var scanRootDevID: Int32 = 0
         var hasRootDevID = false
         var crossMounts = false
@@ -325,9 +338,9 @@ enum BulkScan {
             }
         }
 
-        func enqueue(pathUTF8: [UInt8], nodeID: Int32) {
+        func enqueue(pathUTF8: [UInt8], nodeID: Int32, topLevel: Int32) {
             condition.lock()
-            jobs.append(Job(pathUTF8: pathUTF8, nodeID: nodeID))
+            jobs.append(Job(pathUTF8: pathUTF8, nodeID: nodeID, topLevel: topLevel))
             condition.broadcast()
             condition.unlock()
         }
@@ -433,6 +446,13 @@ enum BulkScan {
                         flags: flags,
                         fileID: entry.fileID
                     )
+                    // Live view (TASK-044): charge files to their top-level
+                    // folder. The root's children start their own bucket.
+                    let top = batch.parent == self.rootNodeID ? id : batch.topLevel
+                    if !entry.isDirectory {
+                        liveBytesFound += entry.allocated
+                        if top >= 0 { liveTopLevelBytes[top, default: 0] += entry.allocated }
+                    }
                     if entry.descend {
                         // Record the directory node for navigation, but do not
                         // walk it when it lives on another volume — its bytes
@@ -458,7 +478,7 @@ enum BulkScan {
                                 continue
                             }
                         }
-                        children.append(Job(pathUTF8: childPathUTF8, nodeID: id))
+                        children.append(Job(pathUTF8: childPathUTF8, nodeID: id, topLevel: top))
                     }
                 }
             }
@@ -488,6 +508,35 @@ enum BulkScan {
                 }
                 progress?(report)
             }
+            reportLiveIfDue(lastFolderUTF8: batch.parentPathUTF8)
+        }
+
+        /// A few times a second, hand the UI what the walk has found so far.
+        /// Everything read here is owned by the publisher thread, so no lock:
+        /// only `publish` mutates the tree and the live counters.
+        private func reportLiveIfDue(lastFolderUTF8: [UInt8], force: Bool = false) {
+            guard let live else { return }
+            let now = ContinuousClock.now
+            guard force || (lastLiveReport.map({ $0.duration(to: now) >= .milliseconds(250) }) ?? true) else { return }
+            lastLiveReport = now
+            let folders = liveTopLevelBytes
+                .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+                .prefix(12)
+                .map { ScanProgress.Folder(name: tree.name(of: $0.key), bytes: $0.value) }
+            let elapsed = liveStarted.duration(to: now).components
+            live(ScanProgress(
+                itemCount: itemCountSnapshot(),
+                bytesFound: liveBytesFound,
+                elapsedSeconds: Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18,
+                currentFolder: BulkScan.pathString(fromNULTerminated: lastFolderUTF8),
+                topFolders: Array(folders)
+            ))
+        }
+
+        private func itemCountSnapshot() -> Int {
+            condition.lock()
+            defer { condition.unlock() }
+            return itemCount
         }
 
         /// The walk is done only when no worker is scanning, no batch is
@@ -511,6 +560,11 @@ enum BulkScan {
             while !publisherExited {
                 condition.wait()
             }
+            condition.unlock()
+            // The publisher has exited, so the live counters and tree are
+            // quiescent: send one final, complete report.
+            reportLiveIfDue(lastFolderUTF8: BulkScan.nulTerminatedUTF8(scanRootPath), force: true)
+            condition.lock()
             let result = Result(
                 tree: tree,
                 itemCount: itemCount,
@@ -532,11 +586,15 @@ private struct Job {
     /// NUL-terminated absolute path bytes for `open(2)`.
     var pathUTF8: [UInt8]
     var nodeID: Int32
+    /// The root's child this directory lives under (-1 for the root itself),
+    /// so the live view can attribute bytes in O(1).
+    var topLevel: Int32
 }
 
 private struct Batch {
     var parentPathUTF8: [UInt8]
     var parent: Int32
+    var topLevel: Int32
     var names: [UInt8]
     var entries: [Entry]
 }
