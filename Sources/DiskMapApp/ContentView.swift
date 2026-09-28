@@ -75,6 +75,9 @@ final class ScanModel: ObservableObject {
     @Published var selectedNode: Int32 = 0
     @Published var recentRoots: [URL] = ScanModel.loadRecentRoots()
     @Published var lastScanSeconds: Double?
+    /// Directories the last scan could not open for lack of permission
+    /// (TASK-039). Every total above them is short by what they hold.
+    @Published var deniedDirectoryIDs: [Int32] = []
     @Published var descendantFileCounts: [Int] = []
     @Published var descendantFolderCounts: [Int] = []
     @Published var cachedQuickWins: [QuickWins.Hit] = []
@@ -250,10 +253,27 @@ final class ScanModel: ObservableObject {
         selectedNode = 0
         currentNode = 0
         lastScanSeconds = result.elapsedSeconds
+        deniedDirectoryIDs = result.deniedDirectoryIDs
         rememberRecent(url)
         pendingRootURL = nil
         isScanning = false
         log("scan finished items=\(result.itemCount)")
+    }
+
+    /// Display paths for a few unreadable directories, for the notice.
+    func deniedDirectoryExamples(limit: Int = 3) -> [String] {
+        guard let tree, let rootURL else { return [] }
+        return deniedDirectoryIDs.prefix(limit).map {
+            CanonicalPath.displayPath(absolutePath: tree.path(of: $0, root: rootURL).path)
+        }
+    }
+
+    /// System Settings → Privacy & Security → Full Disk Access. Only opens
+    /// the pane; granting access is the user's decision.
+    func openFullDiskAccessSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func isStaged(_ url: URL) -> Bool {

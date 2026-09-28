@@ -81,7 +81,12 @@ struct ScanTerminationTests {
         let root = try makeRaceFixture()
         defer { restore(root) }
 
-        let tree = await ScanEngine().scan(root: root).tree
+        let result = await ScanEngine().scan(root: root)
+        let tree = result.tree
+        // TASK-039: each unreadable folder is reported exactly once.
+        #expect(result.deniedDirectoryIDs.count == 4)
+        #expect(Set(result.deniedDirectoryIDs.map { tree.name(of: $0) })
+            == Set((0..<4).map { "denied\($0)" }))
         for i in 0..<4 {
             let denied = try #require(
                 tree.node(named: "denied\(i)", parentNamed: root.lastPathComponent)

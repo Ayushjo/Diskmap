@@ -43,4 +43,26 @@ struct ScanModelCacheTests {
         #expect(model.cachedOldDownloads == sentinel)
         #expect(model.cachedDeveloper == .empty)
     }
+
+    /// TASK-039: a scan with an unreadable folder must say so, with the
+    /// folder's path, instead of silently reporting short totals.
+    @Test func scanRecordsUnreadableFoldersWithReadablePaths() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("diskmap-denied-\(UUID().uuidString)")
+        let locked = root.appendingPathComponent("locked")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: locked.appendingPathComponent("inside.txt"))
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let model = ScanModel()
+        await model.scan(root)
+        #expect(model.deniedDirectoryIDs.count == 1)
+        let examples = model.deniedDirectoryExamples()
+        #expect(examples.count == 1)
+        #expect(examples.first?.hasSuffix("/locked") == true)
+    }
 }

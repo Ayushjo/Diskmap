@@ -65,6 +65,38 @@ public struct AnalysisSnapshot: Sendable, Equatable {
     public var health: StorageHealth
     public var fileCount: Int
     public var folderCount: Int
+    /// Root total on the ALLOCATED basis whatever `scannedBytes` shows, so it
+    /// can be compared with `VolumeStats.usedBytes` (statfs is on-disk too).
+    public var scannedOnDiskBytes: Int64 = 0
+
+    /// Volume "used" versus what this scan accounts for (TASK-040).
+    public struct VolumeReconciliation: Sendable, Equatable {
+        public var usedBytes: Int64
+        public var scannedBytes: Int64
+        /// In use on the volume but not in this scan. 0 when the scan exceeds
+        /// used space (see `scannedExceedsUsed`) — never negative.
+        public var unaccountedBytes: Int64
+        /// Pure APFS clones occupy one set of blocks but appear once per copy
+        /// in a tree walk, so a scan can exceed what the volume reports used.
+        public var scannedExceedsUsed: Bool
+        public var coverageFraction: Double
+    }
+
+    /// Nil when there is no volume to compare against. Invariant from
+    /// `categorize`: the gap is reported as its own figure and never folded
+    /// into a category — nothing here inflates "Other" to fill the volume.
+    public var reconciliation: VolumeReconciliation? {
+        guard let volume, volume.usedBytes > 0 else { return nil }
+        let used = Int64(clamping: volume.usedBytes)
+        let scanned = max(0, scannedOnDiskBytes)
+        return VolumeReconciliation(
+            usedBytes: used,
+            scannedBytes: scanned,
+            unaccountedBytes: max(0, used - scanned),
+            scannedExceedsUsed: scanned > used,
+            coverageFraction: min(1, Double(scanned) / Double(used))
+        )
+    }
 
     public static let empty = AnalysisSnapshot(
         scanRootPath: "",
@@ -131,7 +163,8 @@ public struct AnalysisSnapshot: Sendable, Equatable {
             quickWinBytes: qwBytes,
             health: health,
             fileCount: files,
-            folderCount: folders
+            folderCount: folders,
+            scannedOnDiskBytes: allocated[0]
         )
     }
 

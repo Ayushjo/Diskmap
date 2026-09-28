@@ -26,6 +26,13 @@ public actor ScanEngine {
         /// Directories recorded but not walked because they live on another
         /// volume. Non-zero means these totals deliberately exclude a mount.
         public var crossMountSkipCount: Int
+        /// Directories the walk could not open for lack of permission. They
+        /// are in the tree with no children, so every total above them is
+        /// short. Usually TCC-protected folders without Full Disk Access.
+        public var deniedDirectoryIDs: [Int32]
+        /// Deleted between being listed and being opened — not an error.
+        public var vanishedDirectoryCount: Int
+        public var otherUnopenedDirectoryCount: Int
     }
 
     /// What to store for one enumerated item. Split out so the iCloud
@@ -76,7 +83,10 @@ public actor ScanEngine {
             residentBytesAfterEnumeratorRelease: afterRelease?.residentBytes,
             notDownloadedCount: walked.notDownloadedCount,
             hardLinkCount: walked.hardLinkCount,
-            crossMountSkipCount: walked.crossMountSkipCount
+            crossMountSkipCount: walked.crossMountSkipCount,
+            deniedDirectoryIDs: walked.deniedDirectoryIDs,
+            vanishedDirectoryCount: walked.vanishedDirectoryCount,
+            otherUnopenedDirectoryCount: walked.otherUnopenedDirectoryCount
         )
         logSummary(result)
         return result
@@ -130,7 +140,7 @@ public actor ScanEngine {
 
     private func logSummary(_ result: Result) {
         let after = result.residentBytesAfterEnumeratorRelease.map(String.init) ?? "unavailable"
-        let line = "DiskMap scan: items=\(result.itemCount) elapsed=\(String(format: "%.3f", result.elapsedSeconds))s rss_during_walk_peak=\(result.peakResidentBytesDuringWalk) rss_after_enumerator_release=\(after) not_downloaded=\(result.notDownloadedCount) hard_links=\(result.hardLinkCount) cross_mount_skips=\(result.crossMountSkipCount)"
+        let line = "DiskMap scan: items=\(result.itemCount) elapsed=\(String(format: "%.3f", result.elapsedSeconds))s rss_during_walk_peak=\(result.peakResidentBytesDuringWalk) rss_after_enumerator_release=\(after) not_downloaded=\(result.notDownloadedCount) hard_links=\(result.hardLinkCount) cross_mount_skips=\(result.crossMountSkipCount) denied_dirs=\(result.deniedDirectoryIDs.count)"
         print(line)
         fflush(stdout)
     }

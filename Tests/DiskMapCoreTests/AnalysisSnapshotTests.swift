@@ -46,4 +46,51 @@ struct AnalysisSnapshotTests {
         let a = SafetyClassifier.assess(path: "/Users/x/WeirdStuff", name: "WeirdStuff", isDirectory: true)
         #expect(a.level == .review)
     }
+
+    // MARK: - TASK-040 volume reconciliation
+
+    private func snapshot(used: UInt64?, scannedOnDisk: Int64) -> AnalysisSnapshot {
+        var snap = AnalysisSnapshot.empty
+        snap.scannedOnDiskBytes = scannedOnDisk
+        if let used {
+            snap.volume = VolumeStats(volumeName: "T", totalBytes: used * 2, freeBytes: used, usedBytes: used)
+        }
+        return snap
+    }
+
+    @Test func reconciliationReportsTheGap() throws {
+        let rec = try #require(snapshot(used: 1_000, scannedOnDisk: 600).reconciliation)
+        #expect(rec.unaccountedBytes == 400)
+        #expect(!rec.scannedExceedsUsed)
+        #expect(abs(rec.coverageFraction - 0.6) < 0.0001)
+    }
+
+    /// Clones listed once per copy can push the scan past "used"; the gap must
+    /// clamp to 0 and say why, never go negative.
+    @Test func reconciliationNeverGoesNegative() throws {
+        let rec = try #require(snapshot(used: 1_000, scannedOnDisk: 1_300).reconciliation)
+        #expect(rec.unaccountedBytes == 0)
+        #expect(rec.scannedExceedsUsed)
+        #expect(rec.coverageFraction == 1)
+    }
+
+    @Test func noVolumeMeansNoReconciliation() {
+        #expect(snapshot(used: nil, scannedOnDisk: 600).reconciliation == nil)
+    }
+
+    /// The comparison is on-disk to on-disk even when the UI shows logical sizes.
+    @Test func reconciliationUsesAllocatedWhateverTheBasis() {
+        var tree = FileTree()
+        _ = tree.addNode(name: "root", parent: -1, isDirectory: true,
+                         logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "sparse.img", parent: 0, isDirectory: false,
+                         logicalSize: 10_000, allocatedSize: 1_000, modifiedDaysSinceEpoch: 1)
+        let both = tree.rollUpBoth()
+        let snap = AnalysisSnapshot.build(
+            tree: tree, root: URL(fileURLWithPath: NSTemporaryDirectory()),
+            allocated: both.allocated, logical: both.logical, basis: .logical
+        )
+        #expect(snap.scannedBytes == 10_000)
+        #expect(snap.scannedOnDiskBytes == 1_000)
+    }
 }

@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Don't wait for the SwiftUI view to appear. A terminal-launched
         // app can sit in the run loop without `.task` ever firing.
         ScanModel.shared.startIfRequested()
+        SnapshotHarness.startIfRequested()
     }
 }
 

@@ -291,6 +291,62 @@ struct SelectionToolbar: View {
 
 // MARK: - Compact why / safety cards for inspectors
 
+/// A persistent inline notice for something that makes the numbers on screen
+/// incomplete or approximate. The app deliberately has no modal alerts; a
+/// trust problem belongs next to the numbers it affects, and stays until fixed.
+struct DiskMapNoticeBanner: View {
+    var symbol: String
+    var tint: Color
+    var title: String
+    var detail: String
+    var examples: [String] = []
+    var actionTitle: String?
+    var action: (() -> Void)?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: DiskMapSpace.sm) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.ink)
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(examples, id: \.self) { example in
+                    Text(example)
+                        .font(.system(size: 11).monospaced())
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                if let actionTitle, let action {
+                    Button(actionTitle, action: action)
+                        .buttonStyle(.bordered)
+                        .tint(DiskMapTheme.ink)
+                        .padding(.top, 4)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(DiskMapSpace.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(tint.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(tint.opacity(0.25), lineWidth: 1)
+                )
+        )
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct WhyCard: View {
     var title: String = "Why is this large?"
     var bodyText: String

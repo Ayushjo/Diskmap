@@ -549,7 +549,7 @@ identity to exist.
   test stages a real Old Downloads catalog and checks it survives
   `refreshDeveloperCache()` with no tree.
 
-- [ ] **TASK-039: Surface unreadable directories**
+- [x] **TASK-039: Surface unreadable directories**
   `BulkScan.swift:87` swallows `open()` failures — `errno` is never captured
   and nothing in `Sources/` counts or reports them, so a scan without Full Disk
   Access reports confidently wrong totals with no indication.
@@ -573,7 +573,7 @@ identity to exist.
   from symlink-under-O_NOFOLLOW. Add the count assertion to the existing
   chmod-000 test."*
 
-- [ ] **TASK-040: Volume reconciliation in Overview**
+- [x] **TASK-040: Volume reconciliation in Overview**
   Both numbers already live in `AnalysisSnapshot` — `volume?.usedBytes` from
   `statfs` and `scannedBytes` from the root rollup — and nothing compares them.
   Add `unaccountedBytes` / `coverageFraction` (update `static let empty`) and a
@@ -591,6 +591,31 @@ identity to exist.
   it in `OverviewView.headerCard`. Be explicit in the copy about what the
   unaccounted bytes actually contain. Do not inflate any category to close the
   gap."*
+
+  **TASK-039 done 2026-09-28.** `errno` captured inside the `open(2)` closure;
+  `noteEmptyDirectory` → `noteUnopenedDirectory(errno:nodeID:)` (the old name
+  was wrong — empty readable folders never took that path). EACCES/EPERM are
+  reported as `deniedDirectoryIDs`; ENOENT (deleted mid-scan) and other
+  failures are counted separately and not shown as problems. Overview shows a
+  persistent `DiskMapNoticeBanner` with example paths and a button that opens
+  the Full Disk Access pane (it only opens it). **A real home scan without FDA
+  skipped 144 folders** — previously silent, with every total above them short.
+  Tests: exact denied-id assertion on the chmod-000 fixture, a 4-sibling count,
+  and an app-level test that `ScanModel` exposes readable example paths.
+
+  **TASK-040 done 2026-09-28.** `AnalysisSnapshot.scannedOnDiskBytes` (always
+  allocated, since `statfs` is on-disk) and a computed `reconciliation`: used,
+  scanned, unaccounted (clamped at 0), `scannedExceedsUsed`, coverage. The
+  Overview header now says "This scan accounts for X of the Y in use" and names
+  every possible cause of the gap — outside the scanned folder, local Time
+  Machine snapshots or purgeable space, and unreadable folders — never implying
+  one. Clones listed once per copy can make a scan exceed "used"; that case is
+  explained instead of going negative. The "never inflate Other" invariant
+  holds: the gap is its own figure, not a category.
+
+  **Visual check:** new `SnapshotHarness` (`--snapshot-dir`) renders the app's
+  own window to PNG in-process — no Screen Recording permission, nothing else
+  on screen captured. Used to confirm both notices render in the real app.
 
 - [x] **TASK-041: Fix `refreshDeveloperCache` clearing the wrong cache**
   `ContentView.swift:426-431` — the guard's else-branch also clears

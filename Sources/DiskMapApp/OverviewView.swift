@@ -54,6 +54,7 @@ struct OverviewView: View {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 16) {
                     headerCard
+                    unreadableNotice
                     explainBanner
                     whereGoingCard
                     biggestFilesCard
@@ -94,6 +95,9 @@ struct OverviewView: View {
                                 .background(Capsule().fill(DiskMapTheme.danger.opacity(0.12)))
                         }
                     }
+                    if let reconciliation = snap.reconciliation {
+                        reconciliationRow(reconciliation)
+                    }
                     SegmentedStorageBar(segments: categorySegments(total: categorySum))
                         .padding(.top, 4)
                     categoryLegend
@@ -105,6 +109,79 @@ struct OverviewView: View {
                     categoryLegend
                 }
             }
+        }
+    }
+
+    /// TASK-040: the gap between "used" and what the scan found is the most
+    /// common "where did my disk go?" confusion. Name every cause that can
+    /// apply rather than implying there is one.
+    private func reconciliationRow(_ rec: AnalysisSnapshot.VolumeReconciliation) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(reconciliationHeadline(rec))
+                .font(DiskMapType.body)
+                .foregroundStyle(DiskMapTheme.ink)
+            if let detail = reconciliationDetail(rec) {
+                Text(detail)
+                    .font(DiskMapType.caption)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("volume-reconciliation")
+    }
+
+    private func reconciliationHeadline(_ rec: AnalysisSnapshot.VolumeReconciliation) -> String {
+        let scanned = ByteFormat.string(rec.scannedBytes)
+        let used = ByteFormat.string(rec.usedBytes)
+        if rec.scannedExceedsUsed {
+            return "This scan found \(scanned), more than the \(used) in use."
+        }
+        if rec.coverageFraction >= 0.98 {
+            return "This scan accounts for all \(used) in use."
+        }
+        return "This scan accounts for \(scanned) of the \(used) in use."
+    }
+
+    private func reconciliationDetail(_ rec: AnalysisSnapshot.VolumeReconciliation) -> String? {
+        if rec.scannedExceedsUsed {
+            return "Cloned files share the same blocks on disk but are listed once per copy, so the scan total can exceed what is actually used."
+        }
+        guard rec.coverageFraction < 0.98 else { return nil }
+        var causes: [String] = []
+        if snap.scanRootPath != "/" {
+            let display = CanonicalPath.displayPath(absolutePath: snap.scanRootPath)
+            let place = display == "~"
+                ? "your home folder"
+                : "“\(URL(fileURLWithPath: snap.scanRootPath).lastPathComponent)”"
+            causes.append("outside \(place) (macOS, apps and other users)")
+        }
+        causes.append("held by local Time Machine snapshots or purgeable space")
+        let denied = model.deniedDirectoryIDs.count
+        if denied > 0 {
+            causes.append("inside \(denied.formatted()) folder\(denied == 1 ? "" : "s") DiskMap couldn’t read")
+        }
+        let list = causes.count > 1
+            ? causes.dropLast().joined(separator: ", ") + ", or " + (causes.last ?? "")
+            : causes.first ?? ""
+        return "The other \(ByteFormat.string(rec.unaccountedBytes)) is \(list)."
+    }
+
+    /// TASK-039: say when the totals are short because folders were unreadable.
+    @ViewBuilder
+    private var unreadableNotice: some View {
+        let count = model.deniedDirectoryIDs.count
+        if count > 0 {
+            DiskMapNoticeBanner(
+                symbol: "lock.trianglebadge.exclamationmark",
+                tint: DiskMapTheme.review,
+                title: "\(count.formatted()) folder\(count == 1 ? "" : "s") couldn’t be read",
+                detail: "DiskMap doesn’t have permission to open \(count == 1 ? "it" : "them"), so every size above \(count == 1 ? "it" : "them") is missing whatever \(count == 1 ? "it holds" : "they hold"). Grant Full Disk Access, then rescan, for complete numbers.",
+                examples: model.deniedDirectoryExamples(),
+                actionTitle: "Open Full Disk Access Settings",
+                action: { model.openFullDiskAccessSettings() }
+            )
+            .accessibilityIdentifier("unreadable-folders-notice")
         }
     }
 

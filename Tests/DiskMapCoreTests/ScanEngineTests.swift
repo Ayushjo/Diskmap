@@ -230,6 +230,10 @@ struct ScanEngineFixtureTests {
         #expect(tree.isDirectory[Int(denied)])
         #expect(tree.firstChild[Int(denied)] == -1, "chmod 000 directory must not contribute children")
         #expect(tree.node(named: "secret.txt", parentNamed: "denied") == nil)
+        // TASK-039: the failure is reported, not swallowed — and only that one.
+        #expect(result.deniedDirectoryIDs == [denied])
+        #expect(result.vanishedDirectoryCount == 0)
+        #expect(result.otherUnopenedDirectoryCount == 0)
 
         let visible = try #require(tree.node(named: "visible.txt", parentNamed: fixture.root.lastPathComponent))
         let visibleURL = fixture.root.appendingPathComponent("visible.txt")

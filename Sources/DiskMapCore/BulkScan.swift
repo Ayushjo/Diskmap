@@ -28,6 +28,13 @@ enum BulkScan {
         /// Directories recorded but not descended because they sit on another
         /// volume. Non-zero means the totals deliberately exclude a mount.
         var crossMountSkipCount: Int
+        /// Directories that could not be opened because of permissions
+        /// (EACCES/EPERM): typically TCC-protected without Full Disk Access.
+        var deniedDirectoryIDs: [Int32]
+        /// Directories deleted between being listed and being opened.
+        var vanishedDirectoryCount: Int
+        /// Any other open(2) failure.
+        var otherUnopenedDirectoryCount: Int
         var peakResidentBytesDuringWalk: UInt64
     }
 
@@ -119,12 +126,15 @@ enum BulkScan {
     }
 
     private static func scan(_ job: Job, buffer: inout [UInt8], state: State) {
-        let fd = job.pathUTF8.withUnsafeBytes { raw -> Int32 in
-            guard let base = raw.bindMemory(to: CChar.self).baseAddress else { return -1 }
-            return Darwin.open(base, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        // errno is read inside the closure, immediately after open(2), before
+        // anything else can overwrite it.
+        let (fd, openErrno) = job.pathUTF8.withUnsafeBytes { raw -> (Int32, Int32) in
+            guard let base = raw.bindMemory(to: CChar.self).baseAddress else { return (-1, EINVAL) }
+            let fd = Darwin.open(base, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            return (fd, fd < 0 ? errno : 0)
         }
         guard fd >= 0 else {
-            state.noteEmptyDirectory()
+            state.noteUnopenedDirectory(errno: openErrno, nodeID: job.nodeID)
             return
         }
         defer { close(fd) }
@@ -296,6 +306,9 @@ enum BulkScan {
         private var notDownloadedCount = 0
         private var hardLinkCount = 0
         private var crossMountSkipCount = 0
+        private var deniedDirectoryIDs: [Int32] = []
+        private var vanishedDirectoryCount = 0
+        private var otherUnopenedDirectoryCount = 0
         private var peak: UInt64
         private let progress: (@Sendable (Int) -> Void)?
         private var lastReported = 0
@@ -330,8 +343,23 @@ enum BulkScan {
             return jobs.removeLast()
         }
 
-        func noteEmptyDirectory() {
+        /// A directory the walk could not open. It stays in the tree (so it is
+        /// navigable) with no children — so every total above it is SHORT by
+        /// whatever it holds. Before TASK-039 this was silent. Only
+        /// permission failures are reported to the user: `ENOENT` is a folder
+        /// deleted mid-scan (its bytes really are gone), and anything else is
+        /// counted separately. Records node ids, not paths, to keep the walk
+        /// allocation-free; paths are resolved later from the tree.
+        func noteUnopenedDirectory(errno code: Int32, nodeID: Int32) {
             condition.lock()
+            switch code {
+            case EACCES, EPERM:
+                deniedDirectoryIDs.append(nodeID)
+            case ENOENT:
+                vanishedDirectoryCount += 1
+            default:
+                otherUnopenedDirectoryCount += 1
+            }
             inflight -= 1
             signalWorkLocked()
             condition.unlock()
@@ -489,6 +517,9 @@ enum BulkScan {
                 notDownloadedCount: notDownloadedCount,
                 hardLinkCount: hardLinkCount,
                 crossMountSkipCount: crossMountSkipCount,
+                deniedDirectoryIDs: deniedDirectoryIDs,
+                vanishedDirectoryCount: vanishedDirectoryCount,
+                otherUnopenedDirectoryCount: otherUnopenedDirectoryCount,
                 peakResidentBytesDuringWalk: max(peak, ProcessMemory.current()?.residentBytes ?? peak)
             )
             condition.unlock()
