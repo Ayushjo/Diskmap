@@ -17,15 +17,25 @@ struct CleanupQueueView: View {
                     Text("Cleanup Queue")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(DiskMapTheme.ink)
-                    Text("Will free \(diskByteString(model.reclaimableBytes))")
+                    Text(freeSummary)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(DiskMapTheme.mutedLabel)
+                    if model.reclaimEstimate.heldByUnqueuedCopies > 0 {
+                        Text("\(diskByteString(model.reclaimEstimate.heldByUnqueuedCopies)) stays in use by copies or links that aren’t queued")
+                            .font(.system(size: 11))
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                    }
                 }
                 Spacer()
+                if model.reclaimEstimate.isCalculating {
+                    ProgressView().controlSize(.small)
+                }
+                // Never offer the destructive action on a provisional figure.
                 Button("Move to Trash…") { confirmingTrash = true }
                     .buttonStyle(.borderedProminent)
                     .tint(DiskMapTheme.ink)
-                    .disabled(model.stagedItems.isEmpty)
+                    .disabled(model.stagedItems.isEmpty || model.reclaimEstimate.isCalculating)
+                    .help(model.reclaimEstimate.isCalculating ? "Measuring what these items share on disk…" : "")
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .buttonStyle(.bordered)
@@ -69,15 +79,9 @@ struct CleanupQueueView: View {
                                             .foregroundStyle(DiskMapTheme.mutedLabel)
                                             .lineLimit(1)
                                             .truncationMode(.middle)
-                                        if item.sharesStorageGroup != nil {
-                                            Text("Shared storage — counted free only if every copy is queued.")
-                                                .font(.caption)
-                                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                        } else {
-                                            Text(diskByteString(item.size))
-                                                .font(.caption.monospacedDigit())
-                                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                        }
+                                        Text(rowCaption(for: item))
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(DiskMapTheme.mutedLabel)
                                     }
                                     Spacer(minLength: 8)
                                     Button("Quick Look") { QuickLookPresenter.shared.present(item.url) }
@@ -125,7 +129,7 @@ struct CleanupQueueView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will free about \(diskByteString(model.reclaimableBytes)). Items go to the Trash, not a permanent delete.")
+            Text(confirmMessage)
         }
         .confirmationDialog(
             "Remove from Cleanup Queue?",
@@ -255,5 +259,51 @@ final class QuickLookPresenter: NSResponder, QLPreviewPanelDataSource, QLPreview
 
     func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem {
         (url ?? URL(fileURLWithPath: "/")) as NSURL
+    }
+}
+
+
+extension CleanupQueueView {
+    /// Moving to the Trash frees nothing on its own; say when it does.
+    var freeSummary: String {
+        let estimate = model.reclaimEstimate
+        if estimate.isCalculating { return "Calculating what emptying the Trash will free…" }
+        let amount = diskByteString(estimate.bytes)
+        return estimate.isLowerBound
+            ? "At least \(amount) freed when you empty the Trash"
+            : "\(amount) freed when you empty the Trash"
+    }
+
+    var confirmMessage: String {
+        let estimate = model.reclaimEstimate
+        let count = model.stagedItems.count
+        var text = "Moves \(count) item\(count == 1 ? "" : "s") to the Trash — nothing is deleted permanently. "
+        text += estimate.isLowerBound ? "At least " : "About "
+        text += "\(diskByteString(estimate.bytes)) is freed once you empty the Trash."
+        if estimate.heldByUnqueuedCopies > 0 {
+            text += " \(diskByteString(estimate.heldByUnqueuedCopies)) stays in use because other copies or links of these files aren’t queued."
+        }
+        return text
+    }
+
+    /// What this row contributes, and why it may be less than its size.
+    func rowCaption(for item: CleanupQueue.StagedItem) -> String {
+        if item.isMeasuring { return "\(diskByteString(item.size)) · measuring…" }
+        let freed = model.reclaimEstimate.perItem[item.id] ?? item.size
+        let path = item.url.path
+        let insideQueuedFolder = model.stagedItems.contains { other in
+            other.id != item.id && path.hasPrefix(other.url.path.hasSuffix("/") ? other.url.path : other.url.path + "/")
+        }
+        if insideQueuedFolder {
+            return "Included in a queued folder — counted there"
+        }
+        let occupied = item.sharing?.allocatedBytes ?? item.size
+        if freed == 0 && occupied > 0 {
+            return "\(diskByteString(occupied)) · shared — freed only when every copy or link is queued"
+        }
+        if freed + 4_096 < occupied {
+            return "Frees \(diskByteString(freed)) of \(diskByteString(occupied)) — the rest is shared"
+        }
+        return diskByteString(freed)
     }
 }

@@ -29,6 +29,22 @@ public struct DuplicateGroup: Sendable, Equatable {
         return sizeEach * Int64(removing.count)
     }
 
+    /// Same rule on the on-disk basis the treemap and cleanup queue use
+    /// (TASK-038). `sizeEach` is the LOGICAL size because that is the matching
+    /// key — two files can only be byte-identical if their lengths match —
+    /// but what deleting frees is allocated space, which differs for
+    /// compressed or sparse files. Callers showing a reclaim figure should use
+    /// this with `tree.allocatedSize`.
+    public func reclaimableBytes(deleting selected: Set<Int32>, onDisk: (Int32) -> Int64) -> Int64 {
+        let removing = fileIDs.filter { selected.contains($0) }
+        guard !removing.isEmpty else { return 0 }
+        if sharesStorage {
+            guard removing.count == fileIDs.count else { return 0 }
+            return fileIDs.map(onDisk).max() ?? 0
+        }
+        return removing.reduce(Int64(0)) { $0 + max(0, onDisk($1)) }
+    }
+
     /// Oldest modified day, then lowest id. That file stays unchecked so
     /// a one-click stage keeps one original.
     public func defaultKeeperID(modifiedDay: (Int32) -> Int32) -> Int32? {
@@ -126,6 +142,10 @@ public enum DuplicateFinder {
         guard tree.count > 0 else { return result }
         var stack: [Int32] = [0]
         var examined = 0
+        // Two names of one hard-linked inode are the same file, not a copy:
+        // they hash identically and used to be offered as duplicates, but
+        // deleting either frees nothing. Keep one name per inode (TASK-038).
+        var seenLinkedInodes = Set<UInt64>()
         while let id = stack.popLast() {
             if examined & 2_047 == 0 {
                 try Task.checkCancellation()
@@ -134,7 +154,9 @@ public enum DuplicateFinder {
             let index = Int(id)
             if index > 0 {
                 let notDownloaded = tree.flags[index] & NodeFlags.notDownloaded != 0
-                if !tree.isDirectory[index], !notDownloaded, tree.logicalSize[index] > 0 {
+                let isLinked = tree.flags[index] & NodeFlags.hardLink != 0 && tree.fileID[index] != 0
+                let firstNameOfInode = !isLinked || seenLinkedInodes.insert(tree.fileID[index]).inserted
+                if !tree.isDirectory[index], !notDownloaded, tree.logicalSize[index] > 0, firstNameOfInode {
                     result.append((id, tree.path(of: id, root: root), tree.logicalSize[index]))
                 }
             }

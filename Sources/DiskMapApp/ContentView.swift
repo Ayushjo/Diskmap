@@ -65,6 +65,9 @@ final class ScanModel: ObservableObject {
     private var duplicateOperationID: UUID?
     @Published var stagedItems: [CleanupQueue.StagedItem] = []
     @Published var reclaimableBytes: Int64 = 0
+    /// Full breakdown behind `reclaimableBytes`: what stays in use because
+    /// other copies are not queued, and whether the figure is a lower bound.
+    @Published var reclaimEstimate: CleanupQueue.ReclaimEstimate = .empty
     @Published var isStagingCleanup = false
     @Published var lastCommitLines: [String] = []
     @Published var sizeBasis: SizeBasis = .allocated
@@ -425,8 +428,9 @@ final class ScanModel: ObservableObject {
 
     func refreshDeveloperCache() {
         guard let tree, let rootURL, selectedTotals.count == tree.count else {
+            // Clear only this screen's cache. A copy-paste slip here used to
+            // also wipe `cachedOldDownloads` (TASK-041).
             cachedDeveloper = .empty
-        cachedOldDownloads = .empty
             return
         }
         cachedDeveloper = DeveloperCatalog.build(
@@ -454,7 +458,23 @@ final class ScanModel: ObservableObject {
 
     func refreshQueue() async {
         stagedItems = await cleanupQueue.allItems()
-        reclaimableBytes = await cleanupQueue.totalSize()
+        reclaimEstimate = await cleanupQueue.reclaimEstimate()
+        reclaimableBytes = reclaimEstimate.bytes
+        if reclaimEstimate.isCalculating { watchMeasurements() }
+    }
+
+    private var measurementWatch: Task<Void, Never>?
+
+    /// Staged folders are measured in the background; refresh once they are,
+    /// so the figure — and the Move to Trash button — update by themselves.
+    private func watchMeasurements() {
+        guard measurementWatch == nil else { return }
+        measurementWatch = Task { [weak self] in
+            guard let self else { return }
+            await self.cleanupQueue.waitForMeasurements()
+            self.measurementWatch = nil
+            await self.refreshQueue()
+        }
     }
 
     func stageForCleanup(_ requests: [CleanupStageRequest]) async -> CleanupStageSummary {
@@ -493,16 +513,22 @@ final class ScanModel: ObservableObject {
     }
 
     func commitCleanup() async {
-        let results = await cleanupQueue.commit()
-        let log = CleanupPreflight.logEntries(from: results)
+        let report = await cleanupQueue.commitReport()
+        let log = CleanupPreflight.logEntries(from: report)
         lastCommitLines = log.map { entry in
             if entry.succeeded {
-                return "Trashed \(entry.path) (\(ByteFormat.string(entry.bytes))) — \(entry.reason)"
+                return "Moved to Trash: \(entry.path) (\(ByteFormat.string(entry.bytes))) — \(entry.reason)"
             }
             return "Failed \(entry.path): \(entry.errorDescription ?? "unknown error")"
         }
         if lastCommitLines.isEmpty {
             lastCommitLines = ["Nothing moved."]
+        } else if log.contains(where: \.succeeded) {
+            // Trash is not deletion: nothing is freed until it is emptied.
+            let amount = ByteFormat.string(report.freedWhenTrashEmptied)
+            lastCommitLines.append(
+                "\(report.isLowerBound ? "At least " : "")\(amount) is freed when you empty the Trash."
+            )
         }
         await refreshQueue()
     }

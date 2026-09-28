@@ -250,3 +250,31 @@ and it buys a 730 MiB correctness fix. Trees with no hard links return `nil`
 from the mask builder and allocate nothing.
 
 Raw: `docs/perf-results/task037-hardlinks.txt`.
+
+## Measuring staged folders (TASK-038, 2026-09-28)
+
+`DiskMapScanBench --profile PATH` times `StorageSharing.profile`, i.e. what
+staging a folder costs. Warm, release, 3 repeats:
+
+| path | files | seconds | notes |
+|---|---|---|---|
+| `~/Library/Caches` | 325 289 | 9.56–10.22 | incomplete (unreadable dirs without FDA) |
+| `~/Library` | 719 346 | 26.6–46.2 | first run cold |
+
+Single-threaded, ~35–50k entries/s. This is why staging measures in the
+background and disables Move to Trash until done. A parallel walk (the scan
+does 2.25M items in ~8 s with 8 workers) is the obvious follow-up; not done.
+
+### Trust-pass scan A/B, interleaved (2026-09-28, ~2.25M items)
+
+Pre-trust-pass commit 8190439 vs current, alternating runs so session drift
+hits both equally, 6 pairs:
+
+| | min | median | mean | max |
+|---|---|---|---|---|
+| base | 8.010 | 8.756 | 9.464 | 11.860 |
+| current | 7.715 | 9.251 | 9.333 | 11.574 |
+
+Paired differences ranged −3.96 s to +2.74 s (median −0.10 s). No detectable
+regression; run-to-run variance on this machine is now larger than any effect
+of the trust pass.

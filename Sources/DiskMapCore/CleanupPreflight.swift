@@ -69,16 +69,19 @@ public enum CleanupPreflight {
         }
     }
 
-    public static func logEntries(
-        from results: [(item: CleanupQueue.StagedItem, error: Error?)]
-    ) -> [CleanupLogEntry] {
-        results.map { result in
+    /// One receipt line per staged item. `bytes` is the item's share of what
+    /// the commit actually freed (TASK-038), not its apparent size — the old
+    /// `item.size` re-inflated clones and hard links to N × size in the
+    /// receipt even when the pre-commit estimate had them right. Lines sum to
+    /// `report.freedWhenTrashEmptied`.
+    public static func logEntries(from report: CleanupQueue.CommitReport) -> [CleanupLogEntry] {
+        report.entries.map { entry in
             CleanupLogEntry(
-                path: result.item.url.path,
-                bytes: result.item.size,
-                reason: result.item.reason,
-                succeeded: result.error == nil,
-                errorDescription: result.error?.localizedDescription
+                path: entry.item.url.path,
+                bytes: entry.freedBytes,
+                reason: entry.movedWithFolder ? entry.item.reason + " (moved with its folder)" : entry.item.reason,
+                succeeded: entry.error == nil,
+                errorDescription: entry.error?.localizedDescription
             )
         }
     }

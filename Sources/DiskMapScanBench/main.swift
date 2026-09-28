@@ -15,6 +15,8 @@ struct Args {
     var rollup = false
     var layout = false
     var duplicates = false
+    /// Time `StorageSharing.profile` (what staging a folder costs) on the path.
+    var profileOnly = false
     var json = false
     var label = "scan"
 }
@@ -34,6 +36,8 @@ func parseArgs() -> Args {
             args.layout = true
         case "--duplicates":
             args.duplicates = true
+        case "--profile":
+            args.profileOnly = true
         case "--json":
             args.json = true
         case "--label":
@@ -97,6 +101,19 @@ func durationSeconds(from start: ContinuousClock.Instant) -> Double {
 
 let args = parseArgs()
 let root = URL(fileURLWithPath: args.path, isDirectory: true)
+
+if args.profileOnly {
+    for run in 1...args.repeats {
+        let started = ContinuousClock.now
+        let profile = StorageSharing.profile(atPath: root.path)
+        let seconds = durationSeconds(from: started)
+        print("profile run=\(run)/\(args.repeats) label=\(args.label) seconds=\(String(format: "%.3f", seconds)) "
+            + "files=\(profile?.fileCount ?? -1) allocated=\(profile?.allocatedBytes ?? -1) "
+            + "unattributed_shared=\(profile?.sharedUnattributedBytes ?? -1) complete=\(profile?.isComplete ?? false) "
+            + "apfs_accounting=\(profile?.usesFilesystemAccounting ?? false)")
+    }
+    exit(0)
+}
 var rows: [RunRow] = []
 
 for run in 1...args.repeats {

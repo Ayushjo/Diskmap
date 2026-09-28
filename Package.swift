@@ -9,6 +9,7 @@ let package = Package(
         .executable(name: "DiskMapApp", targets: ["DiskMapApp"]),
         .executable(name: "DiskMapScanBench", targets: ["DiskMapScanBench"]),
         .executable(name: "AttrProbe", targets: ["AttrProbe"]),
+        .executable(name: "SharingProbe", targets: ["SharingProbe"]),
     ],
     targets: [
         .target(name: "DiskMapCore", resources: [.process("quick-wins-patterns.json"), .process("file-type-categories.json")]),
@@ -18,7 +19,11 @@ let package = Package(
             linkerSettings: [.linkedFramework("Quartz"), .linkedFramework("QuickLookThumbnailing")]
         ),
         .testTarget(name: "DiskMapCoreTests", dependencies: ["DiskMapCore"]),
+        // App-layer tests (ScanModel caches and state). Added with TASK-041;
+        // the app target had no coverage before.
+        .testTarget(name: "DiskMapAppTests", dependencies: ["DiskMapApp", "DiskMapCore"]),
         .executableTarget(name: "DiskMapScanBench", dependencies: ["DiskMapCore"]),
         .executableTarget(name: "AttrProbe"),
+        .executableTarget(name: "SharingProbe"),
     ]
 )

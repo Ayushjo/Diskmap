@@ -550,3 +550,54 @@ were just copied with Finder's Duplicate.
 unfixed code); the `cp` path did every time (15–22 of 200). The process launch
 shifts writeback timing into the window that matters. A test that "passes" on
 the unfixed code proves nothing, so this was checked in both directions.
+
+### Reclaim figures come from APFS's own accounting, derived by the queue (2026-09-28)
+
+**The problem was structural.** `CleanupQueue` already had clone-aware
+grouping, but only `DuplicatesView` ever supplied the hint it needed. Every
+other staging surface passed the defaults, so clones and hard links counted at
+full size in the same "This will free about X" dialog, and the post-commit
+receipt re-inflated them again. The dialog also claimed moving to the Trash
+"frees" space — it frees nothing until the Trash is emptied.
+
+**Chosen: the queue derives sharing itself** (`StorageSharing`), so no caller
+can forget. It profiles each staged path — one `getattrlist` for a file, one
+bulk walk for a folder — and the queue-wide estimate applies three rules:
+ordinary data counts its `ATTR_CMNEXT_PRIVATESIZE`; a hard-linked inode counts
+once and only when every name is queued; a pure-clone family (same
+`ATTR_CMNEXT_CLONEID`) counts its shared blocks once and only when all
+`ATTR_CMNEXT_CLONE_REFCNT` members are queued. A file inside a queued folder is
+counted by the folder, not twice.
+
+**Deviation from the plan.** The plan said pairwise `CloneDetector` over the
+staged set with memoised extent maps. The SDK turned out to expose the exact
+quantities instead, including blocks held by local snapshots, which extent
+comparison cannot see. `CloneDetector` still backs duplicate discovery.
+
+**Semantics were measured, not read** (`SharingProbe`,
+`docs/perf-results/sharing-probe.txt`): PRIVATESIZE is 0 for pure clones, only
+the diverged bytes for an edited clone, and *ignores hard links* (both names
+report full size). REFCNT counts the family including itself and follows
+deletions. A partially edited clone leaves its family, so the bytes it still
+shares are reported as unattributed and the figure becomes a lower bound
+rather than a guess.
+
+**Two traps found only by testing on real volumes:**
+- Directory entries in a bulk read *omit* the file attributes even with
+  `FSOPT_PACK_INVAL_ATTRS`; a length check sized for file records rejected
+  them and silently dropped whole batches.
+- FSKit-mounted ExFAT sets the "returned" bits for all four extended
+  attributes and fills them with zeros. Trusting the bitmap would have reported
+  "frees nothing" for every file on an external drive. Extended attributes are
+  used only when `f_fstypename` is `apfs`.
+
+**Staging never blocks.** Measuring a large folder is slow (single-threaded
+walk: ~9.6 s for a 325k-file `~/Library/Caches`, ~27 s for `~/Library`), so an
+item is queued immediately and measured on a dedicated thread. Until then the
+estimate is flagged `isCalculating`, the row says "measuring…", and **Move to
+Trash is disabled** — the destructive action is never offered on a provisional
+figure. `commitReport` also waits for measurement, because a moved item can no
+longer be measured. Making the walk itself parallel is left open.
+
+**Status:** verified on APFS and on a real FSKit ExFAT volume. 140 tests green,
+12/12 stability runs clean.

@@ -176,9 +176,14 @@ struct DuplicatesView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// On-disk size of one member, the basis every reclaim figure uses.
+    private func onDisk(_ group: DuplicateGroup) -> Int64 {
+        group.fileIDs.map { tree.allocatedSize[Int($0)] }.max() ?? group.sizeEach
+    }
+
     private var reclaimable: Int64 {
         model.duplicateGroups.reduce(Int64(0)) { total, group in
-            total + group.reclaimableBytes(deleting: checked)
+            total + group.reclaimableBytes(deleting: checked) { tree.allocatedSize[Int($0)] }
         }
     }
 
@@ -186,7 +191,7 @@ struct DuplicatesView: View {
     private func groupSection(_ group: DuplicateGroup) -> some View {
         Section {
             if group.sharesStorage {
-                Text("Shares storage. Deleting one copy does not free \(diskByteString(group.sizeEach)). That space is freed only if every copy in this group is removed.")
+                Text("Shares storage. Deleting one copy does not free \(diskByteString(onDisk(group))). That space is freed only if every copy in this group is removed.")
                     .font(.callout)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
@@ -211,7 +216,7 @@ struct DuplicatesView: View {
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            Text(diskByteString(group.sizeEach))
+                            Text(diskByteString(tree.allocatedSize[Int(id)]))
                                 .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                             if id == keeper {
@@ -229,7 +234,7 @@ struct DuplicatesView: View {
             }
         } header: {
             HStack {
-                Text(group.sharesStorage ? "Shared clone · \(diskByteString(group.sizeEach)) each" : "Same contents · \(diskByteString(group.sizeEach)) each")
+                Text(group.sharesStorage ? "Shared clone · \(diskByteString(onDisk(group))) each" : "Same contents · \(diskByteString(onDisk(group))) each")
                     .foregroundStyle(DiskMapTheme.ink)
                 if group.sharesStorage {
                     ClassificationBadge(kind: .custom(title: "APFS clone", tint: DiskMapTheme.info))
@@ -281,7 +286,7 @@ struct DuplicatesView: View {
                 let url = tree.path(of: id, root: rootURL)
                 requests.append(CleanupStageRequest(
                     url: url,
-                    size: group.sizeEach,
+                    size: tree.allocatedSize[Int(id)],
                     reason: group.sharesStorage ? "Shared APFS copy" : "Duplicate copy",
                     sharesStorageGroup: key,
                     groupCopyCount: group.fileIDs.count

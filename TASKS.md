@@ -477,7 +477,7 @@ identity to exist.
     insertion-order stability, linked-outside-tree, distinct-inode, and a real
     `link(2)` end-to-end scan).
 
-- [ ] **TASK-038: True reclaim math at the cleanup boundary**
+- [x] **TASK-038: True reclaim math at the cleanup boundary**
   The number shown at the moment of the destructive action is wrong for clones
   and hard links. `CleanupQueue` already has `sharesStorageGroup` /
   `groupCopyCount` / group logic in `totalSize()` — but `DuplicatesView.swift:279`
@@ -510,6 +510,44 @@ identity to exist.
   and runs memoized `CloneDetector` comparisons across equal-size staged items.
   Thread the true total into the commit receipt. Add tests per the acceptance
   criteria. Do not modify `CleanupQueue.excludedPrefixes`."*
+
+  **Done 2026-09-28** on `feat/trust-pass`.
+  - **Deviation:** used APFS's own accounting (`ATTR_CMNEXT_PRIVATESIZE`,
+    `CLONEID`, `CLONE_REFCNT`) instead of pairwise `CloneDetector`; it is exact,
+    and it also sees blocks held by local snapshots. Semantics measured by the
+    new `SharingProbe` target (`docs/perf-results/sharing-probe.txt`).
+  - `StorageSharing` profiles each staged path; `CleanupQueue` derives sharing
+    itself, so every staging surface is correct with no call-site changes.
+    Rules: private bytes count; a hard-linked inode counts once when every name
+    is queued; a clone family counts its shared blocks once when every member
+    is queued; items inside a queued folder count once, via the folder.
+  - Real case the plan missed: **pnpm hard-links `node_modules` into its global
+    store**, so trashing it frees almost nothing; the app used to promise the
+    full size. Covered by a test.
+  - Receipt now reports what actually moved (recomputed over successes), and
+    folders move first with their contents reported as "moved with its folder"
+    instead of retried and shown as failures.
+  - Copy fixed: moving to the Trash frees nothing until it is emptied. The
+    queue says "freed when you empty the Trash", with "at least" when shared
+    blocks cannot be attributed, and how much stays in use by unqueued copies.
+  - Duplicates: reclaim figures use on-disk size (new
+    `reclaimableBytes(deleting:onDisk:)`); `sizeEach` stays the logical
+    matching key. Two names of one hard-linked inode are no longer offered as
+    duplicates of each other.
+  - Traps caught by testing on real volumes: bulk directory records omit file
+    attributes (a length check silently dropped batches); FSKit ExFAT claims
+    to return the extended attributes and fills them with zeros, so they are
+    trusted only on `apfs`. Verified on a RAM-backed ExFAT volume.
+  - Staging is non-blocking: folders are measured in the background
+    (single-threaded walk ~9.6 s for a 325k-file `~/Library/Caches`), the
+    estimate is flagged `isCalculating`, and **Move to Trash is disabled until
+    the real figure is known**. Making the walk parallel is still open.
+  - 140 tests green (new `ReclaimMathTests`, 22 cases), 12/12 stability runs.
+
+  **TASK-041 done 2026-09-28.** One-line fix, plus the app's first test target
+  (`Tests/DiskMapAppTests`) so `ScanModel` can be tested at all; the regression
+  test stages a real Old Downloads catalog and checks it survives
+  `refreshDeveloperCache()` with no tree.
 
 - [ ] **TASK-039: Surface unreadable directories**
   `BulkScan.swift:87` swallows `open()` failures — `errno` is never captured
@@ -554,7 +592,7 @@ identity to exist.
   unaccounted bytes actually contain. Do not inflate any category to close the
   gap."*
 
-- [ ] **TASK-041: Fix `refreshDeveloperCache` clearing the wrong cache**
+- [x] **TASK-041: Fix `refreshDeveloperCache` clearing the wrong cache**
   `ContentView.swift:426-431` — the guard's else-branch also clears
   `cachedOldDownloads`, misindented, a copy-paste slip none of the four sibling
   methods share. Visiting Developer Storage before totals are ready silently

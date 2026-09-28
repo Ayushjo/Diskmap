@@ -73,12 +73,15 @@ struct CleanupQueueReclaimTests {
         let a = URL(fileURLWithPath: "/tmp/diskmap-clone-a")
         let b = URL(fileURLWithPath: "/tmp/diskmap-clone-b")
         #expect(await queue.stage(a, size: 800, reason: "shared clone", sharesStorageGroup: "g", groupCopyCount: 2) == true)
+        await queue.waitForMeasurements()
         #expect(await queue.totalSize() == 0)
 
         #expect(await queue.stage(b, size: 800, reason: "shared clone", sharesStorageGroup: "g", groupCopyCount: 2) == true)
+        await queue.waitForMeasurements()
         #expect(await queue.totalSize() == 800)
 
         #expect(await queue.stage(URL(fileURLWithPath: "/tmp/diskmap-real-copy"), size: 100, reason: "duplicate") == true)
+        await queue.waitForMeasurements()
         #expect(await queue.totalSize() == 900)
     }
 
