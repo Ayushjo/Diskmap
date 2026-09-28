@@ -312,3 +312,38 @@ AnalysisSnapshot ≈ 1.1 s) eagerly; everything else on first visit (TASK-043).
 MediaCatalog and OldDownloadsCatalog are also slow in themselves — a user
 opening those screens would still wait seconds — so their cost gets its own
 look. Raw: `docs/perf-results/task042-phases.txt`.
+
+### Catalog speed-ups, proven output-identical (TASK-069, 2026-09-28)
+
+Three of the slow phases were building a full path (`tree.path(of:root:)`,
+one URL component at a time) for nearly every node, only to substring-test it
+or throw it away:
+
+- **OldDownloadsCatalog** built a path for every file over 1 MB on the disk to
+  test for `/downloads`. A needle starting with `/` can only match at a
+  component boundary, so it is exactly "some component starts with
+  *downloads*" — now `FileTree.folderChainFlags`, one forward pass over folder
+  names (`parent[i] < i`), paths built only for files that pass.
+- **MediaCatalog** did the same for its one path-dependent rule (`/final cut`),
+  then built full candidates (path, safety, display strings) for every media
+  file although only the largest 2 000 were kept. Now: name-only matching,
+  sort light tuples (ties by node id, as the stable sort did), build candidates
+  until 2 000 survive.
+- **FileTypes** re-derived the extension and scanned the category list for all
+  ~2.2M files; names are interned (~900k distinct), so each distinct name is
+  resolved once, through an extension→category dictionary.
+
+**Equivalence was checked, not argued.** A real home scan was frozen
+(`--save-snapshot`); `--catalog-dump` wrote every UI-visible field of both
+catalogs plus the file-type totals from that exact tree before and after; the
+two 2 413-line dumps are byte-identical.
+
+| phase (live home, median of 3) | before | after |
+|---|---|---|
+| MediaCatalog | 3.792 | 0.519 |
+| OldDownloadsCatalog | 2.835 | 0.098 |
+| FileTypes | 0.614 | 0.217 |
+| **post-walk total** | **8.875** | **2.524** |
+
+DeveloperCatalog (0.87 s) is now the largest remaining phase; it is rebuilt in
+Milestone 11 and made lazy in TASK-043.

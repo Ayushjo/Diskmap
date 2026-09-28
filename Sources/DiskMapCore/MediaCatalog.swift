@@ -425,18 +425,43 @@ public enum MediaCatalog {
     ) -> MediaCatalogResult {
         guard totals.count == tree.count else { return .empty }
 
-        var hits: [MediaCandidate] = []
+        // Only the "/final cut" rule in `classify` reads the path, and only for
+        // folders. Precompute it once, classify by name, and build a path only
+        // for actual matches: building one for every node above the size floor
+        // (nearly every folder, via rolled-up totals) was 3.8 s of a home scan's
+        // post-walk time (TASK-042). Output is byte-identical — see TASKS.md.
+        let finalCut = tree.folderChainFlags(rootMatches: root.path.lowercased().contains("/final cut")) {
+            $0.lowercased().hasPrefix("final cut")
+        }
+        // Pass 1: cheap, name-only matching. Pass 2 builds full candidates in
+        // size order and stops once `limit` survive the path-based filters —
+        // only the largest `limit` were ever kept, so building the tens of
+        // thousands below the cut was wasted. Ties keep node order, as the
+        // original stable sort did.
+        var matches: [(id: Int32, bytes: Int64, kind: MediaKind, name: String)] = []
         for id in 0..<Int32(tree.count) {
             let i = Int(id)
             let isDir = tree.isDirectory[i]
             let bytes = totals[i]
             guard bytes >= listingFloorBytes else { continue }
-            let abs = tree.path(of: id, root: root).path
-            if isExcludedSystemPath(abs) { continue }
             let name = tree.name(of: id)
-            guard let kind = classify(fileName: name, path: abs, isDirectory: isDir) else { continue }
+            var classified = classify(fileName: name, isDirectory: isDir)
+            if classified == nil, isDir, finalCut[i] { classified = .project }
+            guard let kind = classified else { continue }
             // For directories, only keep media projects (already gated in classify).
             if isDir, kind != .project { continue }
+            matches.append((id, bytes, kind, name))
+        }
+        matches.sort { $0.bytes != $1.bytes ? $0.bytes > $1.bytes : $0.id < $1.id }
+
+        var hits: [MediaCandidate] = []
+        hits.reserveCapacity(min(limit, matches.count))
+        for match in matches {
+            if hits.count >= limit { break }
+            let id = match.id, i = Int(id), bytes = match.bytes, kind = match.kind, name = match.name
+            let isDir = tree.isDirectory[i]
+            let abs = tree.path(of: id, root: root).path
+            if isExcludedSystemPath(abs) { continue }
 
             let safety = SafetyClassifier.assess(path: abs, name: name, isDirectory: isDir)
             if safety.level == .protected { continue }
@@ -468,8 +493,6 @@ public enum MediaCatalog {
             ))
         }
 
-        hits.sort { $0.bytes > $1.bytes }
-        if hits.count > limit { hits = Array(hits.prefix(limit)) }
         let summary = summarize(hits)
         let opportunities = Array(hits.filter { $0.bytes >= 1_000_000_000 }.prefix(5))
         let opp = opportunities.isEmpty ? Array(hits.prefix(5)) : opportunities

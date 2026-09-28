@@ -253,15 +253,25 @@ public enum OldDownloadsCatalog {
     ) -> OldDownloadsCatalogResult {
         guard totals.count == tree.count else { return .empty }
 
+        // `isUnderDownloads(path)` is "some path component starts with
+        // downloads". Answer it per folder in one pass and build a path only
+        // for files that pass: building one for every file over 1 MB on the
+        // whole disk was 2.8 s of a home scan's post-walk time (TASK-042).
+        // Output is byte-identical — see TASKS.md.
+        let underDownloads = tree.folderChainFlags(rootMatches: isUnderDownloads(root.path)) {
+            $0.lowercased().hasPrefix("downloads")
+        }
         var hits: [OldDownloadsCandidate] = []
         for id in 0..<Int32(tree.count) {
             let i = Int(id)
             if tree.isDirectory[i] { continue }
             let bytes = totals[i]
             guard bytes >= listingFloorBytes else { continue }
-            let abs = tree.path(of: id, root: root).path
-            guard isUnderDownloads(abs) else { continue }
             let name = tree.name(of: id)
+            let parentID = Int(tree.parent[i])
+            let inFolder = parentID >= 0 && parentID < underDownloads.count && underDownloads[parentID]
+            guard inFolder || name.lowercased().hasPrefix("downloads") else { continue }
+            let abs = tree.path(of: id, root: root).path
             let day = tree.modifiedDay[i]
             let age = day > 0 ? max(0, today - day) : 0
             let kind = FileKind.classify(fileName: name, path: abs)

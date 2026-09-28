@@ -20,6 +20,11 @@ struct Args {
     /// Time every step between "walk finished" and "UI can paint", in the
     /// order ContentView.scan runs them (TASK-042).
     var phases = false
+    /// Equivalence checks for catalog refactors: freeze a scan, then dump
+    /// catalog output from exactly the same tree before and after a change.
+    var saveSnapshot: String?
+    var fromSnapshot: String?
+    var catalogDump: String?
     var json = false
     var label = "scan"
 }
@@ -43,6 +48,15 @@ func parseArgs() -> Args {
             args.profileOnly = true
         case "--phases":
             args.phases = true
+        case "--save-snapshot":
+            args.saveSnapshot = rest.first
+            if !rest.isEmpty { rest.removeFirst() }
+        case "--from-snapshot":
+            args.fromSnapshot = rest.first
+            if !rest.isEmpty { rest.removeFirst() }
+        case "--catalog-dump":
+            args.catalogDump = rest.first
+            if !rest.isEmpty { rest.removeFirst() }
         case "--json":
             args.json = true
         case "--label":
@@ -107,6 +121,49 @@ func durationSeconds(from start: ContinuousClock.Instant) -> Double {
 let args = parseArgs()
 let root = URL(fileURLWithPath: args.path, isDirectory: true)
 
+/// One line per candidate, every field that reaches the UI, sorted — so two
+/// dumps of the same tree diff to nothing if a refactor is behaviour-neutral.
+func dumpCatalogs(tree: FileTree, root: URL, to path: String) throws {
+    let totals = tree.rollUpBoth().allocated
+    let today: Int32 = 20_000   // fixed so age fields are comparable across runs
+    var lines: [String] = []
+    let media = MediaCatalog.build(tree: tree, root: root, totals: totals, today: today)
+    for c in media.candidates {
+        lines.append(["media", c.absolutePath, c.displayPath, c.name, "\(c.bytes)", "\(c.ageDays)", "\(c.kind)",
+                      "\(c.location)", "\(c.status)", "\(c.safety.level)", c.whyHere, c.recommendation,
+                      "\(c.isDirectory)", String(format: "%.6f", c.score)].joined(separator: "\t"))
+    }
+    lines.append("media-summary\t\(media.summary)")
+    lines.append("media-opportunities\t" + media.opportunities.map(\.absolutePath).joined(separator: "|"))
+    let downloads = OldDownloadsCatalog.build(tree: tree, root: root, totals: totals, today: today)
+    for c in downloads.candidates {
+        lines.append(["downloads", c.absolutePath, c.displayPath, c.name, "\(c.bytes)", "\(c.ageDays)", "\(c.kind)",
+                      "\(c.status)", "\(c.safety.level)", c.whyHere, c.recommendation,
+                      String(format: "%.6f", c.score)].joined(separator: "\t"))
+    }
+    lines.append("downloads-summary\t\(downloads.summary)")
+    for t in FileTypeCatalog.totals(in: tree, sizes: totals, categories: FileTypeCatalog.loadBundled()) {
+        lines.append("filetypes\t\(t.categoryID)\t\(t.label)\t\(t.bytes)")
+    }
+    try (lines.sorted().joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)
+    print("catalog-dump lines=\(lines.count) media=\(media.candidates.count) downloads=\(downloads.candidates.count) -> \(path)")
+}
+
+if let snapshotPath = args.fromSnapshot {
+    let snapshot = try SnapshotStore.load(from: URL(fileURLWithPath: snapshotPath))
+    let snapRoot = URL(fileURLWithPath: snapshot.rootPath, isDirectory: true)
+    if let dump = args.catalogDump {
+        let started = ContinuousClock.now
+        try dumpCatalogs(tree: snapshot.tree, root: snapRoot, to: dump)
+        print("catalog-dump seconds=\(String(format: "%.3f", durationSeconds(from: started)))")
+    }
+    if args.phases {
+        let phases = timePostWalkPhases(tree: snapshot.tree, root: snapRoot)
+        print("phases-from-snapshot " + phases.map { "\($0.0)=\(String(format: "%.3f", $0.1))" }.joined(separator: " "))
+    }
+    exit(0)
+}
+
 if args.profileOnly {
     for run in 1...args.repeats {
         let started = ContinuousClock.now
@@ -159,6 +216,14 @@ for run in 1...args.repeats {
     let engine = ScanEngine()
     let result = await engine.scan(root: root)
     let foot = result.tree.storageFootprint()
+    if let target = args.saveSnapshot, run == 1 {
+        // `target` is a directory; SnapshotStore picks the file name.
+        let directory = URL(fileURLWithPath: target, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let saved = try SnapshotStore.save(
+            DiskSnapshot(rootPath: root.path, capturedAt: Date(), tree: result.tree), in: directory)
+        print("snapshot saved -> \(saved.path)")
+    }
     if args.phases {
         let phases = [("walk", result.elapsedSeconds)] + timePostWalkPhases(tree: result.tree, root: root)
         phaseRuns.append(phases)

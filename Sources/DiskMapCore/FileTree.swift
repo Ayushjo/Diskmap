@@ -521,6 +521,37 @@ public struct FileTree: Sendable {
         return (files, folders)
     }
 
+    /// For every node: true when the node itself (if a folder) or any folder
+    /// above it has a name satisfying `matches`; `rootMatches` stands in for
+    /// the scan root's own path components. Files inherit their parent's
+    /// value — callers test a file's own name if it matters.
+    ///
+    /// Replaces "build the full path, then substring-search it" for any test
+    /// of the form `path.contains("/<prefix>")`: a needle starting with "/"
+    /// can only match at the start of a component, so it is exactly "some
+    /// component starts with <prefix>". Nodes are appended after their parent
+    /// (`parent[i] < i`), so one forward pass settles every node, testing
+    /// folder names only (~10% of a real tree) and building no paths.
+    public func folderChainFlags(rootMatches: Bool, _ matches: (String) -> Bool) -> [Bool] {
+        var flags = [Bool](repeating: false, count: count)
+        guard count > 0 else { return flags }
+        flags[0] = rootMatches
+        for index in 1..<count {
+            let parentID = Int(parent[index])
+            let inherited: Bool
+            if parentID >= 0 && parentID < index {
+                inherited = flags[parentID]
+            } else {
+                // Not produced by the scanner or the snapshot codec; fall back
+                // to walking the chain rather than trusting a later index.
+                inherited = rootMatches || ancestorIDs(of: Int32(index)).dropLast().dropFirst()
+                    .contains { isDirectory[Int($0)] && matches(name(of: $0)) }
+            }
+            flags[index] = inherited || (isDirectory[index] && matches(name(of: Int32(index))))
+        }
+        return flags
+    }
+
     /// What hard-link de-duplication removed from the totals, so a caller can
     /// explain the difference instead of silently reporting less than the sum
     /// of the parts.

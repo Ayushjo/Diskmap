@@ -727,6 +727,16 @@ identity to exist.
 
 ## Milestone 9 — Perceived speed
 
+- [x] **TASK-069: Stop building a path per node in the catalogs**
+  Found by TASK-042. OldDownloads, Media and FileTypes spent seconds building
+  full paths for (nearly) every node only to substring-test or discard them.
+  Replaced with `FileTree.folderChainFlags` (one forward pass over folder
+  names), name-first matching with top-N candidate building, and per-distinct-
+  name extension resolution. **Output proven byte-identical** on a frozen real
+  home scan (`--save-snapshot` / `--from-snapshot` / `--catalog-dump`,
+  2 413 lines). Live home post-walk pipeline **8.88 s → 2.52 s**: Media
+  3.79 → 0.52 s, OldDownloads 2.84 → 0.10 s, FileTypes 0.61 → 0.22 s.
+
 - [ ] **TASK-043: Lazy catalogs**
   `ContentView.swift:194-218` builds all catalogs sequentially before first
   paint, and `isScanning = false` only flips after all seven are assigned — so

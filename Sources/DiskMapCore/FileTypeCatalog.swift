@@ -37,13 +37,35 @@ public enum FileTypeCatalog {
         sizes: [Int64],
         categories: [FileTypeCategory]
     ) -> [FileTypeTotals] {
-        guard tree.count == sizes.count else { return [] }
-        var byID: [String: Int64] = [:]
+        guard tree.count == sizes.count, categories.count < Int(Int16.max) else { return [] }
+        // Names are interned (~900k distinct across ~2.2M files on a home
+        // scan), so resolve each distinct name's category once, and map
+        // extensions through a dictionary instead of scanning the category
+        // list per file. First category to claim an extension wins, exactly
+        // as `categories.first(where:)` did. 0.6 s of first-paint time before.
+        var extensionToCategory: [String: Int16] = [:]
+        for (index, category) in categories.enumerated() {
+            for ext in category.extensions where extensionToCategory[ext] == nil {
+                extensionToCategory[ext] = Int16(index)
+            }
+        }
+        let unresolved: Int16 = -2, uncategorised: Int16 = -1
+        var categoryForName = [Int16](repeating: unresolved, count: tree.uniqueNameCount)
+        var bytesByIndex = [Int64](repeating: 0, count: categories.count)
         for id in 0..<tree.count where !tree.isDirectory[id] {
-            let name = tree.name(of: Int32(id))
-            let ext = (name as NSString).pathExtension.lowercased()
-            guard !ext.isEmpty, let cat = categories.first(where: { $0.extensions.contains(ext) }) else { continue }
-            byID[cat.id, default: 0] += sizes[id]
+            let nameID = Int(tree.nameIndex[id])
+            guard nameID >= 0, nameID < categoryForName.count else { continue }
+            var category = categoryForName[nameID]
+            if category == unresolved {
+                let ext = (tree.name(of: Int32(id)) as NSString).pathExtension.lowercased()
+                category = ext.isEmpty ? uncategorised : (extensionToCategory[ext] ?? uncategorised)
+                categoryForName[nameID] = category
+            }
+            if category >= 0 { bytesByIndex[Int(category)] += sizes[id] }
+        }
+        var byID: [String: Int64] = [:]
+        for (index, category) in categories.enumerated() where bytesByIndex[index] != 0 {
+            byID[category.id, default: 0] += bytesByIndex[index]
         }
         return categories.compactMap { cat in
             let bytes = byID[cat.id] ?? 0
