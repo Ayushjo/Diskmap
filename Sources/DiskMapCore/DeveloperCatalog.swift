@@ -161,7 +161,7 @@ public struct DeveloperCatalogResult: Sendable, Equatable {
 
 /// Classifies known developer directories from an existing scan — no second walk of disk.
 public enum DeveloperCatalog {
-    private struct Rule {
+    struct Rule {
         var names: Set<String>
         var category: DeveloperCategory
         var ecosystem: DeveloperEcosystem
@@ -171,56 +171,48 @@ public enum DeveloperCatalog {
         var whyLarge: String
     }
 
-    private static let rules: [Rule] = [
-        Rule(names: ["node_modules"], category: .dependencies, ecosystem: .node, reclaimability: .reviewFirst, isToolRoot: false, projectFromParent: true,
-             whyLarge: "Installed npm/yarn/pnpm packages for a project. Size grows with dependency trees."),
-        Rule(names: [".npm"], category: .caches, ecosystem: .node, reclaimability: .reclaimable, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Global npm package cache speeds installs by keeping downloaded tarballs."),
-        Rule(names: [".pnpm-store", ".pnpm"], category: .caches, ecosystem: .node, reclaimability: .reclaimable, isToolRoot: true, projectFromParent: false,
-             whyLarge: "pnpm content-addressable store shared across projects."),
-        Rule(names: [".yarn"], category: .caches, ecosystem: .node, reclaimability: .reclaimable, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Yarn cache / Berry install state."),
-        Rule(names: [".nvm", ".fnm", ".volta"], category: .sdksSimulators, ecosystem: .node, reclaimability: .keep, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Node version managers keep multiple runtimes on disk."),
-        Rule(names: ["DerivedData"], category: .buildArtifacts, ecosystem: .xcode, reclaimability: .reclaimable, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Xcode intermediate build products and indexes. Regenerated on next build."),
-        Rule(names: ["CoreSimulator"], category: .sdksSimulators, ecosystem: .xcode, reclaimability: .reviewFirst, isToolRoot: true, projectFromParent: false,
-             whyLarge: "iOS Simulator runtimes and device data. Unused runtimes are often reclaimable."),
-        Rule(names: ["iOS DeviceSupport", "watchOS DeviceSupport", "tvOS DeviceSupport"], category: .sdksSimulators, ecosystem: .xcode, reclaimability: .reviewFirst, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Device symbols downloaded when debugging physical devices."),
-        Rule(names: ["Xcode"], category: .other, ecosystem: .xcode, reclaimability: .keep, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Xcode support files under Developer — inspect before clearing."),
-        Rule(names: [".cocoapods"], category: .caches, ecosystem: .xcode, reclaimability: .reclaimable, isToolRoot: true, projectFromParent: false,
-             whyLarge: "CocoaPods specs and download cache."),
-        Rule(names: ["Pods"], category: .dependencies, ecosystem: .xcode, reclaimability: .reviewFirst, isToolRoot: false, projectFromParent: true,
-             whyLarge: "CocoaPods installed pods for an Xcode project."),
-        Rule(names: [".build", "build", ".next", "dist", "out"], category: .buildArtifacts, ecosystem: .other, reclaimability: .reclaimable, isToolRoot: false, projectFromParent: true,
-             whyLarge: "Compiled or bundled output that tools recreate."),
-        Rule(names: ["target"], category: .buildArtifacts, ecosystem: .rust, reclaimability: .reclaimable, isToolRoot: false, projectFromParent: true,
-             whyLarge: "Cargo build output for a Rust project."),
-        Rule(names: [".cargo"], category: .caches, ecosystem: .rust, reclaimability: .reclaimable, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Cargo registry and git checkouts for Rust crates."),
-        Rule(names: [".rustup"], category: .sdksSimulators, ecosystem: .rust, reclaimability: .keep, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Installed Rust toolchains via rustup."),
-        Rule(names: [".venv", "venv", ".tox", ".conda"], category: .dependencies, ecosystem: .python, reclaimability: .reviewFirst, isToolRoot: false, projectFromParent: true,
-             whyLarge: "Python virtual environments — recreatable from requirements/lockfiles."),
-        Rule(names: ["__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"], category: .buildArtifacts, ecosystem: .python, reclaimability: .reclaimable, isToolRoot: false, projectFromParent: true,
-             whyLarge: "Python bytecode or type-check caches."),
-        Rule(names: [".pub-cache"], category: .caches, ecosystem: .flutter, reclaimability: .reclaimable, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Dart/Flutter pub package cache."),
-        Rule(names: [".gradle"], category: .caches, ecosystem: .jvm, reclaimability: .reclaimable, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Gradle dependency and build caches."),
-        Rule(names: [".m2"], category: .caches, ecosystem: .jvm, reclaimability: .reclaimable, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Maven local repository cache."),
-        Rule(names: [".docker"], category: .containers, ecosystem: .docker, reclaimability: .reviewFirst, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Docker desktop data: images, layers, and volumes."),
-        Rule(names: ["Android", "sdk"], category: .sdksSimulators, ecosystem: .android, reclaimability: .keep, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Android SDK / platform tools — large and slow to re-download."),
-        Rule(names: [".android"], category: .sdksSimulators, ecosystem: .android, reclaimability: .reviewFirst, isToolRoot: true, projectFromParent: false,
-             whyLarge: "Android emulator AVDs and SDK extras."),
-        Rule(names: [".cursor", ".codex", ".vscode", ".idea"], category: .other, ecosystem: .ideAI, reclaimability: .reviewFirst, isToolRoot: true, projectFromParent: false,
-             whyLarge: "IDE or AI-tool caches, indexes, and local state."),
-    ]
+    /// Rules are data (AGENTS.md rule 6): `developer-rules.json`, bundled.
+    /// Moved out of Swift on 2026-09-28 with byte-identical catalog output on
+    /// a frozen real home scan (see TASKS.md, Milestone 11).
+    private static let rules: [Rule] = loadRules()
+
+    private struct RuleFile: Decodable {
+        struct Entry: Decodable {
+            var names: [String]
+            var category: String
+            var ecosystem: String
+            var reclaimability: String
+            var isToolRoot: Bool
+            var projectFromParent: Bool
+            var whyLarge: String
+        }
+        var rules: [Entry]
+    }
+
+    /// A malformed or missing file yields no rules rather than a crash; the
+    /// test suite asserts the bundled file decodes completely.
+    static func loadRules(from data: Data? = nil) -> [Rule] {
+        let bytes = data ?? Bundle.module.url(forResource: "developer-rules", withExtension: "json")
+            .flatMap { try? Data(contentsOf: $0) }
+        guard let bytes, let file = try? JSONDecoder().decode(RuleFile.self, from: bytes) else { return [] }
+        return file.rules.compactMap { entry in
+            guard let category = DeveloperCategory(rawValue: entry.category),
+                  let ecosystem = DeveloperEcosystem(rawValue: entry.ecosystem),
+                  let reclaimability = DeveloperReclaimability(rawValue: entry.reclaimability) else { return nil }
+            return Rule(
+                names: Set(entry.names),
+                category: category,
+                ecosystem: ecosystem,
+                reclaimability: reclaimability,
+                isToolRoot: entry.isToolRoot,
+                projectFromParent: entry.projectFromParent,
+                whyLarge: entry.whyLarge
+            )
+        }
+    }
+
+    /// For tests: how many rules the bundled file produced.
+    static var loadedRuleCount: Int { rules.count }
 
     private static let nameToRule: [String: Rule] = {
         var map: [String: Rule] = [:]

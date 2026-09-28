@@ -152,6 +152,18 @@ func dumpCatalogs(tree: FileTree, root: URL, to path: String) throws {
                       String(format: "%.6f", c.score)].joined(separator: "\t"))
     }
     lines.append("downloads-summary\t\(downloads.summary)")
+    let dev = DeveloperCatalog.build(tree: tree, root: root, totals: totals)
+    for i in dev.items {
+        lines.append(["dev-item", i.absolutePath, i.displayName, i.displayPath, "\(i.bytes)", "\(i.category)", "\(i.ecosystem)",
+                      "\(i.reclaimability)", "\(i.safety.level)", i.whyLarge, i.projectKey ?? "-", i.projectName ?? "-",
+                      "\(i.isToolRoot)"].joined(separator: "\t"))
+    }
+    for p in dev.projects {
+        lines.append(["dev-project", p.absolutePath, p.name, "\(p.ecosystem)", "\(p.bytes)", "\(p.reclaimableBytes)",
+                      "\(p.itemCount)"].joined(separator: "\t"))
+    }
+    lines.append("dev-opportunities\t" + dev.opportunities.map(\.absolutePath).joined(separator: "|"))
+    lines.append("dev-summary\t\(dev.summary.totalBytes)\t\(dev.summary.reclaimableBytes)\t\(dev.summary.keepBytes)\t\(dev.summary.toolCount)\t\(dev.summary.projectCount)")
     for t in FileTypeCatalog.totals(in: tree, sizes: totals, categories: FileTypeCatalog.loadBundled()) {
         lines.append("filetypes\t\(t.categoryID)\t\(t.label)\t\(t.bytes)")
     }

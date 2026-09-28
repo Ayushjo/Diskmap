@@ -76,4 +76,21 @@ struct DeveloperCatalogTests {
         #expect(hit?.reclaimability == .reclaimable)
         #expect(hit?.safety.level == .safe)
     }
+
+    /// The rules are data now (developer-rules.json). A typo in a category
+    /// or ecosystem name would silently drop that rule, so every entry must
+    /// decode.
+    @Test func everyBundledRuleDecodes() throws {
+        let url = try #require(Bundle.module.url(forResource: "developer-rules", withExtension: "json"))
+        let raw = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        let entries = try #require(raw?["rules"] as? [[String: Any]])
+        #expect(entries.count > 0)
+        #expect(DeveloperCatalog.loadedRuleCount == entries.count, "a rule failed to decode")
+    }
+
+    @Test func malformedRulesYieldNothingRatherThanCrash() {
+        #expect(DeveloperCatalog.loadRules(from: Data("{".utf8)).isEmpty)
+        let unknownCategory = #"{"rules":[{"names":["x"],"category":"nope","ecosystem":"node","reclaimability":"keep","isToolRoot":true,"projectFromParent":false,"whyLarge":"-"}]}"#
+        #expect(DeveloperCatalog.loadRules(from: Data(unknownCategory.utf8)).isEmpty)
+    }
 }
