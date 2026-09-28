@@ -191,3 +191,62 @@ No Instruments (no Xcode). Added `DiskMapScanBench --layout`: after rollup, time
 Raw: `docs/perf-results/downloads-duplicates-rss.txt`. No concurrency
 cap added — peak stayed modest on this folder.
 
+
+## Scan identity + hard-link rollups (TASK-036 / TASK-037, 2026-09-25)
+
+### Attribute-mask A/B — does file identity cost anything?
+
+Adding `ATTR_CMN_DEVID`, `ATTR_CMN_FILEID`, `ATTR_FILE_LINKCOUNT` and
+`ATTR_DIR_LINKCOUNT` grows each `getattrlistbulk` record by 16 bytes
+(`fixedPrefix` 92 → 108) and adds an 8 B/node `[UInt64]` to `FileTree`
+(`packedNodeStride` 42 → 50).
+
+The home tree has grown to ~2.05M items since the 2026-09-14 matrices, so the
+historical 1.79M numbers are **not** a valid control. Measured instead against
+the pre-change commit (8190439) in a throwaway worktree, same machine, same
+tree, same session, 5 warm repeats each:
+
+| | baseline (pre-036) | with identity | delta |
+|---|---|---|---|
+| scan min | 6.916 s | 6.847 s | −1.0% |
+| scan **median** | **6.932 s** | **6.993 s** | **+0.9%** |
+| scan max | 9.598 s | 12.794 s | (tail; see below) |
+| walk RSS median | 411.6 MB | 413.0 MB | +1.4 MB |
+| items | 2 054 730 | 2 054 729 | same tree |
+
+**Decision: ship it.** A +0.9% median is inside the documented noise band, and
+the minimum improved. Zero extra syscalls — the same bulk call returns a wider
+record. Both `max` values are the first run of their series and the spread
+(6.8–12.8 s) is the same tail already documented under "Cold vs warm"; it is
+not a signal about this change. Per-item cost: 3.37 µs baseline vs 3.40 µs.
+
+Raw: `docs/perf-results/task036-identity.txt`, `baseline-pre036.txt`.
+
+### What hard-link de-duplication actually corrected
+
+`DiskMapScanBench --rollup` now prints a `hardlinks` line. Warm home,
+3 repeats, identical across runs:
+
+| metric | value |
+|---|---|
+| flagged nodes (`ATTR_FILE_LINKCOUNT > 1`) | 14 953 |
+| inodes with >1 name inside the tree | 4 525 |
+| duplicate names charged 0 | 10 428 |
+| **allocated bytes no longer double-counted** | **766 058 496 (~730 MiB)** |
+| logical bytes no longer double-counted | 745 790 079 |
+| cross-mount skips (home scan) | 0 |
+
+**This is the headline: the home scan was over-reporting by ~730 MiB.** Not a
+synthetic edge case — 4 525 real inodes, mostly framework and toolchain trees
+that ship hard-linked payloads.
+
+### Rollup cost of the correction
+
+`rollUpBoth` went from ~0.028 s to ~0.042–0.053 s on the same tree: one extra
+linear pass over the `flags` byte array, plus path construction for the 0.7%
+of nodes that are flagged (election must be path-based for stability — see the
+decision log). Still an order of magnitude under the ~100 ms first-paint bar,
+and it buys a 730 MiB correctness fix. Trees with no hard links return `nil`
+from the mask builder and allocate nothing.
+
+Raw: `docs/perf-results/task037-hardlinks.txt`.

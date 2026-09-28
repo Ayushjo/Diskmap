@@ -340,3 +340,213 @@ the walk, free correctness-wise).
 
 Unique names live in a packed UTF-8 `nameBlob` with `nameOffset`/`nameLength` tables. Open-addressed intern compares raw UTF-8; `String` materialization is for UI and Snapshot encode only.
 
+
+### Nodes carry file identity; the walk stays on one volume (2026-09-25)
+
+**Chosen.** `FileTree` gains one `[UInt64]` `fileID` array (ATTR_CMN_FILEID).
+Hard-link-ness rides in the already-declared, previously-never-set
+`NodeFlags.hardLink` bit rather than a second array. Device id is requested
+but **not stored** — it is consumed in `BulkScan.publish` to decide descent
+and then discarded.
+
+**Alternatives rejected.**
+- *Keep identity out of the scan and resolve sharing only at cleanup time.*
+  That fixes the confirmation dialog but leaves Biggest Folders, the treemap
+  and every rollup counting an N-named inode N times. Identity is a property
+  of the data, so it belongs in the data.
+- *Store link count as its own `[UInt32]`.* 7 MB at home scale for a value
+  that is 1 for essentially every node. One free flag bit carries it.
+- *Store device id per node.* Another 7 MB for something only the descend
+  decision reads.
+
+**Why the mask includes `ATTR_DIR_LINKCOUNT`, whose value we distrust.**
+Requesting only `ATTR_FILE_LINKCOUNT` makes file records 4 bytes wider than
+directory records, which breaks the single-offset-pair `parse()` that swaps
+meaning by `objType`. Adding the directory counterpart makes both sections
+20 bytes at offset 88 and keeps `parse()` branch-free. Its *value* is not
+usable: measured on APFS, a directory with three children and `st_nlink == 5`
+reports `ATTR_DIR_LINKCOUNT == 1`. Only `ATTR_FILE_LINKCOUNT`, and only for
+files, is trusted. Evidence: `docs/perf-results/attr-probe.txt`.
+
+**Offsets were measured, not derived.** The `AttrProbe` target builds a
+fixture with known `lstat` values and reports every offset whose bytes match
+ground truth. Adding DEVID (+4), FILEID (+8) and LINKCOUNT (+4) moved every
+later field and took `fixedPrefix` from 92 to 108. Re-run `swift run AttrProbe`
+after any mask change and update `docs/perf-results/attr-probe.txt`; do not
+hand-edit the offsets in `parse()`.
+
+**Mount containment.** A directory on a different device is recorded (so it
+stays navigable) but not descended, unless `crossMounts: true` is passed.
+Before this, a `/` scan silently absorbed every mounted volume into the
+totals. It also makes `fileID` unique across a scan, which the hard-link
+rollup correction depends on — inode numbers are only unique per volume.
+`ScanEngine.Result.crossMountSkipCount` reports how many mounts were held
+back so Overview can say so rather than quietly under-reporting.
+
+**Free win taken alongside.** `shouldSkipDescend` can only return true when
+the scan root is `/` or under `/System/Volumes`, but `publish` was building
+and discarding a path `String` for every directory to ask. That check is now
+hoisted to `CanonicalPath.mayContainFirmlinkTwins`, evaluated once per scan,
+so a home scan no longer allocates ~200k throwaway strings on the single
+publisher thread.
+
+**Status:** verified. `swift test` 108 green, including the suite's first
+hard-link coverage (`ScanIdentityTests`) asserting two names resolve to one
+inode and both carry the flag. Snapshot format bumped to v3; v1 and v2 still
+decode, with identity reading 0 ("unknown").
+
+### Hard links are charged once, to a path-elected name (2026-09-25)
+
+**Chosen.** `rollUpSizes` / `rollUpBoth` charge a multiply-linked inode to
+exactly one of its names; every other name contributes 0. The suppression is
+applied inside `ownSize`, so the existing post-order walk produces the
+corrected totals directly — there is no second pass and no subtract-from-
+ancestors fixup.
+
+**Why suppress the node itself, not just its ancestors.** Charging the
+duplicate name its own size while withholding it from the parent would break
+the tree invariant that a directory total equals the sum of its children.
+`SquarifiedTreemap` and every other layout lays children out inside the
+parent's rect, so a violated invariant is an overflowing treemap, not just a
+cosmetic discrepancy. A duplicate name therefore reads 0, and
+`NodeFlags.hardLink` is on the node so the UI can say "another name for an
+already-counted file" rather than appearing to lose bytes.
+
+**Election is by lowest path, not lowest node id.** Node ids are assigned in
+publisher order and sibling lists are built by prepend, so both depend on how
+the scan's worker threads interleaved — neither is stable between two scans of
+an unchanged disk. Electing by node id would make a snapshot diff report a
+large file moving from one folder to another when nothing changed. Paths are
+stable, and they are built only for flagged nodes (about 0.7% of a real home
+tree), never on the rollup hot path.
+
+**A file linked outside the scan root keeps its full size.** Grouping is by
+inode *within the tree*, so `st_nlink == 2` with only one name inside the
+scanned subtree forms a group of one and is not suppressed. Suppressing it
+would under-report real usage — the bytes genuinely are in this tree.
+
+**Cost.** One linear pass over the `flags` byte array per rollup. When nothing
+is flagged the pass returns `nil` and allocates nothing, so trees without hard
+links (and every v1/v2 snapshot, which carries no identity) behave exactly as
+before.
+
+**Clones are deliberately NOT handled here.** An APFS clone has a *different*
+inode and can only be detected by comparing physical extents with `fcntl`,
+which is far too expensive to run tree-wide. Clone-aware reclaim belongs at
+the cleanup boundary, over the staged set only — see TASK-038.
+
+**Status:** verified. 116 tests green, including `HardLinkRollupTests`, which
+covers cross-folder links, insertion-order stability, inodes linked outside
+the tree, same-size-but-distinct inodes, and a real `link(2)` end-to-end scan.
+
+### The walk is finished only when the publisher is also idle (2026-09-25)
+
+**A pre-existing correctness bug, found while stabilising the trust pass.**
+Not introduced by TASK-036/037: measured on the unmodified parent commit
+(8190439), the existing `ScanEngineFixtureTests` fixture failed **3 runs in
+15**. It had simply never been characterised — grep of `docs/` and `TASKS.md`
+for "flaky"/"race" before this returned nothing.
+
+**The window.** `signalWorkLocked` declared the walk over when
+`inflight == 0 && jobs.isEmpty && batches.isEmpty`. It did not account for a
+batch the publisher had already taken off `batches` but not yet turned into
+nodes and child jobs — the publisher unlocks for the whole of `publish()`.
+So:
+
+1. The publisher pops the batch for a directory and unlocks. `batches` is now
+   empty; that directory's children are not yet in `jobs`.
+2. A worker fails to `open()` an unreadable sibling and calls what is now
+   `noteUnopenedDirectory`, which drops `inflight` to 0 **without** ever
+   adding a batch.
+3. All three queues read empty, `finished` is set, every worker exits.
+4. The publisher then appends the child jobs and exits too. Nobody scans them.
+
+The scan returned a tree **missing an entire subtree, with no error raised
+anywhere** — the walk reported success and the totals were silently short.
+
+**Why unreadable directories are the trigger.** `noteUnopenedDirectory` is the
+only path that decrements `inflight` without producing a batch, so it is the
+only way the queues can all read empty while real work is outstanding. That is
+why the one fixture containing a `chmod 000` directory was the test that
+flaked, and why this would bite hardest on exactly the scans that matter — a
+full-disk or `~/Library` walk without Full Disk Access, where unreadable
+directories are everywhere.
+
+**Fix.** `State.publishing` counts batches in the publisher's hands. It is
+incremented under the lock *before* the publisher unlocks, decremented only
+after the children are appended, and added to the termination condition.
+
+**Status:** verified by repetition, since a single pass passes most of the
+time either way. Full suite: **8 failures in 30 runs before** (3/15 on the
+untouched parent commit, 5/15 mid-trust-pass) versus **1 in 70 after**.
+`ScanTerminationTests` is the regression guard — it scans a deep chain beside
+four unreadable siblings 40 times and asserts both that the deepest leaf
+survives and that the node count never varies between identical scans.
+
+### The scan runs on dedicated threads, not shared pools (2026-09-28)
+
+**A second pre-existing hang, separate from the termination race above.**
+`ScanEngine.scan` ran the blocking `BulkScan.walk` inside `Task.detached`
+(Swift's cooperative pool) and the walk's workers and publisher on
+`DispatchQueue.global(qos: .userInitiated)`. Both pools cap how many threads
+may run at a QoS, and the cooperative pool assumes its threads never block —
+the kernel keeps counting a cooperative thread parked in `group.wait()` as
+active. With more scans in flight than cores, every slot was held by a walk
+waiting on workers that could never be scheduled. Sampled from a hung test
+process: 11 threads in `_dispatch_group_wait_slow` inside `BulkScan.walk`,
+**zero** worker threads, **zero** publisher threads — permanently.
+
+**Chosen.** The coordinator, each worker and the publisher run on their own
+`Thread` (`BulkScan.startScanThread`, QoS `.userInitiated`, named
+`DiskMap.scan.*` so they are identifiable in `sample`). `ScanEngine.scan`
+bridges back to async with a `CheckedContinuation`, so no Swift-concurrency
+thread is ever blocked by a scan. These threads are real pthreads outside both
+capped pools. Ten short-lived threads per multi-second scan is noise.
+
+**Alternative rejected:** keep GCD but move only the coordinator off the
+cooperative pool. GCD's global queues cap at ~64 threads; several concurrent
+scans at 10 blocked threads each can still exhaust that, just less often.
+
+**Why it matters in the app, not just tests.** `cancelScan` only bumps a
+generation counter — the old walk keeps running to completion. Cancel and
+rescan a few times and several walks are alive at once, each previously
+parking a cooperative thread the rest of the app's `Task.detached` work
+(layouts, duplicate candidates, catalogs) also needs.
+
+**Status:** verified. `ScanTerminationTests.manyConcurrentScansAllFinish`
+runs (cores × 2 + 4) scans at once: it hung for over 10 minutes on the unfixed
+commit with the same thread signature, and passes in ~0.3 s with the fix. A
+regression shows up as a *hung* suite, not a failed test — Swift Testing's
+time limit runs on the starved pool and cannot fire.
+
+### Clone detection flushes before reading extents (2026-09-28)
+
+**A third pre-existing bug, surfaced by a flaky `CloneDetectorTests` case.**
+APFS allocates a clone's copy-on-write block when dirty pages are *written
+back*, not at `write()`. Until then `F_LOG2PHYS_EXT` reports the old shared
+physical extent for a range whose bytes have already changed. So a clone
+edited seconds before a duplicate scan still produced an identical extent map,
+`areLikelyClones` said yes, and `DuplicateFinder` put the two files in a
+"shared-extents" group — **presented as identical without ever being hashed**.
+
+**Measured, not inferred.** Under concurrent load, with the writer not
+flushing: 18 of 320 edited 8 MB clones and 22 of 200 edited 64 KB clones were
+wrongly reported as clones. With the writer flushing: 0. With the *reader*
+calling `fsync` on its own read-only descriptor before mapping: 0 of 320. The
+reader-side result is the one that matters — DiskMap never controls the writer.
+
+**Chosen.** `extentMap` calls `fsync(fd)` after `fstat`. It writes out data the
+kernel was already going to write within seconds; it changes no contents and
+no metadata. If `fsync` fails the map is `nil`, which `areLikelyClones` treats
+as "not proven clones" — the safe direction, because the caller then hashes.
+
+**Alternative rejected:** treat any file modified in the last N seconds as
+"not a clone". Writeback delay is not bounded (memory pressure stretches it),
+so any N is a guess, and it silently stops detecting real clones of files that
+were just copied with Finder's Duplicate.
+
+**Test note.** The regression test must clone with `/bin/cp -c`. Calling
+`clonefile()` in-process never reproduced the stale map (0 of 600 on the
+unfixed code); the `cp` path did every time (15–22 of 200). The process launch
+shifts writeback timing into the window that matters. A test that "passes" on
+the unfixed code proves nothing, so this was checked in both directions.
