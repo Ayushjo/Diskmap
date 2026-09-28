@@ -792,7 +792,7 @@ identity to exist.
   items/s, Downloads/Library/… bars growing. Final report is checked against
   the real rollup in `LiveScanProgressTests`.
 
-- [ ] **TASK-045: Remove confirmed waste in BulkScan**
+- [x] **TASK-045: Remove confirmed waste in BulkScan**
   None of these move the median much — the walk is I/O-bound and `sample`
   already established that. They matter because they all sit on the single
   serialized publisher thread, the likeliest contributor to the 5.88 → 8.95 s
@@ -826,6 +826,16 @@ identity to exist.
   Do **not** revisit worker counts (12 < 8), `openat` fd handoff (tried,
   regressed, reverted) or publisher sharding (rejected on `sample` evidence)
   without a profile in hand.
+
+  **TASK-045 closed 2026-09-28 — measured, no change.** The path-String item
+  was already fixed in TASK-036. Instrumented the rest on a real home scan:
+  workers woke only 143 times per scan (they almost never wait), the
+  publisher had 72 spurious wakeups out of 164k; `task_info` cost 2 ms and the
+  buffer zero-fill 5 ms. Under 10 ms of 8–11 s — not worth new lost-wakeup risk
+  in a scheduler that just had two hangs fixed.
+
+  **p95 now tracked:** bench prints `scan_p95`; 20-run baseline min 7.75 /
+  median 8.01 / **p95 10.74** / max 11.57 s. Goal p95 ≤ 1.25 × median.
 
   **UI part done 2026-09-28** with TASK-044: the headline follows the real
   phase (walking → "Summarizing…") instead of item-count thresholds that said

@@ -347,3 +347,33 @@ two 2 413-line dumps are byte-identical.
 
 DeveloperCatalog (0.87 s) is now the largest remaining phase; it is rebuilt in
 Milestone 11 and made lazy in TASK-043.
+
+## Walk micro-waste: measured, not changed (TASK-045, 2026-09-28)
+
+The roadmap listed four suspected costs on the publisher thread. One (a
+throwaway path `String` per directory) was removed in TASK-036. The other three
+were instrumented on a real 2.25M-item home scan before touching code that has
+already had two concurrency bugs:
+
+| suspect | measured |
+|---|---|
+| `broadcast()` where `signal()` might do | 526 110 broadcasts, but workers woke only **143** times (100 spurious) — they almost never wait. Publisher woke 164 153 times, only **72** spurious. |
+| `task_info` every 4 000 items | **2 ms** per scan |
+| zero-filling 8 × 4 MB worker buffers | **5 ms** per scan |
+
+**Decision: no change.** Under 10 ms of an 8–11 s scan, and switching to
+`signal()` would add lost-wakeup risk to the scheduler for nothing.
+
+## p95 is tracked (TASK-046, 2026-09-28)
+
+`DiskMapScanBench` now prints `scan_p95` (nearest rank). Baseline, warm home,
+2.25M items, 20 runs (`docs/perf-results/p95-baseline.txt`):
+
+| min | median | p95 | max |
+|---|---|---|---|
+| 7.751 | 8.012 | **10.743** | 11.569 |
+
+Fourteen runs fall in 7.75–8.55 s; four form a 9.5–11.6 s tail. The probe
+above rules out the publisher as the source (72 spurious wakeups per scan), so
+the tail looks external — disk contention, Spotlight, thermals. **Goal: p95 ≤
+1.25 × median** (today 1.34 ×). Report `scan_p95` with n ≥ 20 on any walk change.

@@ -1,0 +1,21 @@
+run=1/20 label=p95-baseline items=2251175 nodes=2215628 scan=7.795s walk_rss=376537088 after_rss=487030784 names=908331 name_utf8=33662928
+run=2/20 label=p95-baseline items=2251175 nodes=2215628 scan=7.984s walk_rss=490881024 after_rss=508624896 names=908331 name_utf8=33662928
+run=3/20 label=p95-baseline items=2251175 nodes=2215628 scan=7.854s walk_rss=511524864 after_rss=549912576 names=908331 name_utf8=33662928
+run=4/20 label=p95-baseline items=2251174 nodes=2215627 scan=10.265s walk_rss=553451520 after_rss=503611392 names=908330 name_utf8=33662856
+run=5/20 label=p95-baseline items=2251176 nodes=2215629 scan=7.811s walk_rss=505774080 after_rss=494272512 names=908332 name_utf8=33662938
+run=6/20 label=p95-baseline items=2251176 nodes=2215629 scan=7.849s walk_rss=500547584 after_rss=476856320 names=908332 name_utf8=33662938
+run=7/20 label=p95-baseline items=2251176 nodes=2215629 scan=7.782s walk_rss=486031360 after_rss=532414464 names=908332 name_utf8=33662938
+run=8/20 label=p95-baseline items=2251176 nodes=2215629 scan=7.751s walk_rss=536936448 after_rss=537444352 names=908332 name_utf8=33662938
+run=9/20 label=p95-baseline items=2251177 nodes=2215630 scan=7.915s walk_rss=544260096 after_rss=555352064 names=908333 name_utf8=33662973
+run=10/20 label=p95-baseline items=2251176 nodes=2215629 scan=7.843s walk_rss=555417600 after_rss=519995392 names=908332 name_utf8=33662938
+run=11/20 label=p95-baseline items=2251175 nodes=2215628 scan=9.490s walk_rss=522600448 after_rss=505167872 names=908332 name_utf8=33662938
+run=12/20 label=p95-baseline items=2251176 nodes=2215629 scan=7.923s walk_rss=510427136 after_rss=518995968 names=908332 name_utf8=33662938
+run=13/20 label=p95-baseline items=2251176 nodes=2215629 scan=8.041s walk_rss=527237120 after_rss=489570304 names=908332 name_utf8=33662938
+run=14/20 label=p95-baseline items=2251176 nodes=2215629 scan=8.308s walk_rss=494436352 after_rss=524369920 names=908332 name_utf8=33662938
+run=15/20 label=p95-baseline items=2251172 nodes=2215625 scan=10.743s walk_rss=532234240 after_rss=477544448 names=908328 name_utf8=33662770
+run=16/20 label=p95-baseline items=2251176 nodes=2215629 scan=8.303s walk_rss=483753984 after_rss=526237696 names=908332 name_utf8=33662938
+run=17/20 label=p95-baseline items=2251176 nodes=2215629 scan=8.837s walk_rss=526270464 after_rss=495288320 names=908332 name_utf8=33662938
+run=18/20 label=p95-baseline items=2251168 nodes=2215621 scan=11.569s walk_rss=501923840 after_rss=486326272 names=908324 name_utf8=33662610
+run=19/20 label=p95-baseline items=2251156 nodes=2215609 scan=10.507s walk_rss=487440384 after_rss=517406720 names=908312 name_utf8=33662098
+run=20/20 label=p95-baseline items=2251177 nodes=2215630 scan=8.551s walk_rss=521535488 after_rss=487391232 names=908333 name_utf8=33662990
+summary label=p95-baseline n=20 scan_min=7.751 scan_median=8.012 scan_max=11.569 scan_p95=10.743 walk_rss_median=511524864

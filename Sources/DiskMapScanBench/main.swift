@@ -103,6 +103,16 @@ struct Summary: Codable {
     var scanMax: Double
 }
 
+/// Nearest-rank percentile. p95 is the figure TASK-046 tracks: a user who
+/// sees 6 s once and 11 s the next concludes the app is unreliable, so the
+/// tail matters more than the median. Needs ~20 runs to mean anything.
+func percentile(_ values: [Double], _ p: Double) -> Double {
+    let sorted = values.sorted()
+    guard !sorted.isEmpty else { return 0 }
+    let rank = Int((p / 100 * Double(sorted.count)).rounded(.up))
+    return sorted[max(0, min(sorted.count - 1, rank - 1))]
+}
+
 func median(_ values: [Double]) -> Double {
     let sorted = values.sorted()
     guard !sorted.isEmpty else { return 0 }
@@ -348,7 +358,7 @@ if args.json {
     FileHandle.standardOutput.write(Data("\n".utf8))
 } else {
     print(
-        "summary label=\(args.label) n=\(rows.count) scan_min=\(String(format: "%.3f", scans.min() ?? 0)) scan_median=\(String(format: "%.3f", median(scans))) scan_max=\(String(format: "%.3f", scans.max() ?? 0)) walk_rss_median=\(rows.map(\.walkPeakRSS).sorted()[rows.count / 2])"
+        "summary label=\(args.label) n=\(rows.count) scan_min=\(String(format: "%.3f", scans.min() ?? 0)) scan_median=\(String(format: "%.3f", median(scans))) scan_max=\(String(format: "%.3f", scans.max() ?? 0)) scan_p95=\(String(format: "%.3f", percentile(scans, 95))) walk_rss_median=\(rows.map(\.walkPeakRSS).sorted()[rows.count / 2])"
     )
 }
 
