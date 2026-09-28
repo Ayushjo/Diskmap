@@ -1,0 +1,18 @@
+[5/7] Write Objects.LinkFileList
+[6/7] Linking DiskMapScanBench
+Build of product 'DiskMapScanBench' complete! (10.37s)
+=== running 5 warm home scans ===
+Build of product 'DiskMapScanBench' complete! (0.13s)
+DiskMap scan: items=2054729 elapsed=12.794s rss_during_walk_peak=340590592 rss_after_enumerator_release=406913024 not_downloaded=17 hard_links=14953 cross_mount_skips=0
+run=1/5 label=task036-identity items=2054729 nodes=2019549 scan=12.794s rollup=0.033s walk_rss=340590592 after_rss=406913024 names=837396 name_utf8=31722943
+DiskMap scan: items=2054731 elapsed=6.957s rss_during_walk_peak=413007872 rss_after_enumerator_release=403275776 not_downloaded=17 hard_links=14953 cross_mount_skips=0
+run=2/5 label=task036-identity items=2054731 nodes=2019551 scan=6.957s rollup=0.025s walk_rss=413007872 after_rss=403275776 names=837398 name_utf8=31723027
+DiskMap scan: items=2054728 elapsed=9.552s rss_during_walk_peak=435683328 rss_after_enumerator_release=399491072 not_downloaded=17 hard_links=14953 cross_mount_skips=0
+run=3/5 label=task036-identity items=2054728 nodes=2019548 scan=9.552s rollup=0.033s walk_rss=435683328 after_rss=399491072 names=837395 name_utf8=31722901
+DiskMap scan: items=2054730 elapsed=6.993s rss_during_walk_peak=408027136 rss_after_enumerator_release=422100992 not_downloaded=17 hard_links=14953 cross_mount_skips=0
+run=4/5 label=task036-identity items=2054730 nodes=2019550 scan=6.993s rollup=0.028s walk_rss=408027136 after_rss=422100992 names=837397 name_utf8=31723013
+DiskMap scan: items=2054733 elapsed=6.847s rss_during_walk_peak=422150144 rss_after_enumerator_release=402276352 not_downloaded=17 hard_links=14953 cross_mount_skips=0
+run=5/5 label=task036-identity items=2054733 nodes=2019553 scan=6.847s rollup=0.027s walk_rss=422150144 after_rss=402276352 names=837400 name_utf8=31723086
+summary label=task036-identity n=5 scan_min=6.847 scan_median=6.993 scan_max=12.794 walk_rss_median=413007872
+
+[exited with code 0]

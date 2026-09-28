@@ -28,7 +28,10 @@ public struct SnapshotChange: Sendable, Equatable {
 
 enum SnapshotCodec {
     static let magic = Data("DMAP".utf8)
-    static let version: UInt32 = 2
+    /// v3 adds the per-node fileID array (TASK-036). v1 and v2 stay
+    /// readable; their nodes decode with fileID 0 ("unknown"), which the
+    /// hard-link correction treats as "nothing to correct".
+    static let version: UInt32 = 3
 
     static func encode(_ snapshot: DiskSnapshot) -> Data {
         var writer = Writer()
@@ -49,6 +52,7 @@ enum SnapshotCodec {
         writer.i32s(tree.createdDay)
         writer.flags(tree.isDirectory.map { $0 ? UInt8(1) : 0 })
         writer.flags(tree.flags)
+        writer.u64s(tree.fileID)
         for name in tree.nameTable { writer.string(name) }
         return writer.data
     }
@@ -58,7 +62,7 @@ enum SnapshotCodec {
         let magic = try reader.bytes(4)
         guard magic == self.magic else { throw SnapshotError.badMagic }
         let fileVersion = try reader.u32()
-        guard fileVersion == 1 || fileVersion == version else { throw SnapshotError.badVersion }
+        guard fileVersion >= 1, fileVersion <= version else { throw SnapshotError.badVersion }
         let capturedAt = Date(timeIntervalSince1970: TimeInterval(try reader.i64()))
         let rootPath = try reader.string()
         let count = Int(try reader.i32())
@@ -81,6 +85,12 @@ enum SnapshotCodec {
         }
         let isDirectory = try reader.flags(count).map { $0 != 0 }
         let flags = try reader.flags(count)
+        let fileID: [UInt64]
+        if fileVersion >= 3 {
+            fileID = try reader.u64s(count)
+        } else {
+            fileID = []   // replacePacked fills zeros
+        }
         var nameTable: [String] = []
         nameTable.reserveCapacity(nameCount)
         for _ in 0..<nameCount { nameTable.append(try reader.string()) }
@@ -96,7 +106,8 @@ enum SnapshotCodec {
             modifiedDay: modifiedDay,
             createdDay: createdDay,
             isDirectory: isDirectory,
-            flags: flags
+            flags: flags,
+            fileID: fileID
         ) else { throw SnapshotError.corrupt }
         return DiskSnapshot(rootPath: rootPath, capturedAt: capturedAt, tree: tree)
     }
@@ -141,7 +152,7 @@ public enum SnapshotStore {
         let magic = try reader.bytes(4)
         guard magic == SnapshotCodec.magic else { throw SnapshotError.badMagic }
         let hv = try reader.u32()
-        guard hv == 1 || hv == SnapshotCodec.version else { throw SnapshotError.badVersion }
+        guard hv >= 1, hv <= SnapshotCodec.version else { throw SnapshotError.badVersion }
         let capturedAt = Date(timeIntervalSince1970: TimeInterval(try reader.i64()))
         let rootPath = try reader.string()
         return SnapshotHeader(rootPath: rootPath, capturedAt: capturedAt)
@@ -252,6 +263,8 @@ private struct Writer {
     mutating func i64(_ value: Int64) { append(value.littleEndian) }
     mutating func i32s(_ values: [Int32]) { values.forEach { i32($0) } }
     mutating func i64s(_ values: [Int64]) { values.forEach { i64($0) } }
+    mutating func u64(_ value: UInt64) { append(value.littleEndian) }
+    mutating func u64s(_ values: [UInt64]) { values.forEach { u64($0) } }
     mutating func flags(_ values: [UInt8]) { data.append(contentsOf: values) }
     mutating func string(_ value: String) {
         let bytes = Data(value.utf8)
@@ -288,6 +301,12 @@ private struct Reader {
 
     mutating func i64s(_ count: Int) throws -> [Int64] {
         try (0..<count).map { _ in try i64() }
+    }
+
+    mutating func u64() throws -> UInt64 { UInt64(littleEndian: try read()) }
+
+    mutating func u64s(_ count: Int) throws -> [UInt64] {
+        try (0..<count).map { _ in try u64() }
     }
 
     mutating func flags(_ count: Int) throws -> [UInt8] {

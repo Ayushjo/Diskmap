@@ -112,6 +112,14 @@ for run in 1...args.repeats {
         totals = result.tree.rollUpBoth()
         let seconds = durationSeconds(from: started)
         if args.rollup { rollupSeconds = seconds }
+        // TASK-037: what hard-link de-duplication removed from those totals.
+        let correction = result.tree.hardLinkCorrection()
+        print("hardlinks label=\(args.label) flagged=\(result.hardLinkCount) "
+            + "inodes=\(correction.inodeCount) duplicate_names=\(correction.duplicateNameCount) "
+            + "allocated_not_double_counted=\(correction.allocatedBytes) "
+            + "logical_not_double_counted=\(correction.logicalBytes) "
+            + "cross_mount_skips=\(result.crossMountSkipCount)")
+        fflush(stdout)
     }
 
     if args.layout, let totals {

@@ -1,0 +1,10 @@
+Preparing worktree (detached HEAD 8190439)
+HEAD is now at 8190439 feat: polish DiskMap UI and visualizations
+[8/9] Linking DiskMapScanBench
+Build of product 'DiskMapScanBench' complete! (34.43s)
+=== BASELINE (pre-TASK-036) 5 warm home scans ===
+DiskMap scan: items=2054730 elapsed=9.281s rss_during_walk_peak=419053568 rss_after_enumerator_release=367804416 not_downloaded=17
+run=5/5 label=baseline-pre036 items=2054730 nodes=2019553 scan=9.281s rollup=0.034s walk_rss=419053568 after_rss=367804416 names=837400 name_utf8=31722990
+summary label=baseline-pre036 n=5 scan_min=6.916 scan_median=6.932 scan_max=9.598 walk_rss_median=411566080
+
+[exited with code 0]

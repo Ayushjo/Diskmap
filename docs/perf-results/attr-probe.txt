@@ -1,0 +1,107 @@
+AttrProbe — measured getattrlistbulk record layout for the TASK-036 mask
+========================================================================
+Machine: Darwin 25.5.0, APFS, Command Line Tools SDK.
+Mask: ATTR_CMN_{RETURNED_ATTRS,NAME,DEVID,ERROR,OBJTYPE,CRTIME,MODTIME,FLAGS,FILEID}
+      ATTR_DIR_{LINKCOUNT,ALLOCSIZE,DATALENGTH}
+      ATTR_FILE_{LINKCOUNT,TOTALSIZE,ALLOCSIZE}
+      options = FSOPT_NOFOLLOW | FSOPT_PACK_INVAL_ATTRS
+
+Offsets below are MEASURED, not derived: the probe builds a fixture with known
+lstat values (odd file size 4242, a hard link so st_nlink == 2, a directory with
+3 children) and reports every offset whose bytes equal ground truth.
+
+DERIVED LAYOUT (both record kinds — they are the same width)
+------------------------------------------------------------
+  off  size  field
+    0     4  record length (u32)
+    4    20  ATTR_CMN_RETURNED_ATTRS (attribute_set_t, 5 x u32)
+   24     4  ATTR_CMN_ERROR (u32)
+   28     4  ATTR_CMN_NAME dataoffset (i32)   -- name at (record + 28 + dataoffset)
+   32     4  ATTR_CMN_NAME length (u32)
+   36     4  ATTR_CMN_DEVID (i32)             -- NEW
+   40     4  ATTR_CMN_OBJTYPE (u32)           -- was 36
+   44    16  ATTR_CMN_CRTIME (timespec)       -- was 40
+   60    16  ATTR_CMN_MODTIME (timespec)      -- was 56
+   76     4  ATTR_CMN_FLAGS (u32)             -- was 72
+   80     8  ATTR_CMN_FILEID (u64)            -- NEW
+   88     4  ATTR_{DIR,FILE}_LINKCOUNT (u32)  -- NEW
+   92     8  dir: ATTR_DIR_ALLOCSIZE   / file: ATTR_FILE_TOTALSIZE   -- was 76
+  100     8  dir: ATTR_DIR_DATALENGTH  / file: ATTR_FILE_ALLOCSIZE   -- was 84
+  108        fixedPrefix (was 92); name bytes follow
+
+KEY RESULT: requesting ATTR_DIR_LINKCOUNT keeps the dir and file sections the
+SAME width (4 + 8 + 8 = 20 bytes at offset 88). parse() therefore keeps its
+single offset pair and only swaps the MEANING of the two size fields by
+objType, exactly as before. Without ATTR_DIR_LINKCOUNT the file section would
+be 4 bytes wider and the shared-offset parse would break.
+
+CAVEAT — ATTR_DIR_LINKCOUNT IS NOT THE SUBDIRECTORY COUNT ON APFS.
+The probe directory has 3 subdirectories and lstat reports st_nlink == 5, but
+ATTR_DIR_LINKCOUNT came back as 1 (see the dir record, offset 88 == 0x01).
+Do NOT use it as a child count or as an lstat-equivalent link count. We request
+it solely to keep the record layout symmetric. Only ATTR_FILE_LINKCOUNT is
+trusted, and only for files (it read 2 for the hard-linked fixture, correct).
+
+RAW OUTPUT
+----------
+Build of product 'AttrProbe' complete! (0.14s)
+=== ground truth (lstat) ===
+probe-file.bin: isDir=false ino=23604808 nlink=2 size=4242 alloc=8192 dev=16777232 mtime=1790310912 birth=1790310912
+probe-dir: isDir=true ino=23604811 nlink=5 size=160 alloc=0 dev=16777232 mtime=1790310912 birth=1790310912
+probe-file.link: isDir=false ino=23604808 nlink=2 size=4242 alloc=8192 dev=16777232 mtime=1790310912 birth=1790310912
+
+=== record for probe-file.bin (isDir=false) — length 128 ===
+  0000  80 00 00 00 0b 06 04 a2 00 00 00 00 00 00 00 00
+  0016  07 00 00 00 00 00 00 00 00 00 00 00 50 00 00 00
+  0032  0f 00 00 00 10 00 00 01 01 00 00 00 00 fa b5 6a
+  0048  00 00 00 00 11 de 13 25 00 00 00 00 00 fa b5 6a
+  0064  00 00 00 00 10 4a 18 25 00 00 00 00 00 00 00 00
+  0080  48 2e 68 01 00 00 00 00 02 00 00 00 92 10 00 00
+  0096  00 00 00 00 00 20 00 00 00 00 00 00 70 72 6f 62
+  0112  65 2d 66 69 6c 65 2e 62 69 6e 00 00 00 00 00 00
+
+  FILEID (u64)           80
+  DEVID (i32)            36
+  LINKCOUNT (u32)        88
+  size (i64)             92
+  alloc (i64)            100
+  MODTIME.sec            44, 60
+  CRTIME.sec             44, 60
+
+=== record for probe-file.bin (isDir=false) — length 128 ===
+  0000  80 00 00 00 0b 06 04 a2 00 00 00 00 00 00 00 00
+  0016  07 00 00 00 00 00 00 00 00 00 00 00 50 00 00 00
+  0032  10 00 00 00 10 00 00 01 01 00 00 00 00 fa b5 6a
+  0048  00 00 00 00 11 de 13 25 00 00 00 00 00 fa b5 6a
+  0064  00 00 00 00 10 4a 18 25 00 00 00 00 00 00 00 00
+  0080  48 2e 68 01 00 00 00 00 02 00 00 00 92 10 00 00
+  0096  00 00 00 00 00 20 00 00 00 00 00 00 70 72 6f 62
+  0112  65 2d 66 69 6c 65 2e 6c 69 6e 6b 00 00 00 00 00
+
+  FILEID (u64)           80
+  DEVID (i32)            36
+  LINKCOUNT (u32)        88
+  size (i64)             92
+  alloc (i64)            100
+  MODTIME.sec            44, 60
+  CRTIME.sec             44, 60
+
+=== record for probe-dir (isDir=true) — length 120 ===
+  0000  78 00 00 00 0b 06 04 a2 00 00 00 00 29 00 00 00
+  0016  00 00 00 00 00 00 00 00 00 00 00 00 50 00 00 00
+  0032  0a 00 00 00 10 00 00 01 02 00 00 00 00 fa b5 6a
+  0048  00 00 00 00 0b 43 26 25 00 00 00 00 00 fa b5 6a
+  0064  00 00 00 00 5b 23 30 25 00 00 00 00 00 00 00 00
+  0080  4b 2e 68 01 00 00 00 00 01 00 00 00 00 00 00 00
+  0096  00 00 00 00 a0 00 00 00 00 00 00 00 70 72 6f 62
+  0112  65 2d 64 69 72 00 00 00
+
+  FILEID (u64)           80
+  DEVID (i32)            36
+  LINKCOUNT (u32)        NOT FOUND
+  size (i64)             100
+  alloc (i64)            16, 20, 72, 92
+  MODTIME.sec            44, 60
+  CRTIME.sec             44, 60
+
+records examined: 3

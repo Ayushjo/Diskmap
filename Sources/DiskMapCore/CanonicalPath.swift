@@ -25,6 +25,17 @@ public enum CanonicalPath {
         "/System/Volumes/Data/Users/Shared",
     ]
 
+    /// Whether `shouldSkipDescend` can ever return true for this scan root.
+    /// It cannot unless the root is "/" or under /System/Volumes, so the walk
+    /// checks this once instead of building a path String per directory just
+    /// to be told "no" (see BulkScan.publish).
+    public static func mayContainFirmlinkTwins(scanRootPath: String) -> Bool {
+        let root = scanRootPath.hasSuffix("/") && scanRootPath != "/"
+            ? String(scanRootPath.dropLast())
+            : scanRootPath
+        return root == "/" || root == "/System" || root.hasPrefix("/System/Volumes")
+    }
+
     /// True when `absolutePath` is exactly a Data-volume firmlink target (or a
     /// known twin). Used to avoid double-walking the same physical tree.
     public static func shouldSkipDescend(absolutePath: String, scanRootPath: String) -> Bool {

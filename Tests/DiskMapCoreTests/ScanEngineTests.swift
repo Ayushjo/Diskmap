@@ -6,7 +6,14 @@ struct ProcessMemoryTests {
     @Test func taskInfoReturnsResidentAndPeak() throws {
         let snapshot = try #require(ProcessMemory.current())
         #expect(snapshot.residentBytes > 0)
-        #expect(snapshot.peakResidentBytes >= snapshot.residentBytes)
+        // `resident_size_max` is a high-water mark the kernel updates lazily,
+        // so within one read it can trail `resident_size` while other tests
+        // are allocating (seen: peak 91 MB below current, 1 run in 15). Only
+        // assert what the kernel guarantees: the mark exists and it never goes
+        // backwards between two reads.
+        #expect(snapshot.peakResidentBytes > 0)
+        let later = try #require(ProcessMemory.current())
+        #expect(later.peakResidentBytes >= snapshot.peakResidentBytes)
         #expect(snapshot.virtualBytes >= snapshot.residentBytes)
     }
 }
@@ -100,6 +107,7 @@ struct FileTreeStorageTests {
     @Test func packedStrideMatchesStoredFields() {
         let stride = MemoryLayout<Int32>.stride * 6
             + MemoryLayout<Int64>.stride * 2
+            + MemoryLayout<UInt64>.stride   // fileID (TASK-036)
             + MemoryLayout<Bool>.stride
             + MemoryLayout<UInt8>.stride
         #expect(FileTree.packedNodeStride == stride)

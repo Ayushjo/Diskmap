@@ -20,6 +20,12 @@ public actor ScanEngine {
         /// enumerator is released and the tree is still retained.
         public var residentBytesAfterEnumeratorRelease: UInt64?
         public var notDownloadedCount: Int
+        /// Files with ATTR_FILE_LINKCOUNT > 1. These are the only nodes the
+        /// hard-link rollup correction has to consider (TASK-037).
+        public var hardLinkCount: Int
+        /// Directories recorded but not walked because they live on another
+        /// volume. Non-zero means these totals deliberately exclude a mount.
+        public var crossMountSkipCount: Int
     }
 
     /// What to store for one enumerated item. Split out so the iCloud
@@ -34,15 +40,30 @@ public actor ScanEngine {
 
     public init() {}
 
-    public func scan(root: URL, progress: (@Sendable (Int) -> Void)? = nil) async -> Result {
+    /// - Parameter crossMounts: when false (the default) the walk records a
+    ///   directory that sits on another volume but does not descend into it,
+    ///   so a "/" scan does not silently absorb every mounted disk. Pass true
+    ///   only when the caller genuinely wants every reachable filesystem.
+    public func scan(
+        root: URL,
+        crossMounts: Bool = false,
+        progress: (@Sendable (Int) -> Void)? = nil
+    ) async -> Result {
         let started = ContinuousClock.now
         // `walk` owns the enumerator. Measuring after it returns is the
         // steady state: tree retained, enumerator and per-item
         // resourceValues released. The during-walk peak is sampled only
         // inside `walk` and is not updated here.
-        let walked = await Task.detached(priority: .userInitiated) {
-            BulkScan.walk(root: root, progress: progress)
-        }.value
+        // `walk` blocks until the scan is done. It must not do that on a
+        // Swift-concurrency thread: that pool assumes its threads never block,
+        // and enough parallel scans parked there starved the walk's own
+        // workers into a permanent hang. Run it on a dedicated thread and
+        // resume when it finishes.
+        let walked = await withCheckedContinuation { (continuation: CheckedContinuation<BulkScan.Result, Never>) in
+            BulkScan.startScanThread(name: "DiskMap.scan.coordinator") {
+                continuation.resume(returning: BulkScan.walk(root: root, crossMounts: crossMounts, progress: progress))
+            }
+        }
         var tree = walked.tree
         tree.compact()
         let afterRelease = ProcessMemory.current()
@@ -53,7 +74,9 @@ public actor ScanEngine {
             elapsedSeconds: seconds(elapsed),
             peakResidentBytesDuringWalk: walked.peakResidentBytesDuringWalk,
             residentBytesAfterEnumeratorRelease: afterRelease?.residentBytes,
-            notDownloadedCount: walked.notDownloadedCount
+            notDownloadedCount: walked.notDownloadedCount,
+            hardLinkCount: walked.hardLinkCount,
+            crossMountSkipCount: walked.crossMountSkipCount
         )
         logSummary(result)
         return result
@@ -107,7 +130,7 @@ public actor ScanEngine {
 
     private func logSummary(_ result: Result) {
         let after = result.residentBytesAfterEnumeratorRelease.map(String.init) ?? "unavailable"
-        let line = "DiskMap scan: items=\(result.itemCount) elapsed=\(String(format: "%.3f", result.elapsedSeconds))s rss_during_walk_peak=\(result.peakResidentBytesDuringWalk) rss_after_enumerator_release=\(after) not_downloaded=\(result.notDownloadedCount)"
+        let line = "DiskMap scan: items=\(result.itemCount) elapsed=\(String(format: "%.3f", result.elapsedSeconds))s rss_during_walk_peak=\(result.peakResidentBytesDuringWalk) rss_after_enumerator_release=\(after) not_downloaded=\(result.notDownloadedCount) hard_links=\(result.hardLinkCount) cross_mount_skips=\(result.crossMountSkipCount)"
         print(line)
         fflush(stdout)
     }

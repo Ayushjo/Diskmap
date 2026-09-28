@@ -22,10 +22,20 @@ enum BulkScan {
         var tree: FileTree
         var itemCount: Int
         var notDownloadedCount: Int
+        /// Files whose ATTR_FILE_LINKCOUNT was > 1 — candidates for the
+        /// hard-link rollup correction (TASK-037).
+        var hardLinkCount: Int
+        /// Directories recorded but not descended because they sit on another
+        /// volume. Non-zero means the totals deliberately exclude a mount.
+        var crossMountSkipCount: Int
         var peakResidentBytesDuringWalk: UInt64
     }
 
-    static func walk(root: URL, progress: (@Sendable (Int) -> Void)?) -> Result {
+    static func walk(
+        root: URL,
+        crossMounts: Bool = false,
+        progress: (@Sendable (Int) -> Void)?
+    ) -> Result {
         var tree = FileTree()
         // Home scans land near 1.7–2M nodes; reserve once so appends stay O(1).
         tree.reserveNodeCapacity(1_000_000, uniqueNames: 400_000)
@@ -39,20 +49,49 @@ enum BulkScan {
         )
         let state = State(tree: tree, progress: progress)
         state.scanRootPath = root.path
+        state.crossMounts = crossMounts
+        // Device id of the scan root. Children on a different device are
+        // recorded but not descended, so a "/" scan does not silently absorb
+        // every mounted volume — and so ATTR_CMN_FILEID stays unique per scan.
+        var rootStat = stat()
+        if lstat(root.path, &rootStat) == 0 {
+            state.scanRootDevID = Int32(rootStat.st_dev)
+            state.hasRootDevID = true
+        }
+        // shouldSkipDescend only ever returns true when the root is "/" or
+        // under /System/Volumes. Evaluate that once here instead of building
+        // and discarding a path String for every directory in publish().
+        state.mayHitFirmlinkTwins = CanonicalPath.mayContainFirmlinkTwins(scanRootPath: root.path)
         state.enqueue(pathUTF8: nulTerminatedUTF8(root.path), nodeID: rootID)
         state.startPublisher()
 
         let workers = configuredWorkers()
         let group = DispatchGroup()
-        for _ in 0..<workers {
+        for index in 0..<workers {
             group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
+            startScanThread(name: "DiskMap.scan.worker.\(index)") {
                 worker(state)
                 group.leave()
             }
         }
         group.wait()
         return state.finish()
+    }
+
+    /// Workers and the publisher spend most of their lives blocked on
+    /// `condition` waiting for each other, so they run on dedicated threads,
+    /// never on GCD's global queues or Swift's cooperative pool. Both of those
+    /// pools cap how many threads may run at a QoS; once every slot is held by
+    /// a thread blocked in this walk (easily reached when several scans run at
+    /// once), the workers that would unblock them can never be scheduled and
+    /// every scan waits forever. Observed 2026-09-28: 11 scans stuck in
+    /// `group.wait()` with zero worker and zero publisher threads alive. A
+    /// handful of threads per multi-second scan costs nothing measurable.
+    static func startScanThread(name: String, _ body: @escaping @Sendable () -> Void) {
+        let thread = Thread(block: body)
+        thread.name = name
+        thread.qualityOfService = .userInitiated
+        thread.start()
     }
 
     private static func configuredWorkers() -> Int {
@@ -93,9 +132,14 @@ enum BulkScan {
         var list = attrlist()
         memset(&list, 0, MemoryLayout<attrlist>.size)
         list.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
-        list.commonattr = attrReturned | attrName | attrError | attrObjType | attrCrTime | attrModTime | attrFlags
-        list.dirattr = attrDirAlloc | attrDirData
-        list.fileattr = attrFileTotal | attrFileAlloc
+        list.commonattr = attrReturned | attrName | attrDevID | attrError | attrObjType
+            | attrCrTime | attrModTime | attrFlags | attrFileID
+        // ATTR_DIR_LINKCOUNT is requested purely to keep the dir and file
+        // sections the same width (4 + 8 + 8 at offset 88) so `parse` can keep
+        // one offset pair. Its VALUE is not trusted — on APFS it reads 1 even
+        // for a directory with children (docs/perf-results/attr-probe.txt).
+        list.dirattr = attrDirLinkCount | attrDirAlloc | attrDirData
+        list.fileattr = attrFileLinkCount | attrFileTotal | attrFileAlloc
 
         var names = [UInt8]()
         names.reserveCapacity(64 * 1024)
@@ -119,7 +163,12 @@ enum BulkScan {
         state.submit(Batch(parentPathUTF8: job.pathUTF8, parent: job.nodeID, names: names, entries: entries))
     }
 
-    /// Offsets measured 2026-09-14; +16 for ATTR_CMN_CRTIME (2026-09-14). Name at `nameRef + dataOffset`.
+    /// Offsets MEASURED by the `AttrProbe` target, not hand-derived — raw
+    /// evidence in `docs/perf-results/attr-probe.txt` (2026-09-25, TASK-036).
+    /// Adding ATTR_CMN_DEVID (+4 at 36), ATTR_CMN_FILEID (+8 at 80) and
+    /// LINKCOUNT (+4 at 88) moved every later field and took `fixedPrefix`
+    /// from 92 to 108. Re-run `swift run AttrProbe` after ANY mask change.
+    /// Name is still at `nameRef + dataOffset`, which adapts on its own.
     private static func parse(buffer: [UInt8], count: Int, names: inout [UInt8], entries: inout [Entry]) {
         var offset = 0
         for _ in 0..<count {
@@ -130,13 +179,16 @@ enum BulkScan {
             let nameOffset = load(Int32.self, buffer, offset + 28)
             let nameLength = Int(load(UInt32.self, buffer, offset + 32))
             let nameStart = offset + 28 + Int(nameOffset)
-            let objType = load(UInt32.self, buffer, offset + 36)
+            let devID = load(Int32.self, buffer, offset + 36)
+            let objType = load(UInt32.self, buffer, offset + 40)
             // ATTR_CMN_CRTIME then ATTR_CMN_MODTIME (each timespec = 16 bytes).
-            let created = load(Int64.self, buffer, offset + 40)
-            let modified = load(Int64.self, buffer, offset + 56)
-            let flags = load(UInt32.self, buffer, offset + 72)
-            let firstSize = load(Int64.self, buffer, offset + 76)
-            let secondSize = load(Int64.self, buffer, offset + 84)
+            let created = load(Int64.self, buffer, offset + 44)
+            let modified = load(Int64.self, buffer, offset + 60)
+            let flags = load(UInt32.self, buffer, offset + 76)
+            let fileID = load(UInt64.self, buffer, offset + 80)
+            let linkCount = load(UInt32.self, buffer, offset + 88)
+            let firstSize = load(Int64.self, buffer, offset + 92)
+            let secondSize = load(Int64.self, buffer, offset + 100)
             defer { offset += length }
 
             guard error == 0, nameLength > 1, nameStart >= offset, nameStart + nameLength <= offset + length else {
@@ -171,7 +223,12 @@ enum BulkScan {
                 day: dayFromEpochSeconds(modified),
                 createdDay: dayFromEpochSeconds(created),
                 notDownloaded: dataless,
-                descend: isDirectory && !isLink && !dataless
+                descend: isDirectory && !isLink && !dataless,
+                fileID: fileID,
+                devID: devID,
+                // Directories are never hard links on APFS, and
+                // ATTR_DIR_LINKCOUNT is not a real link count anyway.
+                isHardLink: !isDirectory && linkCount > 1
             ))
         }
     }
@@ -217,15 +274,28 @@ enum BulkScan {
 
     private final class State: @unchecked Sendable {
         var scanRootPath: String = "/"
+        var scanRootDevID: Int32 = 0
+        var hasRootDevID = false
+        var crossMounts = false
+        /// False for the overwhelmingly common home scan, which lets
+        /// `publish` skip building a path String per directory entirely.
+        var mayHitFirmlinkTwins = false
         private let condition = NSCondition()
         private var jobs: [Job] = []
         private var batches: [Batch] = []
         private var inflight = 0
+        /// Batches the publisher has taken off the queue but not finished
+        /// turning into nodes and child jobs. Without this the walk can
+        /// declare itself finished while a subtree is still in the
+        /// publisher's hands — see `signalWorkLocked`.
+        private var publishing = 0
         private var finished = false
         private var publisherExited = false
         private var tree: FileTree
         private var itemCount = 0
         private var notDownloadedCount = 0
+        private var hardLinkCount = 0
+        private var crossMountSkipCount = 0
         private var peak: UInt64
         private let progress: (@Sendable (Int) -> Void)?
         private var lastReported = 0
@@ -237,7 +307,7 @@ enum BulkScan {
         }
 
         func startPublisher() {
-            DispatchQueue.global(qos: .userInitiated).async { [self] in
+            BulkScan.startScanThread(name: "DiskMap.scan.publisher") { [self] in
                 self.publishLoop()
             }
         }
@@ -288,7 +358,15 @@ enum BulkScan {
                     condition.unlock()
                     return
                 }
-                batch = batches.isEmpty ? nil : batches.removeLast()
+                if batches.isEmpty {
+                    batch = nil
+                } else {
+                    batch = batches.removeLast()
+                    // Claim it BEFORE unlocking: between here and the
+                    // re-lock at the end of publish() the queues look empty
+                    // even though this batch's children are still coming.
+                    publishing += 1
+                }
                 condition.unlock()
                 if let batch {
                     publish(batch)
@@ -300,6 +378,8 @@ enum BulkScan {
             var children: [Job] = []
             children.reserveCapacity(32)
             var notDownloadedDelta = 0
+            var hardLinkDelta = 0
+            var crossMountSkipDelta = 0
 
             batch.names.withUnsafeBufferPointer { raw in
                 guard let base = raw.baseAddress else { return }
@@ -310,6 +390,10 @@ enum BulkScan {
                         flags |= NodeFlags.notDownloaded
                         notDownloadedDelta += 1
                     }
+                    if entry.isHardLink {
+                        flags |= NodeFlags.hardLink
+                        hardLinkDelta += 1
+                    }
                     let id = tree.addNode(
                         utf8: bytes,
                         parent: batch.parent,
@@ -318,21 +402,35 @@ enum BulkScan {
                         allocatedSize: entry.allocated,
                         modifiedDaysSinceEpoch: entry.day,
                         createdDaysSinceEpoch: entry.createdDay,
-                        flags: flags
+                        flags: flags,
+                        fileID: entry.fileID
                     )
                     if entry.descend {
+                        // Record the directory node for navigation, but do not
+                        // walk it when it lives on another volume — its bytes
+                        // are not part of this scan root's storage.
+                        if !self.crossMounts, self.hasRootDevID, entry.devID != self.scanRootDevID {
+                            crossMountSkipDelta += 1
+                            continue
+                        }
                         let childPathUTF8 = BulkScan.joinPathUTF8(
                             parentPathUTF8: batch.parentPathUTF8,
                             name: bytes
                         )
-                        let childPath = BulkScan.pathString(fromNULTerminated: childPathUTF8)
-                        if CanonicalPath.shouldSkipDescend(absolutePath: childPath, scanRootPath: self.scanRootPath) {
-                            // Record the directory node for navigation, but do not
-                            // walk the Data-volume twin of a firmlink already reachable
-                            // via /Users, /Applications, etc.
-                        } else {
-                            children.append(Job(pathUTF8: childPathUTF8, nodeID: id))
+                        if self.mayHitFirmlinkTwins {
+                            // Only a "/" (or /System/Volumes) scan can reach the
+                            // Data-volume twin of a firmlink already reachable via
+                            // /Users, /Applications, etc. Building this String for
+                            // every directory of a home scan was pure waste.
+                            let childPath = BulkScan.pathString(fromNULTerminated: childPathUTF8)
+                            if CanonicalPath.shouldSkipDescend(
+                                absolutePath: childPath,
+                                scanRootPath: self.scanRootPath
+                            ) {
+                                continue
+                            }
                         }
+                        children.append(Job(pathUTF8: childPathUTF8, nodeID: id))
                     }
                 }
             }
@@ -341,6 +439,8 @@ enum BulkScan {
             condition.lock()
             itemCount += batch.entries.count
             notDownloadedCount += notDownloadedDelta
+            hardLinkCount += hardLinkDelta
+            crossMountSkipCount += crossMountSkipDelta
             if itemCount - lastReported >= 4000 {
                 lastReported = itemCount
                 report = itemCount
@@ -348,6 +448,7 @@ enum BulkScan {
             if !children.isEmpty {
                 jobs.append(contentsOf: children)
             }
+            publishing -= 1
             signalWorkLocked()
             condition.unlock()
 
@@ -361,8 +462,17 @@ enum BulkScan {
             }
         }
 
+        /// The walk is done only when no worker is scanning, no batch is
+        /// queued, AND the publisher is not mid-flight. Omitting `publishing`
+        /// let this sequence silently drop a subtree: the publisher takes the
+        /// batch for a directory and unlocks; a worker then fails to open a
+        /// chmod-000 sibling and calls `noteUnopenedDirectory`, which drops
+        /// `inflight` to 0 while `jobs` and `batches` are momentarily empty;
+        /// `finished` is set, every worker exits, and the child jobs the
+        /// publisher appends a moment later are never scanned. The tree came
+        /// back missing an entire directory with no error anywhere.
         private func signalWorkLocked() {
-            if inflight == 0 && jobs.isEmpty && batches.isEmpty {
+            if inflight == 0 && publishing == 0 && jobs.isEmpty && batches.isEmpty {
                 finished = true
             }
             condition.broadcast()
@@ -377,6 +487,8 @@ enum BulkScan {
                 tree: tree,
                 itemCount: itemCount,
                 notDownloadedCount: notDownloadedCount,
+                hardLinkCount: hardLinkCount,
+                crossMountSkipCount: crossMountSkipCount,
                 peakResidentBytesDuringWalk: max(peak, ProcessMemory.current()?.residentBytes ?? peak)
             )
             condition.unlock()
@@ -409,6 +521,13 @@ private struct Entry {
     var createdDay: Int32
     var notDownloaded: Bool
     var descend: Bool
+    /// ATTR_CMN_FILEID. Unique per volume, which is why the walk refuses to
+    /// cross mount points unless asked (see `State.crossMounts`).
+    var fileID: UInt64
+    /// ATTR_CMN_DEVID, used only to decide descent. Not stored per node.
+    var devID: Int32
+    /// ATTR_FILE_LINKCOUNT > 1. Files only.
+    var isHardLink: Bool
 
     static let skipped = Entry(
         nameStart: 0,
@@ -420,23 +539,30 @@ private struct Entry {
         day: 0,
         createdDay: 0,
         notDownloaded: false,
-        descend: false
+        descend: false,
+        fileID: 0,
+        devID: 0,
+        isHardLink: false
     )
 }
 
 private let attrReturned: UInt32 = 0x80000000
 private let attrName: UInt32 = 0x00000001
+private let attrDevID: UInt32 = 0x00000002
 private let attrObjType: UInt32 = 0x00000008
 private let attrCrTime: UInt32 = 0x00000200
 private let attrModTime: UInt32 = 0x00000400
 private let attrFlags: UInt32 = 0x00040000
+private let attrFileID: UInt32 = 0x02000000
 private let attrError: UInt32 = 0x20000000
+private let attrDirLinkCount: UInt32 = 0x00000001
 private let attrDirAlloc: UInt32 = 0x00000008
 private let attrDirData: UInt32 = 0x00000020
+private let attrFileLinkCount: UInt32 = 0x00000001
 private let attrFileTotal: UInt32 = 0x00000002
 private let attrFileAlloc: UInt32 = 0x00000004
 private let options = UInt64(FSOPT_NOFOLLOW | FSOPT_PACK_INVAL_ATTRS)
 private let sfDataless: UInt32 = 0x40000000
 private let vdir: UInt32 = 2
 private let vlunk: UInt32 = 5
-private let fixedPrefix = 92
+private let fixedPrefix = 108

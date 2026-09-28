@@ -53,6 +53,10 @@ public struct FileTree: Sendable {
     public private(set) var createdDay: [Int32] = []    // birthtime days since epoch; 0 = unknown
     public private(set) var isDirectory: [Bool] = []
     public private(set) var flags: [UInt8] = []         // see NodeFlags
+    /// ATTR_CMN_FILEID (inode). Unique per volume — the walk does not cross
+    /// mount points by default, so it is unique across one scan. 0 = unknown
+    /// (a v1/v2 snapshot, or a node built by a test helper).
+    public private(set) var fileID: [UInt64] = []
 
     public var count: Int { nameIndex.count }
 
@@ -69,6 +73,7 @@ public struct FileTree: Sendable {
         createdDay.reserveCapacity(capacity)
         isDirectory.reserveCapacity(capacity)
         flags.reserveCapacity(capacity)
+        fileID.reserveCapacity(capacity)
         if uniqueNames > 0 {
             nameOffset.reserveCapacity(uniqueNames)
             nameLength.reserveCapacity(uniqueNames)
@@ -89,6 +94,7 @@ public struct FileTree: Sendable {
     public static var packedNodeStride: Int {
         MemoryLayout<Int32>.stride * 6
             + MemoryLayout<Int64>.stride * 2
+            + MemoryLayout<UInt64>.stride
             + MemoryLayout<Bool>.stride
             + MemoryLayout<UInt8>.stride
     }
@@ -124,6 +130,7 @@ public struct FileTree: Sendable {
             + allocatedSize.capacity * MemoryLayout<Int64>.stride
             + isDirectory.capacity * MemoryLayout<Bool>.stride
             + flags.capacity * MemoryLayout<UInt8>.stride
+            + fileID.capacity * MemoryLayout<UInt64>.stride
         return StorageFootprint(
             nodeCount: count,
             uniqueNameCount: uniqueNameCount,
@@ -151,6 +158,7 @@ public struct FileTree: Sendable {
         createdDay = Self.exactCopy(createdDay)
         isDirectory = Self.exactCopy(isDirectory)
         flags = Self.exactCopy(flags)
+        fileID = Self.exactCopy(fileID)
         nameBlob = Self.exactCopy(nameBlob)
         nameOffset = Self.exactCopy(nameOffset)
         nameLength = Self.exactCopy(nameLength)
@@ -176,7 +184,8 @@ public struct FileTree: Sendable {
         allocatedSize: Int64,
         modifiedDaysSinceEpoch: Int32,
         createdDaysSinceEpoch: Int32 = 0,
-        flags: UInt8 = 0
+        flags: UInt8 = 0,
+        fileID: UInt64 = 0
     ) -> Int32 {
         appendNode(
             nameID: internName(name),
@@ -186,7 +195,8 @@ public struct FileTree: Sendable {
             allocatedSize: allocatedSize,
             modifiedDaysSinceEpoch: modifiedDaysSinceEpoch,
             createdDaysSinceEpoch: createdDaysSinceEpoch,
-            flags: flags
+            flags: flags,
+            fileID: fileID
         )
     }
 
@@ -201,7 +211,8 @@ public struct FileTree: Sendable {
         allocatedSize: Int64,
         modifiedDaysSinceEpoch: Int32,
         createdDaysSinceEpoch: Int32 = 0,
-        flags: UInt8 = 0
+        flags: UInt8 = 0,
+        fileID: UInt64 = 0
     ) -> Int32 {
         let nid = internUTF8(nameBytes)
         return appendNode(
@@ -212,7 +223,8 @@ public struct FileTree: Sendable {
             allocatedSize: allocatedSize,
             modifiedDaysSinceEpoch: modifiedDaysSinceEpoch,
             createdDaysSinceEpoch: createdDaysSinceEpoch,
-            flags: flags
+            flags: flags,
+            fileID: fileID
         )
     }
 
@@ -224,7 +236,8 @@ public struct FileTree: Sendable {
         allocatedSize: Int64,
         modifiedDaysSinceEpoch: Int32,
         createdDaysSinceEpoch: Int32,
-        flags: UInt8
+        flags: UInt8,
+        fileID: UInt64
     ) -> Int32 {
         let id = Int32(nameIndex.count)
         nameIndex.append(nid)
@@ -237,6 +250,7 @@ public struct FileTree: Sendable {
         createdDay.append(createdDaysSinceEpoch)
         self.isDirectory.append(isDirectory)
         self.flags.append(flags)
+        self.fileID.append(fileID)
         if parentID >= 0 {
             // Prepend to the parent's child list — O(1) insert. Child
             // order doesn't matter for a treemap since layout algorithms
@@ -405,6 +419,7 @@ public struct FileTree: Sendable {
     public func rollUpSizes(basis: SizeBasis = .allocated) -> [Int64] {
         var totals = [Int64](repeating: 0, count: count)
         guard count > 0 else { return totals }
+        let suppressed = suppressedHardLinkNames()
 
         // Iterative post-order: same totals as the old recursive walk, but
         // no per-node call frame (deep trees and multi-million node scans).
@@ -420,7 +435,7 @@ public struct FileTree: Sendable {
                 }
                 continue
             }
-            var total = ownSize(frame.id, basis: basis)
+            var total = ownSize(frame.id, basis: basis, suppressed: suppressed)
             var child = firstChild[Int(frame.id)]
             while child != -1 {
                 total += totals[Int(child)]
@@ -439,6 +454,7 @@ public struct FileTree: Sendable {
         var logical = [Int64](repeating: 0, count: count)
         var allocated = [Int64](repeating: 0, count: count)
         guard count > 0 else { return (logical, allocated) }
+        let suppressed = suppressedHardLinkNames()
 
         var stack: [(id: Int32, expanded: Bool)] = [(0, false)]
         stack.reserveCapacity(64)
@@ -453,8 +469,8 @@ public struct FileTree: Sendable {
                 continue
             }
             let index = Int(frame.id)
-            var logicalTotal = ownSize(frame.id, basis: .logical)
-            var allocatedTotal = ownSize(frame.id, basis: .allocated)
+            var logicalTotal = ownSize(frame.id, basis: .logical, suppressed: suppressed)
+            var allocatedTotal = ownSize(frame.id, basis: .allocated, suppressed: suppressed)
             var child = firstChild[index]
             while child != -1 {
                 let childIndex = Int(child)
@@ -505,8 +521,106 @@ public struct FileTree: Sendable {
         return (files, folders)
     }
 
-    private func ownSize(_ id: Int32, basis: SizeBasis) -> Int64 {
+    /// What hard-link de-duplication removed from the totals, so a caller can
+    /// explain the difference instead of silently reporting less than the sum
+    /// of the parts.
+    public struct HardLinkCorrection: Sendable, Equatable {
+        /// Inodes reachable under more than one name inside this tree.
+        public var inodeCount: Int
+        /// Names beyond the first for those inodes — the ones charged 0.
+        public var duplicateNameCount: Int
+        public var logicalBytes: Int64
+        public var allocatedBytes: Int64
+
+        public static let none = HardLinkCorrection(
+            inodeCount: 0, duplicateNameCount: 0, logicalBytes: 0, allocatedBytes: 0
+        )
+        public var isEmpty: Bool { duplicateNameCount == 0 }
+    }
+
+    /// Bytes that would have been counted more than once without the
+    /// de-duplication the rollups now apply.
+    public func hardLinkCorrection() -> HardLinkCorrection {
+        guard let groups = hardLinkGroups() else { return .none }
+        var correction = HardLinkCorrection.none
+        for (_, ids) in groups {
+            correction.inodeCount += 1
+            let keeper = electedName(among: ids)
+            for id in ids where id != keeper {
+                correction.duplicateNameCount += 1
+                correction.logicalBytes += logicalSize[Int(id)]
+                correction.allocatedBytes += allocatedSize[Int(id)]
+            }
+        }
+        return correction
+    }
+
+    /// Multiply-linked inodes that have more than one name *inside this tree*.
+    /// A file with `st_nlink == 2` whose other name lives outside the scan
+    /// root is not double-counted here, so it is deliberately not a group.
+    private func hardLinkGroups() -> [UInt64: [Int32]]? {
+        var flagged: [Int32] = []
+        for index in 0..<count
+        where flags[index] & NodeFlags.hardLink != 0 && fileID[index] != 0 && !isDirectory[index] {
+            flagged.append(Int32(index))
+        }
+        guard flagged.count > 1 else { return nil }
+        var byInode: [UInt64: [Int32]] = [:]
+        byInode.reserveCapacity(flagged.count)
+        for id in flagged { byInode[fileID[Int(id)], default: []].append(id) }
+        byInode = byInode.filter { $0.value.count > 1 }
+        return byInode.isEmpty ? nil : byInode
+    }
+
+    /// The one name that carries the bytes. Elected by lowest path, NOT by
+    /// node id: ids and sibling order both fall out of how the scan's worker
+    /// threads interleaved, so neither is stable between two scans of the same
+    /// disk — and an unstable choice would make snapshot diffs show a file
+    /// moving from one folder to another when nothing changed.
+    private func electedName(among ids: [Int32]) -> Int32 {
+        var keeper = ids[0]
+        var keeperKey = pathKey(of: keeper)
+        for id in ids.dropFirst() {
+            let key = pathKey(of: id)
+            if key < keeperKey {
+                keeper = id
+                keeperKey = key
+            }
+        }
+        return keeper
+    }
+
+    /// Root-relative "a/b/c". Built only for hard-linked nodes (a fraction of
+    /// a percent of a real tree), never on the rollup hot path.
+    private func pathKey(of id: Int32) -> String {
+        var parts: [String] = []
+        var current = id
+        while current > 0 {
+            parts.append(name(of: current))
+            current = parent[Int(current)]
+        }
+        return parts.reversed().joined(separator: "/")
+    }
+
+    /// `true` at every node whose bytes another name already accounts for.
+    /// `nil` — the overwhelmingly common case — means nothing to suppress and
+    /// costs one linear pass over the flags byte array, no allocation.
+    private func suppressedHardLinkNames() -> [Bool]? {
+        guard let groups = hardLinkGroups() else { return nil }
+        var mask = [Bool](repeating: false, count: count)
+        for (_, ids) in groups {
+            let keeper = electedName(among: ids)
+            for id in ids where id != keeper { mask[Int(id)] = true }
+        }
+        return mask
+    }
+
+    private func ownSize(_ id: Int32, basis: SizeBasis, suppressed: [Bool]? = nil) -> Int64 {
         let index = Int(id)
+        // A second name for an inode already charged elsewhere in this tree
+        // contributes nothing: the blocks are the same blocks. Deleting this
+        // name frees nothing until the last name goes (see CleanupQueue).
+        if let suppressed, suppressed[index] { return 0 }
         let selected = basis == .logical ? logicalSize[index] : allocatedSize[index]
         if !isDirectory[index] { return selected }
         let evictedWithoutChildren = flags[index] & NodeFlags.notDownloaded != 0 && firstChild[index] == -1
@@ -527,12 +641,14 @@ public struct FileTree: Sendable {
         modifiedDay: [Int32],
         createdDay: [Int32],
         isDirectory: [Bool],
-        flags: [UInt8]
+        flags: [UInt8],
+        fileID: [UInt64] = []
     ) -> Bool {
         let n = nameIndex.count
         guard parent.count == n, firstChild.count == n, nextSibling.count == n,
               logicalSize.count == n, allocatedSize.count == n, modifiedDay.count == n,
-              createdDay.count == n, isDirectory.count == n, flags.count == n else { return false }
+              createdDay.count == n, isDirectory.count == n, flags.count == n,
+              fileID.isEmpty || fileID.count == n else { return false }
         for index in nameIndex where index < 0 || index >= nameTable.count { return false }
         // Snapshot still ships length-prefixed Strings; rebuild the packed blob once.
         var blob: [UInt8] = []
@@ -564,6 +680,9 @@ public struct FileTree: Sendable {
         self.createdDay = createdDay
         self.isDirectory = isDirectory
         self.flags = flags
+        // A v1/v2 snapshot carries no identity; 0 reads as "unknown" and the
+        // hard-link pass simply finds nothing to correct.
+        self.fileID = fileID.isEmpty ? [UInt64](repeating: 0, count: n) : fileID
         return true
     }
 
