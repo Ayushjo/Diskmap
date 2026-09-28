@@ -10,6 +10,8 @@ let package = Package(
         .executable(name: "DiskMapScanBench", targets: ["DiskMapScanBench"]),
         .executable(name: "AttrProbe", targets: ["AttrProbe"]),
         .executable(name: "SharingProbe", targets: ["SharingProbe"]),
+        // The command-line companion (TASK-057): `swift run diskmap --help`.
+        .executable(name: "diskmap", targets: ["diskmap"]),
     ],
     targets: [
         .target(name: "DiskMapCore", resources: [.process("quick-wins-patterns.json"), .process("file-type-categories.json"), .process("developer-rules.json"), .process("cleanup-recipes.json")]),
@@ -25,5 +27,6 @@ let package = Package(
         .executableTarget(name: "DiskMapScanBench", dependencies: ["DiskMapCore"]),
         .executableTarget(name: "AttrProbe"),
         .executableTarget(name: "SharingProbe"),
+        .executableTarget(name: "diskmap", dependencies: ["DiskMapCore"]),
     ]
 )

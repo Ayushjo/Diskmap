@@ -1017,7 +1017,7 @@ walk; no second disk pass, no network.
 
 ## Milestone 12 — CLI and export
 
-- [ ] **TASK-057: `diskmap` CLI**
+- [x] **TASK-057: `diskmap` CLI**
   `docs/PRD.md` names this a differentiator and `DiskMapCore` has zero UI
   imports specifically to enable it; `DiskMapScanBench` is a measurement wedge,
   not a product. Ship `diskmap scan --json`, `diskmap dev --reclaimable
@@ -1025,9 +1025,43 @@ walk; no second disk pass, no network.
   exit-code contract usable as a CI step or pre-commit hook. New
   `executableTarget` depending only on `DiskMapCore`.
 
-- [ ] **TASK-058: Export formats**
+- [x] **TASK-058: Export formats**
   JSON, NDJSON, CSV and an `ncdu`-compatible dump, plus "copy paths of
   selection" in the UI. Composable, offline, nearly free.
+
+  **Milestone 12 done 2026-09-28** on `feat/cli`.
+  - `diskmap` executable (depends only on `DiskMapCore`): `scan`, `dev`,
+    `dup`, `check`, `export`, each with `--json`. Exit codes: 0 ok, 1 `check`
+    over threshold, 2 usage error, 3 path unreadable — verified by hand for
+    each. Sizes are SI like Finder (`50GB` = 50·10⁹; `GiB` = 1024³); ages
+    `30d/2w/6m/1y`. Progress goes to stderr and only on a terminal, so
+    `--json` stdout is always one clean document. `ScanEngine`'s summary log
+    moved from stdout to stderr for the same reason (it corrupted `--json`).
+    Denied folders are reported on stderr, never silently.
+  - `TreeExporter` (DiskMapCore) behind both CLI and app: nested JSON, NDJSON,
+    RFC 4180 CSV, and ncdu's `-o` format (`[1,1,{meta},[root…]]`, asize =
+    logical, dsize = allocated, `ino`/`hlnkc` for hard links). ncdu output is
+    always the whole tree because ncdu sums folders itself; `--min-size` /
+    `--max-depth` apply to the other formats. Paths are carried down the walk,
+    never rebuilt per node; per-row `String(format:)` was the NDJSON hot spot
+    (18 s → 3.6 s of writing) and is replaced by a day→string cache and a
+    no-escape fast path for JSON strings. The ncdu file is structurally
+    checked by tests, not yet loaded into a real `ncdu` (not installed here).
+  - Home, release, warm (`docs/perf-results/cli-export-home.txt`, 2.25M items):
+    scan alone median 10.2 s; export medians json 12.7, ncdu 13.2, csv 16.2,
+    ndjson 16.6 s — i.e. 2.5–6.4 s of writing for 175–468 MB of output.
+  - App: **File ▸ Export Scan…** (⇧⌘E; disabled until a scan exists — checked
+    in the running app's menu) with a format popup in the save panel, written
+    off the main thread, toast on completion. Writes straight to the chosen
+    file (the panel already confirmed any overwrite) — no temp-and-delete, so
+    the queue stays the app's only removal path.
+  - App: **Copy Paths** in the multi-select toolbar of Duplicates, Large Media
+    and Old Downloads — one path per line, shell-quoted only when needed;
+    a test round-trips spaces, quotes, `$`, backticks and emoji through `sh`.
+  - Found on the way: the scan root had no modified date (the walk read dates
+    from each parent's bulk records, and the root has none). It now comes from
+    the root `lstat` the walk already did for the device id — no new syscall.
+  - Tests: `TreeExportTests` (8), `ExportAndCopyTests` (4). 195 tests green.
 
 ## Milestone 13 — Find consolidation
 

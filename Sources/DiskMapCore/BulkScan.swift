@@ -47,13 +47,17 @@ enum BulkScan {
         var tree = FileTree()
         // Home scans land near 1.7–2M nodes; reserve once so appends stay O(1).
         tree.reserveNodeCapacity(1_000_000, uniqueNames: 400_000)
+        // One lstat of the root: its device id (below) and its own dates,
+        // which no parent's bulk read would otherwise supply.
+        var rootStat = stat()
+        let hasRootStat = lstat(root.path, &rootStat) == 0
         let rootID = tree.addNode(
             name: root.lastPathComponent,
             parent: -1,
             isDirectory: true,
             logicalSize: 0,
             allocatedSize: 0,
-            modifiedDaysSinceEpoch: 0
+            modifiedDaysSinceEpoch: hasRootStat ? dayFromEpochSeconds(Int64(rootStat.st_mtimespec.tv_sec)) : 0
         )
         let state = State(tree: tree, progress: progress)
         state.live = live
@@ -63,8 +67,7 @@ enum BulkScan {
         // Device id of the scan root. Children on a different device are
         // recorded but not descended, so a "/" scan does not silently absorb
         // every mounted volume — and so ATTR_CMN_FILEID stays unique per scan.
-        var rootStat = stat()
-        if lstat(root.path, &rootStat) == 0 {
+        if hasRootStat {
             state.scanRootDevID = Int32(rootStat.st_dev)
             state.hasRootDevID = true
         }

@@ -489,7 +489,8 @@ struct LargeMediaView: View {
             onClear: { checked.removeAll() },
             onReveal: {
                 NSWorkspace.shared.activateFileViewerSelecting(checkedItems.map { URL(fileURLWithPath: $0.absolutePath) })
-            }
+            },
+            paths: checkedItems.map(\.absolutePath)
         )
     }
 

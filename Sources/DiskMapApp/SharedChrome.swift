@@ -251,6 +251,8 @@ struct SelectionToolbar: View {
     var onPrimary: () -> Void
     var onClear: () -> Void
     var onReveal: (() -> Void)? = nil
+    /// Paths of the selection, one per line, for a terminal (TASK-058).
+    var paths: [String]? = nil
 
     var body: some View {
         HStack(spacing: DiskMapSpace.xs) {
@@ -263,6 +265,11 @@ struct SelectionToolbar: View {
             if let onReveal {
                 Button("Reveal", action: onReveal)
                     .buttonStyle(InkButtonStyle(filled: false))
+            }
+            if let paths, !paths.isEmpty {
+                Button("Copy Paths") { copyPaths(paths) }
+                    .buttonStyle(InkButtonStyle(filled: false))
+                    .help("Copy the selected paths, one per line")
             }
             Button(primaryTitle, action: onPrimary)
                 .buttonStyle(PrimaryCTAStyle())
@@ -702,4 +709,21 @@ final class DiskMapQuickLook: NSObject, @preconcurrency QLPreviewPanelDataSource
     func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
         previewURL as NSURL?
     }
+}
+
+
+/// One path per line, shell-ready: paths with spaces or quotes are
+/// single-quoted so the result pastes safely into a terminal.
+@MainActor
+func copyPaths(_ paths: [String]) {
+    let text = paths.map(shellQuoted).joined(separator: "\n")
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+    ScanModel.shared.showToast(paths.count == 1 ? "Copied 1 path" : "Copied \(paths.count) paths")
+}
+
+func shellQuoted(_ path: String) -> String {
+    let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/._-+,@%=:~"))
+    guard path.unicodeScalars.contains(where: { !safe.contains($0) }) else { return path }
+    return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }

@@ -8,9 +8,10 @@ How we measure scan/runtime speed, what the numbers mean, and what is still open
 ```bash
 swift build -c release --product DiskMapScanBench
 swift run -c release DiskMapScanBench --repeat 5 --rollup --label warm-home ~
-# JSON (one object; ScanEngine also prints a human log line to stdout first):
+# JSON (one object on stdout; ScanEngine's log line goes to stderr since
+# 2026-09-28, so no `tail` is needed):
 swift run -c release DiskMapScanBench --repeat 3 --json --label warm-home ~ \
-  | tail -1 > docs/perf-results/warm-home.json
+  > docs/perf-results/warm-home.json
 ```
 
 Flags: `--repeat N`, `--rollup` (times `rollUpBoth` after the scan), `--layout` (ChartLayout/treemap/TopSizes/AgeMap after rollup), `--json`, `--label NAME`, optional path (default `$HOME`).
@@ -377,3 +378,21 @@ Fourteen runs fall in 7.75–8.55 s; four form a 9.5–11.6 s tail. The probe
 above rules out the publisher as the source (72 spurious wakeups per scan), so
 the tail looks external — disk contention, Spotlight, thermals. **Goal: p95 ≤
 1.25 × median** (today 1.34 ×). Report `scan_p95` with n ≥ 20 on any walk change.
+
+## Exports (TASK-058, 2026-09-28)
+
+`diskmap export ~ --format F --out FILE`, release, warm, 2.25M items, 3 runs
+each (`docs/perf-results/cli-export-home.txt`). Wall time includes the walk;
+`diskmap scan ~ --json` alone: 8.59 / 11.03 / 10.17 s.
+
+| format | min | median | max | output |
+|---|---|---|---|---|
+| json   | 11.69 | 12.70 | 12.91 | 240 MB |
+| ncdu   | 12.22 | 13.16 | 15.80 | 176 MB |
+| csv    | 12.06 | 16.15 | 16.83 | 325 MB |
+| ndjson | 14.23 | 16.61 | 17.72 | 468 MB |
+
+Writing costs roughly 2.5–6.5 s on top of the walk, tracking output size. The
+app's Export Scan… reuses the in-memory tree, so it pays only the writing.
+Before the day-string cache and JSON fast path, NDJSON writing alone took ~18 s.
+

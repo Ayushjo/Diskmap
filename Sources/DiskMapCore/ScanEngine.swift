@@ -164,8 +164,9 @@ public actor ScanEngine {
     private func logSummary(_ result: Result) {
         let after = result.residentBytesAfterEnumeratorRelease.map(String.init) ?? "unavailable"
         let line = "DiskMap scan: items=\(result.itemCount) elapsed=\(String(format: "%.3f", result.elapsedSeconds))s rss_during_walk_peak=\(result.peakResidentBytesDuringWalk) rss_after_enumerator_release=\(after) not_downloaded=\(result.notDownloadedCount) hard_links=\(result.hardLinkCount) cross_mount_skips=\(result.crossMountSkipCount) denied_dirs=\(result.deniedDirectoryIDs.count)"
-        print(line)
-        fflush(stdout)
+        // Diagnostics go to stderr: stdout belongs to whoever embeds the
+        // engine (the diskmap CLI's --json output must stay parseable).
+        FileHandle.standardError.write(Data((line + "\n").utf8))
     }
 
     private func seconds(_ duration: Duration) -> Double {

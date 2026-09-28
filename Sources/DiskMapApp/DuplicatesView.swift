@@ -55,7 +55,8 @@ struct DuplicatesView: View {
                         selectedBytes: reclaimable,
                         primaryTitle: "Add to Cleanup",
                         onPrimary: { Task { await stageSelected() } },
-                        onClear: { checked.removeAll() }
+                        onClear: { checked.removeAll() },
+                        paths: checked.sorted().map { tree.path(of: $0, root: rootURL).path }
                     )
                 }
             }

@@ -9,6 +9,7 @@ struct DiskMapApp: App {
         WindowGroup {
             ContentView()
         }
+        .commands { ExportScanCommands(model: ScanModel.shared) }
     }
 }
 

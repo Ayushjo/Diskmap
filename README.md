@@ -51,6 +51,15 @@ swift test    # run this first — checks the treemap math
 swift run DiskMapApp   # launches a window; SwiftUI App executables work fine via SPM on macOS 13+
 ```
 
+The same engine as a read-only command-line tool (`diskmap --help`):
+
+```bash
+swift run -c release diskmap scan ~/code --top 10
+swift run -c release diskmap dev --reclaimable --older-than 6m
+swift run -c release diskmap check ~/Library/Developer --fail-over 50GB   # exit 1 when over
+swift run -c release diskmap export ~ --format ncdu --out home.json      # then: ncdu -f home.json
+```
+
 Once it's stable, convert to a proper `.xcodeproj` (File → New → Project
 from existing package works, or just `open Package.swift` in Xcode) —
 you'll want that anyway for code signing, notarization, and an app icon

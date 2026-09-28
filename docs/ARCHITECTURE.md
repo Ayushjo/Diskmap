@@ -666,3 +666,28 @@ not refuse it — the user may genuinely be removing Docker.
 
 **Nothing inside an application bundle is a developer artifact.** Found on the
 real scan: node_modules inside staged app updates were offered as reclaimable.
+
+### The CLI is a second front end, not a second engine (2026-09-28)
+
+**Chosen.** `diskmap` depends only on `DiskMapCore` and calls the same scan,
+catalogs, duplicate finder and exporters as the app. It reads only — there is
+no `clean` command; removal stays the app's staged, Trash-only queue.
+
+**Output contract.** stdout carries exactly the result (one JSON document with
+`--json`); everything else — progress (only on a TTY), denied-folder warnings,
+the engine's summary line — goes to stderr. Exit codes are the CI contract:
+0 ok, 1 `check` threshold exceeded, 2 usage, 3 unreadable path.
+
+**Units.** `GB` means 10⁹ because that is what Finder and the app display;
+`GiB` is 1024³. A `--fail-over 50GB` that disagreed with Finder by 7% would be
+a bug report waiting to happen.
+
+**Exports stream.** Formats are written as the tree is walked, in chunks, with
+paths carried down the recursion. The ncdu format is never filtered: ncdu
+computes folder totals from the entries it is given, so a filtered file would
+show wrong totals rather than fewer rows.
+
+**The app writes exports in place** rather than via a temp file it would later
+have to delete: the save panel already asked before overwriting, and keeping
+the app free of any `removeItem` call keeps rule 1 greppable.
+
