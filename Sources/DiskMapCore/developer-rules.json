@@ -10,7 +10,9 @@
       "reclaimability": "reviewFirst",
       "isToolRoot": false,
       "projectFromParent": true,
-      "whyLarge": "Installed npm/yarn/pnpm packages for a project. Size grows with dependency trees."
+      "whyLarge": "Installed npm/yarn/pnpm packages for a project. Size grows with dependency trees.",
+      "rebuildCost": "networked",
+      "lockEcosystem": "node"
     },
     {
       "names": [
@@ -21,7 +23,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Global npm package cache speeds installs by keeping downloaded tarballs."
+      "whyLarge": "Global npm package cache speeds installs by keeping downloaded tarballs.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -33,7 +36,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "pnpm content-addressable store shared across projects."
+      "whyLarge": "pnpm content-addressable store shared across projects.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -44,7 +48,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Yarn cache / Berry install state."
+      "whyLarge": "Yarn cache / Berry install state.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -57,7 +62,8 @@
       "reclaimability": "keep",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Node version managers keep multiple runtimes on disk."
+      "whyLarge": "Node version managers keep multiple runtimes on disk.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -68,7 +74,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Xcode intermediate build products and indexes. Regenerated on next build."
+      "whyLarge": "Xcode intermediate build products and indexes. Regenerated on next build.",
+      "rebuildCost": "cheap"
     },
     {
       "names": [
@@ -79,7 +86,8 @@
       "reclaimability": "reviewFirst",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "iOS Simulator runtimes and device data. Unused runtimes are often reclaimable."
+      "whyLarge": "iOS Simulator runtimes and device data. Unused runtimes are often reclaimable.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -92,7 +100,8 @@
       "reclaimability": "reviewFirst",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Device symbols downloaded when debugging physical devices."
+      "whyLarge": "Device symbols downloaded when debugging physical devices.",
+      "rebuildCost": "cheap"
     },
     {
       "names": [
@@ -103,7 +112,8 @@
       "reclaimability": "keep",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Xcode support files under Developer — inspect before clearing."
+      "whyLarge": "Xcode support files under Developer — inspect before clearing.",
+      "rebuildCost": "cheap"
     },
     {
       "names": [
@@ -114,7 +124,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "CocoaPods specs and download cache."
+      "whyLarge": "CocoaPods specs and download cache.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -125,7 +136,9 @@
       "reclaimability": "reviewFirst",
       "isToolRoot": false,
       "projectFromParent": true,
-      "whyLarge": "CocoaPods installed pods for an Xcode project."
+      "whyLarge": "CocoaPods installed pods for an Xcode project.",
+      "rebuildCost": "networked",
+      "lockEcosystem": "cocoapods"
     },
     {
       "names": [
@@ -140,7 +153,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": false,
       "projectFromParent": true,
-      "whyLarge": "Compiled or bundled output that tools recreate."
+      "whyLarge": "Compiled or bundled output that tools recreate.",
+      "rebuildCost": "cheap"
     },
     {
       "names": [
@@ -151,7 +165,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": false,
       "projectFromParent": true,
-      "whyLarge": "Cargo build output for a Rust project."
+      "whyLarge": "Cargo build output for a Rust project.",
+      "rebuildCost": "cheap"
     },
     {
       "names": [
@@ -162,7 +177,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Cargo registry and git checkouts for Rust crates."
+      "whyLarge": "Cargo registry and git checkouts for Rust crates.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -173,7 +189,8 @@
       "reclaimability": "keep",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Installed Rust toolchains via rustup."
+      "whyLarge": "Installed Rust toolchains via rustup.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -187,7 +204,23 @@
       "reclaimability": "reviewFirst",
       "isToolRoot": false,
       "projectFromParent": true,
-      "whyLarge": "Python virtual environments — recreatable from requirements/lockfiles."
+      "whyLarge": "Python virtual environments — recreatable from requirements/lockfiles.",
+      "rebuildCost": "networked",
+      "lockEcosystem": "python"
+    },
+    {
+      "names": [
+        "site-packages",
+        "dist-packages"
+      ],
+      "category": "dependencies",
+      "ecosystem": "python",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": false,
+      "projectFromParent": true,
+      "rebuildCost": "networked",
+      "lockEcosystem": "python",
+      "whyLarge": "Installed Python packages (pip/uv/poetry) for an environment — the libraries, not your code. Recreatable from requirements or a lockfile."
     },
     {
       "names": [
@@ -201,7 +234,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": false,
       "projectFromParent": true,
-      "whyLarge": "Python bytecode or type-check caches."
+      "whyLarge": "Python bytecode or type-check caches.",
+      "rebuildCost": "free"
     },
     {
       "names": [
@@ -212,7 +246,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Dart/Flutter pub package cache."
+      "whyLarge": "Dart/Flutter pub package cache.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -223,7 +258,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Gradle dependency and build caches."
+      "whyLarge": "Gradle dependency and build caches.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -234,7 +270,8 @@
       "reclaimability": "reclaimable",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Maven local repository cache."
+      "whyLarge": "Maven local repository cache.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -245,7 +282,8 @@
       "reclaimability": "reviewFirst",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Docker desktop data: images, layers, and volumes."
+      "whyLarge": "Docker desktop data: images, layers, and volumes.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -257,7 +295,8 @@
       "reclaimability": "keep",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Android SDK / platform tools — large and slow to re-download."
+      "whyLarge": "Android SDK / platform tools — large and slow to re-download.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -268,7 +307,8 @@
       "reclaimability": "reviewFirst",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "Android emulator AVDs and SDK extras."
+      "whyLarge": "Android emulator AVDs and SDK extras.",
+      "rebuildCost": "networked"
     },
     {
       "names": [
@@ -282,7 +322,71 @@
       "reclaimability": "reviewFirst",
       "isToolRoot": true,
       "projectFromParent": false,
-      "whyLarge": "IDE or AI-tool caches, indexes, and local state."
+      "whyLarge": "IDE or AI-tool caches, indexes, and local state.",
+      "rebuildCost": "cheap"
+    },
+    {
+      "names": [
+        "com.docker.docker"
+      ],
+      "category": "containers",
+      "ecosystem": "docker",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "rebuildCost": "networked",
+      "whyLarge": "Docker Desktop’s data: one disk image holding every image, container and volume. Often the largest single file on a developer’s Mac."
     }
-  ]
+  ],
+  "_rebuildCost": "free: regenerated automatically and offline the next time the tool runs. cheap: an offline rebuild (CPU time). networked: re-downloaded from a registry or vendor. A dependency folder whose project has no lockfile is reported as networked-unpinned: reinstalling may not reproduce what you have.",
+  "manifests": {
+    "_comment": "A folder containing one of these is a project root (TASK-051).",
+    "names": [
+      "package.json",
+      "Cargo.toml",
+      "go.mod",
+      "pyproject.toml",
+      "setup.py",
+      "Pipfile",
+      "requirements.txt",
+      "Package.swift",
+      "Podfile",
+      "pubspec.yaml",
+      "pom.xml",
+      "build.gradle",
+      "build.gradle.kts",
+      "settings.gradle",
+      "settings.gradle.kts",
+      "Gemfile",
+      "composer.json",
+      "mix.exs",
+      "deno.json",
+      "CMakeLists.txt"
+    ],
+    "suffixes": [
+      ".xcodeproj",
+      ".xcworkspace"
+    ]
+  },
+  "lockfiles": {
+    "_comment": "Searched in the project root and every folder above it up to the repository root, because workspace managers keep one lockfile at the top. requirements.txt counts for Python: it is usually pinned, and a missed warning costs less than a false one (AGENTS.md: bias toward fewer false positives).",
+    "node": [
+      "package-lock.json",
+      "npm-shrinkwrap.json",
+      "yarn.lock",
+      "pnpm-lock.yaml",
+      "bun.lockb",
+      "bun.lock"
+    ],
+    "cocoapods": [
+      "Podfile.lock"
+    ],
+    "python": [
+      "poetry.lock",
+      "uv.lock",
+      "Pipfile.lock",
+      "pdm.lock",
+      "requirements.txt"
+    ]
+  }
 }

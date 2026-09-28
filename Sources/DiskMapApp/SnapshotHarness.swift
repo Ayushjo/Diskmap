@@ -50,12 +50,19 @@ enum SnapshotHarness {
             NSApp.terminate(nil)
             return
         }
-        window.setContentSize(NSSize(width: 1280, height: 820))
+        window.setContentSize(snapshotSize())
 
         for destination in destinations() {
             model.destination = destination
-            // Let SwiftUI lay out and run the destination's `.task` work.
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            // Wait for a lazily built catalog to be ready rather than a fixed
+            // pause (a first launch after a rebuild once captured the loading
+            // state), then let SwiftUI settle.
+            if let catalog = catalog(for: destination) {
+                for _ in 0..<150 where !model.isCatalogReady(catalog) {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+            }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             write(window: window, to: dir.appendingPathComponent("\(key(destination))-\(appearanceName).png"))
         }
         // `--explore-modes all` (or a comma list) also captures every
@@ -70,6 +77,23 @@ enum SnapshotHarness {
             }
         }
         NSApp.terminate(nil)
+    }
+
+    /// `--snapshot-size 1280x1600` for screens whose content runs below the fold.
+    private static func catalog(for destination: AppDestination) -> ScanModel.Catalog? {
+        switch destination {
+        case .developerStorage: return .developer
+        case .forgottenFiles: return .forgotten
+        case .cleanSafe, .cleanCaches: return .reviewables
+        case .cleanDownloads: return .oldDownloads
+        case .cleanMedia: return .largeMedia
+        default: return nil
+        }
+    }
+
+    private static func snapshotSize() -> NSSize {
+        let parts = (value(after: "--snapshot-size") ?? "1280x820").split(separator: "x").compactMap { Double($0) }
+        return parts.count == 2 ? NSSize(width: parts[0], height: parts[1]) : NSSize(width: 1280, height: 820)
     }
 
     private static func write(window: NSWindow, to url: URL) {

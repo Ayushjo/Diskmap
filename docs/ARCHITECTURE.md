@@ -642,3 +642,27 @@ Found by rendering every Visualize mode in both appearances, not predicted.
 
 **Verification** is visual by nature: the snapshot harness renders any screen
 in `light`, `dark`, `hc-light` or `hc-dark` from inside the app.
+
+### Developer Storage v2: decisions from the scan tree, git from disk (2026-09-28)
+
+**Chosen.** Everything that decides whether a developer folder can go is
+computed from the existing scan tree plus a few small file reads: manifests
+and lockfiles from folder child names; git state from `.git/config`, loose and
+packed refs; ignored bytes by evaluating `.gitignore` files over the tree. No
+`git` subprocess (offline promise; no dependency on the user's PATH), no
+second walk of the disk.
+
+**Rejected: calling `git`.** It would give exact ahead/behind counts and
+uncommitted-change detection, but spawning a process per repository is slow,
+depends on git being installed, and git hooks/config can run arbitrary code.
+The cost is honesty in the copy: "differs" cannot distinguish unpushed from
+not-yet-pulled, and uncommitted changes are not checked — both stated in the UI.
+
+**Recipes are shown, never run.** `CleanupQueue.commit()` remains the only
+removal path. Where the Trash damages a tool's own state (Docker's disk image,
+simctl's device store) the Add to Cleanup action is withheld in Developer
+Storage and the queue warns if such a path is staged elsewhere; the queue does
+not refuse it — the user may genuinely be removing Docker.
+
+**Nothing inside an application bundle is a developer artifact.** Found on the
+real scan: node_modules inside staged app updates were offered as reclaimable.

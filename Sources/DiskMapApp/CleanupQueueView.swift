@@ -82,6 +82,15 @@ struct CleanupQueueView: View {
                                         Text(rowCaption(for: item))
                                             .font(.caption.monospacedDigit())
                                             .foregroundStyle(DiskMapTheme.mutedLabel)
+                                        // Staged from any screen (Biggest Files
+                                        // can surface Docker.raw): warn where
+                                        // the Trash would damage a tool's state.
+                                        if let recipe = CleanupRecipes.recipe(forPath: item.url.path), recipe.trashIsUnsafe {
+                                            Text("Moving this to the Trash damages \(recipe.id == "docker" ? "Docker" : "the tool")’s data. Use `\(recipe.command)` instead.")
+                                                .font(.caption)
+                                                .foregroundStyle(DiskMapTheme.danger)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
                                     }
                                     Spacer(minLength: 8)
                                     Button("Quick Look") { QuickLookPresenter.shared.present(item.url) }
@@ -281,6 +290,10 @@ extension CleanupQueueView {
         text += "\(diskByteString(estimate.bytes)) is freed once you empty the Trash."
         if estimate.heldByUnqueuedCopies > 0 {
             text += " \(diskByteString(estimate.heldByUnqueuedCopies)) stays in use because other copies or links of these files aren’t queued."
+        }
+        let unsafe = model.stagedItems.compactMap { CleanupRecipes.recipe(forPath: $0.url.path) }.filter(\.trashIsUnsafe)
+        if let first = unsafe.first {
+            text += " Warning: the queue includes data a tool manages itself — `\(first.command)` is the safe way to clean it."
         }
         return text
     }

@@ -926,14 +926,14 @@ the ambient appearance. Do this before more views exist to retrofit.
 unit of analysis. All of this runs on the existing `FileTree` + totals from one
 walk; no second disk pass, no network.
 
-- [ ] **TASK-051: Project roots by manifest**
+- [x] **TASK-051: Project roots by manifest**
   `projectFromParent: true` calls the parent of `node_modules` the project,
   which is wrong for monorepos, pnpm workspaces and nested packages. Walk up to
   the nearest `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`,
   `Package.swift`, `*.xcodeproj`, `pubspec.yaml`, `pom.xml`. Prerequisite for
   everything below.
 
-- [ ] **TASK-052: Rebuild cost as a first-class column**
+- [x] **TASK-052: Rebuild cost as a first-class column**
   Split reclaimable into **free** (offline, seconds — `__pycache__`, `.next`,
   `dist`), **cheap** (offline, minutes–hours of CPU — `target/`, `DerivedData`),
   **networked** (needs a live registry — `node_modules`, `.venv`, `Pods`) and
@@ -945,20 +945,20 @@ walk; no second disk pass, no network.
   Per AGENTS.md rule 6, new patterns are **data** — extend
   `quick-wins-patterns.json`, do not hardcode.
 
-- [ ] **TASK-053: Git state of the owning repo**
+- [x] **TASK-053: Git state of the owning repo**
   Read `.git/HEAD`, `.git/refs/`, `.git/config` directly — no subprocess, no
   network. Derive: is this a repo, is there an `origin`, are there local refs
   absent from `refs/remotes/origin/`. Lets the app distinguish "pushed to
   origin, fully recoverable" from "unpushed commits, do not delete". Handle
   worktrees and `.git`-as-a-file; degrade to "unknown" rather than guess.
 
-- [ ] **TASK-054: `.gitignore` as a reclaimability oracle**
+- [x] **TASK-054: `.gitignore` as a reclaimability oracle**
   Anything git ignores is, by the repo author's own declaration, regenerable
   and untracked — a stronger signal than our hardcoded name list, and it covers
   ecosystems we have no rule for. Start **read-only** (report ignored bytes per
   repo); staging from it is a separate later decision.
 
-- [ ] **TASK-055: Tool-native cleanup recipes**
+- [x] **TASK-055: Tool-native cleanup recipes**
   Some of the biggest developer directories are actively wrong to Trash:
   `Docker.raw` is a single sparse disk image whose deletion destroys every
   image, volume and container at once; `CoreSimulator` folders are tracked in
@@ -969,10 +969,51 @@ walk; no second disk pass, no network.
   button, and one line on why we are not doing it for you. **Show, never run** —
   this honours the single-deletion-path rule rather than straining against it.
 
-- [ ] **TASK-056: Project ageing**
+- [x] **TASK-056: Project ageing**
   Max `modifiedDay` over a project **excluding** its reclaimable subtrees = when
   a human last worked on it. Unlocks "23 projects untouched for 6+ months are
   holding 41 GB of dependencies" — the headline that makes people open the app.
+
+  **Milestone 11 done 2026-09-28** on `feat/developer-v2`.
+  - Rules moved to `developer-rules.json` first, with byte-identical catalog
+    output on a frozen real home scan (3 393-line dump). New fields are data:
+    `rebuildCost`, `lockEcosystem`, `manifests`, `lockfiles`;
+    `cleanup-recipes.json` holds the tool commands.
+  - TASK-051: project = nearest folder with a manifest (falls back to the
+    parent; never the home folder, so a stray `~/package.json` can't claim
+    every build folder). On the real home: same 500 items, zero non-grouping
+    changes, 144 items regrouped.
+  - TASK-052: free / cheap / networked / **networked-unpinned**. Lockfiles are
+    searched up to the repository root, because pnpm/yarn/npm workspaces keep
+    one at the top. `requirements.txt` counts as pinned for Python (a missed
+    warning costs less than a false one).
+  - TASK-053: git state from `.git` directly — pushed / no remote / branches
+    differ / worktree-unknown. Copy says "committed work", because uncommitted
+    changes are not checked, and "differs" can mean unpushed or not pulled.
+  - TASK-054: `.gitignore` evaluator (nested files, `info/exclude`, negation,
+    anchoring, `**`, classes, escapes; not the global excludes file), read-only
+    "ignored by git" per repository. Indexed by literal name/extension with a
+    literal and exact-final-name prefilter for globs: a 123-rule, ~200k-entry
+    repo went 1.5 s → a few ms, and results were verified identical to a naive
+    evaluator across all 51 project/repository lines of the real home.
+  - TASK-055: recipes shown with a Copy button, never run. Docker and
+    Simulators are `trashIsUnsafe`: Add to Cleanup is replaced by the command,
+    and the cleanup queue warns if such a path is staged from any other screen
+    (Biggest Files can surface Docker.raw). Docker Desktop data gets a rule, so
+    the biggest file on most dev Macs now appears in Developer Storage at all.
+  - TASK-056: last source change skips `.git` and every dependency/build
+    folder, so a fresh `npm install` doesn't make an abandoned project look
+    active. Headline: "N projects untouched for 6+ months hold X".
+  - **Safety bug found on the real scan and fixed:** the original catalog
+    offered 11 folders *inside app bundles* as "reclaimable, safe" —
+    node_modules inside ChatGPT/Cursor updates staged under ~/Library/Caches.
+    Hits with an `.app` path component are now never offered.
+  - Also fixed: installed Python libraries (`site-packages`) listed as the
+    user's projects (225 stray `__pycache__` items → 50); every project path
+    showed a bogus "~" prefix; item paths used the scan root as "~".
+  - Catalog cost on the real home: ~1.0 s (was 0.9–1.1 s before v2), lazily
+    built when the screen opens. 183 tests green, incl. 14 `DeveloperV2Tests`
+    and 18 git/gitignore tests.
 
 ## Milestone 12 — CLI and export
 

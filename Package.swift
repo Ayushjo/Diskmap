@@ -12,7 +12,7 @@ let package = Package(
         .executable(name: "SharingProbe", targets: ["SharingProbe"]),
     ],
     targets: [
-        .target(name: "DiskMapCore", resources: [.process("quick-wins-patterns.json"), .process("file-type-categories.json"), .process("developer-rules.json")]),
+        .target(name: "DiskMapCore", resources: [.process("quick-wins-patterns.json"), .process("file-type-categories.json"), .process("developer-rules.json"), .process("cleanup-recipes.json")]),
         .executableTarget(
             name: "DiskMapApp",
             dependencies: ["DiskMapCore"],

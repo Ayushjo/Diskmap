@@ -68,6 +68,7 @@ struct DeveloperStorageView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                headlineCard
                 summaryRow
                 categoryBar
                 ecosystemsRow
@@ -90,12 +91,35 @@ struct DeveloperStorageView: View {
         }
     }
 
+    /// The decision-grade headline (TASK-056/052): what is safe to drop because
+    /// nobody works on it, and what could not be reproduced if dropped.
+    @ViewBuilder
+    private var headlineCard: some View {
+        if summary.staleProjectCount > 0 {
+            DiskMapNoticeBanner(
+                symbol: "clock.arrow.circlepath",
+                tint: DiskMapTheme.developer,
+                title: "\(countLabel(summary.staleProjectCount, "project")) untouched for 6+ months "
+                    + "\(summary.staleProjectCount == 1 ? "holds" : "hold") \(ByteFormat.string(summary.staleReclaimableBytes)) of dependencies and build output",
+                detail: "Measured from the newest source file in each project — reinstalled dependencies and fresh build output don’t count as activity. Check the Git column before removing a whole project."
+            )
+        }
+        if summary.unpinnedBytes > 0 {
+            DiskMapNoticeBanner(
+                symbol: "exclamationmark.triangle",
+                tint: DiskMapTheme.review,
+                title: "\(ByteFormat.string(summary.unpinnedBytes)) of dependencies have no lockfile",
+                detail: RebuildCost.networkedUnpinned.explanation
+            )
+        }
+    }
+
     private var summaryRow: some View {
         HStack(alignment: .top, spacing: 12) {
             summaryCard(
                 title: "Developer Storage",
                 value: ByteFormat.string(summary.totalBytes),
-                subtitle: "\(summary.toolCount) tools · \(summary.projectCount) projects",
+                subtitle: "\(countLabel(summary.toolCount, "tool")) · \(countLabel(summary.projectCount, "project"))",
                 tint: DiskMapTheme.developer
             )
             summaryCard(
@@ -372,11 +396,11 @@ struct DeveloperStorageView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Text("Project").frame(maxWidth: .infinity, alignment: .leading)
-                Text("Eco").frame(width: 72, alignment: .leading)
                 Text("Size").frame(width: 72, alignment: .trailing)
-                Text("Items").frame(width: 44, alignment: .trailing)
                 Text("Reclaimable").frame(width: 80, alignment: .trailing)
-                Text("Status").frame(width: 110, alignment: .leading)
+                Text("Rebuild").frame(width: 92, alignment: .leading)
+                Text("Last change").frame(width: 84, alignment: .leading)
+                Text("Git").frame(width: 84, alignment: .leading)
             }
             .font(DiskMapType.microStrong)
             .foregroundStyle(DiskMapTheme.mutedLabel)
@@ -399,32 +423,36 @@ struct DeveloperStorageView: View {
                                     .font(DiskMapType.smallStrong)
                                     .foregroundStyle(DiskMapTheme.ink)
                                     .lineLimit(1)
-                                Text(proj.displayPath)
+                                Text("\(proj.ecosystem.title) · \(proj.displayPath)")
                                     .font(DiskMapType.micro)
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                                     .lineLimit(1)
+                                    .truncationMode(.middle)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(proj.ecosystem.title)
-                                .font(DiskMapType.caption)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .frame(width: 72, alignment: .leading)
-                                .lineLimit(1)
                             Text(ByteFormat.string(proj.bytes))
                                 .font(DiskMapType.caption.monospacedDigit())
                                 .frame(width: 72, alignment: .trailing)
-                            Text("\(proj.itemCount)")
-                                .font(DiskMapType.caption.monospacedDigit())
-                                .frame(width: 44, alignment: .trailing)
                             Text(ByteFormat.string(proj.reclaimableBytes))
                                 .font(DiskMapType.caption.monospacedDigit())
                                 .foregroundStyle(DiskMapTheme.safe)
                                 .frame(width: 80, alignment: .trailing)
-                            Text(proj.status)
+                            Text(DeveloperLabels.rebuildShort(proj.rebuildCost))
+                                .font(DiskMapType.caption)
+                                .foregroundStyle(DeveloperLabels.rebuildTint(proj.rebuildCost))
+                                .frame(width: 92, alignment: .leading)
+                                .lineLimit(1)
+                            Text(DeveloperLabels.lastChange(proj.lastSourceDay))
                                 .font(DiskMapType.caption)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .frame(width: 110, alignment: .leading)
+                                .frame(width: 84, alignment: .leading)
                                 .lineLimit(1)
+                            Text(DeveloperLabels.gitShort(proj.git))
+                                .font(DiskMapType.captionMedium)
+                                .foregroundStyle(DeveloperLabels.gitTint(proj.git))
+                                .frame(width: 84, alignment: .leading)
+                                .lineLimit(1)
+                                .help(proj.git.detail)
                         }
                         .padding(.vertical, 8)
                         .padding(.horizontal, 4)
@@ -514,6 +542,7 @@ struct DeveloperStorageView: View {
                 DeveloperInspector(
                     model: model,
                     item: item,
+                    project: catalog.projects.first { $0.id == item.projectKey },
                     onOpenCleanup: onOpenCleanup
                 )
             } else {
@@ -579,6 +608,7 @@ struct DeveloperStorageView: View {
 private struct DeveloperInspector: View {
     @ObservedObject var model: ScanModel
     let item: DeveloperItem
+    let project: DeveloperProject?
     var onOpenCleanup: () -> Void
 
     var body: some View {
@@ -612,8 +642,20 @@ private struct DeveloperInspector: View {
                         StatRow(label: "Project", value: project)
                     }
                     StatRow(label: "Reclaimability", value: reclaimTitle)
+                    StatRow(label: "Rebuild", value: item.rebuildCost.title)
+                    if let lockfile = item.lockfile {
+                        StatRow(label: "Lockfile", value: lockfile)
+                    }
                 }
 
+                if let recipe = item.recipe {
+                    recipeCard(recipe)
+                }
+
+                WhyCard(title: "If you remove it", bodyText: item.rebuildCost.explanation)
+                if let project {
+                    projectCard(project)
+                }
                 WhyCard(title: "Why is it large?", bodyText: item.whyLarge)
                 SafetyCard(assessment: item.safety)
 
@@ -630,14 +672,18 @@ private struct DeveloperInspector: View {
                 }
 
                 VStack(spacing: 8) {
-                    Button {
-                        Task { await stage() }
-                    } label: {
-                        Label("Add to Cleanup", systemImage: "trash")
-                            .frame(maxWidth: .infinity)
+                    // Where moving to the Trash damages the tool's own state,
+                    // offer the command instead — never both (TASK-055).
+                    if item.recipe?.trashIsUnsafe != true {
+                        Button {
+                            Task { await stage() }
+                        } label: {
+                            Label("Add to Cleanup", systemImage: "trash")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PrimaryCTAStyle(fullWidth: true))
+                        .disabled(item.isProtected)
                     }
-                    .buttonStyle(PrimaryCTAStyle(fullWidth: true))
-                    .disabled(item.isProtected)
 
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.absolutePath)])
@@ -667,6 +713,63 @@ private struct DeveloperInspector: View {
                 }
             }
             .padding(16)
+        }
+    }
+
+    private func recipeCard(_ recipe: CleanupRecipe) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(recipe.trashIsUnsafe ? "Don’t move this to the Trash" : recipe.title,
+                  systemImage: recipe.trashIsUnsafe ? "exclamationmark.octagon.fill" : "terminal")
+                .font(DiskMapType.smallStrong)
+                .foregroundStyle(recipe.trashIsUnsafe ? DiskMapTheme.danger : DiskMapTheme.ink)
+            Text(recipe.why)
+                .font(DiskMapType.small)
+                .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Text(recipe.command)
+                    .font(DiskMapType.small.monospaced())
+                    .foregroundStyle(DiskMapTheme.ink)
+                    .textSelection(.enabled)
+                    .lineLimit(2)
+                Spacer(minLength: 0)
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(recipe.command, forType: .string)
+                    model.showToast("Command copied — DiskMap never runs it for you")
+                }
+                .buttonStyle(InkButtonStyle(filled: false))
+                .accessibilityLabel("Copy command \(recipe.command)")
+            }
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(DiskMapTheme.inspectorFill))
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill((recipe.trashIsUnsafe ? DiskMapTheme.danger : DiskMapTheme.info).opacity(0.08))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke((recipe.trashIsUnsafe ? DiskMapTheme.danger : DiskMapTheme.info).opacity(0.25), lineWidth: 1))
+        )
+    }
+
+    private func projectCard(_ project: DeveloperProject) -> some View {
+        section("Project “\(project.name)”") {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(project.git.title, systemImage: project.git.isBackedUp ? "checkmark.seal" : "exclamationmark.triangle")
+                    .font(DiskMapType.smallStrong)
+                    .foregroundStyle(DeveloperLabels.gitTint(project.git))
+                Text(project.git.detail)
+                    .font(DiskMapType.caption)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .fixedSize(horizontal: false, vertical: true)
+                StatRow(label: "Last source change", value: DeveloperLabels.lastChange(project.lastSourceDay))
+                if let manifest = project.manifest { StatRow(label: "Manifest", value: manifest) }
+                if let ignored = project.ignoredBytes, ignored > 0 {
+                    StatRow(label: "Ignored by git", value: ByteFormat.string(ignored))
+                }
+            }
         }
     }
 
@@ -713,5 +816,52 @@ private struct DeveloperInspector: View {
         ])
         model.showToast(result.added > 0 ? "Added to Cleanup" : (result.rejected > 0 ? "Blocked by safety rules" : "Already in Cleanup"))
         if result.added > 0 || result.alreadyPresent > 0 { onOpenCleanup() }
+    }
+}
+
+
+/// Short labels and tints shared by the Developer Storage table and inspector.
+enum DeveloperLabels {
+    static func rebuildShort(_ cost: RebuildCost) -> String {
+        switch cost {
+        case .free: return "Free"
+        case .cheap: return "Offline build"
+        case .networked: return "Re-download"
+        case .networkedUnpinned: return "No lockfile"
+        }
+    }
+
+    static func rebuildTint(_ cost: RebuildCost) -> Color {
+        switch cost {
+        case .free, .cheap: return DiskMapTheme.safe
+        case .networked: return DiskMapTheme.mutedLabel
+        case .networkedUnpinned: return DiskMapTheme.review
+        }
+    }
+
+    static func lastChange(_ day: Int32) -> String {
+        guard day > 0 else { return "Unknown" }
+        let age = max(0, AgeMap.today() - day)
+        if age == 0 { return "Today" }
+        if age == 1 { return "Yesterday" }
+        return ForgottenAgeFormat.string(age)
+    }
+
+    static func gitShort(_ state: GitState) -> String {
+        switch state {
+        case .inSync: return "Pushed"
+        case .noRemote: return "No remote"
+        case .differs: return "Unpushed"
+        case .notARepository: return "No git"
+        case .unknown: return "Unknown"
+        }
+    }
+
+    static func gitTint(_ state: GitState) -> Color {
+        switch state {
+        case .inSync: return DiskMapTheme.safe
+        case .noRemote, .differs: return DiskMapTheme.review
+        case .notARepository, .unknown: return DiskMapTheme.mutedLabel
+        }
     }
 }

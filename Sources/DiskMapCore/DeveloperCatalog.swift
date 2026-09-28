@@ -95,6 +95,18 @@ public struct DeveloperItem: Sendable, Equatable, Identifiable {
     public var projectName: String?
     public var modifiedDay: Int32
     public var isToolRoot: Bool
+    /// What getting this folder back would cost (TASK-052).
+    public var rebuildCost: RebuildCost
+    /// For dependency folders: the lockfile that pins them, if any. Nil when
+    /// none was found (then `rebuildCost` is `.networkedUnpinned`) or when the
+    /// folder is not a dependency folder.
+    public var lockfile: String?
+    /// The manifest that identified the project root (TASK-051), if any.
+    public var projectManifest: String?
+    /// Tree node of the project root, when the item belongs to a project.
+    public var projectNodeID: Int32? = nil
+    /// The owning tool's cleanup command, when one exists (TASK-055).
+    public var recipe: CleanupRecipe? = nil
 
     public var isProtected: Bool { safety.level == .protected }
 }
@@ -111,6 +123,22 @@ public struct DeveloperProject: Sendable, Equatable, Identifiable {
     public var modifiedDay: Int32
     public var status: String
     public var nodeIDs: [Int32]
+    /// The manifest that makes this folder a project (TASK-051).
+    public var manifest: String? = nil
+    /// Lockfile pinning its dependencies, if it has dependency folders.
+    public var lockfile: String? = nil
+    /// Most expensive rebuild among its folders (TASK-052).
+    public var rebuildCost: RebuildCost = .cheap
+    /// Newest file in the project that is not generated — excluding `.git`
+    /// and every dependency/build folder. When a person last worked on it
+    /// (TASK-056). 0 = unknown.
+    public var lastSourceDay: Int32 = 0
+    public var repositoryPath: String? = nil
+    /// (TASK-053)
+    public var git: GitState = .notARepository
+    /// Bytes in the repository that `.gitignore` marks disposable (TASK-054).
+    /// Nil when the project is not in a repository.
+    public var ignoredBytes: Int64? = nil
 }
 
 public struct DeveloperEcosystemRollup: Sendable, Equatable, Identifiable {
@@ -135,6 +163,14 @@ public struct DeveloperSummary: Sendable, Equatable {
     public var itemCount: Int
     public var categories: [DeveloperCategoryRollup]
     public var ecosystems: [DeveloperEcosystemRollup]
+    /// Projects with no source change for `staleAfterDays` (TASK-056).
+    public var staleProjectCount: Int = 0
+    /// Reclaimable bytes held by those stale projects — the headline.
+    public var staleReclaimableBytes: Int64 = 0
+    /// Dependency folders with no lockfile: reinstalling may not reproduce them.
+    public var unpinnedBytes: Int64 = 0
+
+    public static let staleAfterDays: Int32 = 180
 
     public static let empty = DeveloperSummary(
         totalBytes: 0, reclaimableBytes: 0, keepBytes: 0,
@@ -169,6 +205,10 @@ public enum DeveloperCatalog {
         var isToolRoot: Bool
         var projectFromParent: Bool
         var whyLarge: String
+        var rebuildCost: RebuildCost = .cheap
+        /// Set for dependency folders whose reproducibility depends on a
+        /// lockfile ("node", "cocoapods", "python").
+        var lockEcosystem: String? = nil
     }
 
     /// Rules are data (AGENTS.md rule 6): `developer-rules.json`, bundled.
@@ -185,9 +225,38 @@ public enum DeveloperCatalog {
             var isToolRoot: Bool
             var projectFromParent: Bool
             var whyLarge: String
+            var rebuildCost: String?
+            var lockEcosystem: String?
+        }
+        struct Manifests: Decodable {
+            var names: [String]
+            var suffixes: [String]
         }
         var rules: [Entry]
+        var manifests: Manifests?
+        var lockfiles: [String: LockfileList]?
     }
+
+    /// `lockfiles` also carries a `_comment` string; decode lists only.
+    private enum LockfileList: Decodable {
+        case names([String])
+        case other
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            self = (try? container.decode([String].self)).map(LockfileList.names) ?? .other
+        }
+        var names: [String]? { if case .names(let n) = self { return n } else { return nil } }
+    }
+
+    private static let ruleFile: RuleFile? = {
+        guard let url = Bundle.module.url(forResource: "developer-rules", withExtension: "json"),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(RuleFile.self, from: data)
+    }()
+
+    static let manifestNames: Set<String> = Set(ruleFile?.manifests?.names ?? [])
+    static let manifestSuffixes: [String] = ruleFile?.manifests?.suffixes ?? []
+    static let lockfilesByEcosystem: [String: [String]] = (ruleFile?.lockfiles ?? [:]).compactMapValues(\.names)
 
     /// A malformed or missing file yields no rules rather than a crash; the
     /// test suite asserts the bundled file decodes completely.
@@ -206,7 +275,9 @@ public enum DeveloperCatalog {
                 reclaimability: reclaimability,
                 isToolRoot: entry.isToolRoot,
                 projectFromParent: entry.projectFromParent,
-                whyLarge: entry.whyLarge
+                whyLarge: entry.whyLarge,
+                rebuildCost: entry.rebuildCost.flatMap(RebuildCost.init(rawValue:)) ?? .cheap,
+                lockEcosystem: entry.lockEcosystem
             )
         }
     }
@@ -228,7 +299,8 @@ public enum DeveloperCatalog {
         tree: FileTree,
         root: URL,
         totals: [Int64],
-        limit: Int = 500
+        limit: Int = 500,
+        today: Int32 = AgeMap.today()
     ) -> DeveloperCatalogResult {
         guard totals.count == tree.count else { return .empty }
 
@@ -240,12 +312,18 @@ public enum DeveloperCatalog {
             let key = name.lowercased()
             guard let rule = nameToRule[key] else { continue }
             // Avoid matching bare "sdk" / "build" / "dist" / "out" outside likely contexts
-            if !isPlausibleHit(name: key, pathHint: tree.path(of: id, root: root).path, rule: rule) {
-                continue
-            }
             let bytes = totals[i]
             guard bytes > 0 else { continue }
+            // One path build per hit (it was built twice).
             let path = tree.path(of: id, root: root).path
+            if !isPlausibleHit(name: key, pathHint: path, rule: rule) { continue }
+            // A folder inside an application bundle is part of that app, not a
+            // developer artifact: node_modules inside an Electron app, or a
+            // site-packages inside a bundled Python framework. Deleting one
+            // breaks the app. The original catalog listed 11 such folders as
+            // "reclaimable, safe" (inside app updates staged under
+            // ~/Library/Caches) — deleting them corrupts the pending update.
+            if isInsideApplicationBundle(path) { continue }
             hits.append((id, rule, bytes, path, name))
         }
 
@@ -266,9 +344,9 @@ public enum DeveloperCatalog {
             if kept.count >= limit { break }
         }
 
-        let home = root.path
         var items: [DeveloperItem] = []
         items.reserveCapacity(kept.count)
+        var locator = ProjectLocator(tree: tree, manifestNames: manifestNames, manifestSuffixes: manifestSuffixes)
 
         for hit in kept {
             let safety = SafetyClassifier.assess(path: hit.path, name: hit.name, isDirectory: true)
@@ -286,14 +364,41 @@ public enum DeveloperCatalog {
 
             var projectKey: String?
             var projectName: String?
+            var projectManifest: String?
+            var projectRootID: Int32?
             if hit.rule.projectFromParent {
                 let parentID = tree.parent[Int(hit.id)]
                 if parentID >= 0 {
-                    let pname = tree.name(of: parentID)
-                    let ppath = tree.path(of: parentID, root: root).path
-                    projectKey = ppath
-                    projectName = pname
+                    // TASK-051: the project is the nearest folder with a
+                    // manifest, not simply the parent — which was wrong for
+                    // monorepos and nested packages. Falls back to the parent
+                    // when no manifest is found anywhere above.
+                    var located = locator.projectRoot(from: parentID)
+                    // A stray ~/package.json (from an `npm init` in the home
+                    // folder) must not make home the project of every build
+                    // folder on the disk.
+                    if let found = located,
+                       tree.path(of: found.id, root: root).standardizedFileURL.path
+                        == URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path {
+                        located = nil
+                    }
+                    let rootID = located?.id ?? parentID
+                    projectRootID = rootID
+                    projectManifest = located?.manifest
+                    projectKey = tree.path(of: rootID, root: root).path
+                    projectName = tree.name(of: rootID)
                 }
+            }
+
+            // TASK-052: dependency folders are only reproducible if pinned.
+            var rebuildCost = hit.rule.rebuildCost
+            var lockfile: String?
+            if let ecosystemKey = hit.rule.lockEcosystem,
+               let candidates = lockfilesByEcosystem[ecosystemKey],
+               let start = projectRootID ?? (tree.parent[Int(hit.id)] >= 0 ? tree.parent[Int(hit.id)] : nil) {
+                let repo = locator.repositoryRoot(from: start)
+                lockfile = locator.lockfile(named: candidates, from: start, stopAt: repo)
+                if lockfile == nil { rebuildCost = .networkedUnpinned }
             }
 
             let display = safety.title.isEmpty ? displayTitle(name: hit.name, rule: hit.rule) : safety.title
@@ -302,7 +407,9 @@ public enum DeveloperCatalog {
                 nodeID: hit.id,
                 displayName: display,
                 absolutePath: hit.path,
-                displayPath: shorten(hit.path, home: home),
+                // Was shorten(path, home: <scan root>): scanning ~/Projects showed
+                // ~/app/node_modules, i.e. "~" meant the scan root, not home.
+                displayPath: CanonicalPath.displayPath(absolutePath: hit.path),
                 bytes: hit.bytes,
                 category: category,
                 ecosystem: ecosystem,
@@ -312,23 +419,37 @@ public enum DeveloperCatalog {
                 projectKey: projectKey,
                 projectName: projectName,
                 modifiedDay: tree.modifiedDay[Int(hit.id)],
-                isToolRoot: hit.rule.isToolRoot || projectKey == nil
+                isToolRoot: hit.rule.isToolRoot || projectKey == nil,
+                rebuildCost: rebuildCost,
+                lockfile: lockfile,
+                projectManifest: projectManifest,
+                projectNodeID: projectRootID,
+                recipe: CleanupRecipes.recipe(forPath: hit.path)
             ))
         }
 
         items.sort { $0.bytes > $1.bytes }
-        let projects = buildProjects(from: items)
+        var projects = buildProjects(from: items)
+        enrichProjects(&projects, items: items, tree: tree, root: root, totals: totals, today: today, locator: &locator)
         let opportunities = items
             .filter { $0.reclaimability != .keep && !$0.isProtected }
             .prefix(12)
             .map { $0 }
-        let summary = summarize(items: items, projects: projects)
+        var summary = summarize(items: items, projects: projects)
+        let stale = projects.filter { $0.lastSourceDay > 0 && today - $0.lastSourceDay >= DeveloperSummary.staleAfterDays }
+        summary.staleProjectCount = stale.count
+        summary.staleReclaimableBytes = stale.reduce(0) { $0 + $1.reclaimableBytes }
+        summary.unpinnedBytes = items.filter { $0.rebuildCost == .networkedUnpinned }.reduce(0) { $0 + $1.bytes }
         return DeveloperCatalogResult(
             items: items,
             projects: projects,
             opportunities: Array(opportunities),
             summary: summary
         )
+    }
+
+    static func isInsideApplicationBundle(_ path: String) -> Bool {
+        path.split(separator: "/").dropLast().contains { $0.lowercased().hasSuffix(".app") }
     }
 
     private static func isPlausibleHit(name: String, pathHint: String, rule: Rule) -> Bool {
@@ -386,18 +507,6 @@ public enum DeveloperCatalog {
         }
     }
 
-    private static func shorten(_ path: String, home: String) -> String {
-        if path.hasPrefix(home) {
-            let rest = String(path.dropFirst(home.count))
-            return "~" + (rest.hasPrefix("/") ? rest : "/" + rest)
-        }
-        let nsHome = NSHomeDirectory()
-        if path.hasPrefix(nsHome) {
-            return "~" + String(path.dropFirst(nsHome.count))
-        }
-        return path
-    }
-
     private static func buildProjects(from items: [DeveloperItem]) -> [DeveloperProject] {
         var groups: [String: (name: String, path: String, eco: DeveloperEcosystem, bytes: Int64, reclaim: Int64, count: Int, day: Int32, nodes: [Int32])] = [:]
         for item in items {
@@ -425,7 +534,9 @@ public enum DeveloperCatalog {
             return DeveloperProject(
                 id: key,
                 name: g.name,
-                displayPath: shorten(g.path, home: ""),
+                // Was shorten(path, home: ""): every path has the empty prefix,
+                // so every project showed a bogus "~" in front of its path.
+                displayPath: CanonicalPath.displayPath(absolutePath: g.path),
                 absolutePath: g.path,
                 ecosystem: g.eco,
                 bytes: g.bytes,
@@ -438,6 +549,75 @@ public enum DeveloperCatalog {
         }
         projects.sort { $0.bytes > $1.bytes }
         return projects
+    }
+
+    /// TASK-051..054/056: what a developer needs to decide, per project.
+    /// Git state and ignored bytes are computed once per repository.
+    private static func enrichProjects(
+        _ projects: inout [DeveloperProject],
+        items: [DeveloperItem],
+        tree: FileTree,
+        root: URL,
+        totals: [Int64],
+        today: Int32,
+        locator: inout ProjectLocator
+    ) {
+        let itemsByProject = Dictionary(grouping: items.filter { $0.projectKey != nil }, by: { $0.projectKey ?? "" })
+        let generatedNames = Set(nameToRule.keys)
+        var gitCache: [Int32: (path: String, state: GitState, ignored: Int64)] = [:]
+
+        for index in projects.indices {
+            let members = itemsByProject[projects[index].id] ?? []
+            guard let rootID = members.compactMap(\.projectNodeID).first else { continue }
+            projects[index].manifest = members.compactMap(\.projectManifest).first
+            projects[index].lockfile = members.compactMap(\.lockfile).first
+            projects[index].rebuildCost = members.map(\.rebuildCost).max() ?? .cheap
+            projects[index].lastSourceDay = lastSourceDay(
+                tree: tree, projectID: rootID, skipping: Set(members.map(\.nodeID)), generatedNames: generatedNames
+            )
+            if let repoID = locator.repositoryRoot(from: rootID) {
+                if gitCache[repoID] == nil {
+                    let path = tree.path(of: repoID, root: root).path
+                    let ignored = GitIgnoreRules.ignoredBytes(
+                        tree: tree, repositoryID: repoID, repositoryPath: path, totals: totals
+                    ).ignoredBytes
+                    gitCache[repoID] = (path, GitInspector.inspect(repositoryPath: path), ignored)
+                }
+                if let repo = gitCache[repoID] {
+                    projects[index].repositoryPath = repo.path
+                    projects[index].git = repo.state
+                    projects[index].ignoredBytes = repo.ignored
+                }
+            }
+            let age = projects[index].lastSourceDay > 0 ? today - projects[index].lastSourceDay : 0
+            if projects[index].lastSourceDay > 0 && age >= DeveloperSummary.staleAfterDays {
+                projects[index].status = "Untouched \(age / 30) months"
+            }
+        }
+    }
+
+    /// Newest file under a project that a person could have edited: skips
+    /// `.git`, the project's own dependency/build folders, and any folder a
+    /// developer rule names (a nested node_modules below the item limit).
+    static func lastSourceDay(tree: FileTree, projectID: Int32, skipping: Set<Int32>, generatedNames: Set<String>) -> Int32 {
+        var newest: Int32 = 0
+        var stack: [Int32] = [projectID]
+        while let id = stack.popLast() {
+            var child = tree.firstChild[Int(id)]
+            while child != -1 {
+                let index = Int(child)
+                if tree.isDirectory[index] {
+                    let lowered = tree.name(of: child).lowercased()
+                    if !skipping.contains(child), lowered != ".git", !generatedNames.contains(lowered) {
+                        stack.append(child)
+                    }
+                } else {
+                    newest = max(newest, tree.modifiedDay[index])
+                }
+                child = tree.nextSibling[index]
+            }
+        }
+        return newest
     }
 
     private static func ageLabel(modifiedDay: Int32) -> String {

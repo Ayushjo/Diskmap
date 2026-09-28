@@ -162,6 +162,10 @@ func dumpCatalogs(tree: FileTree, root: URL, to path: String) throws {
         lines.append(["dev-project", p.absolutePath, p.name, "\(p.ecosystem)", "\(p.bytes)", "\(p.reclaimableBytes)",
                       "\(p.itemCount)"].joined(separator: "\t"))
     }
+    for p in dev.projects where p.repositoryPath != nil {
+        lines.append(["dev-repo", p.absolutePath, p.repositoryPath ?? "-", p.git.title, "\(p.ignoredBytes ?? -1)",
+                      p.manifest ?? "-", p.lockfile ?? "-", "\(p.rebuildCost)", "\(p.lastSourceDay)"].joined(separator: "\t"))
+    }
     lines.append("dev-opportunities\t" + dev.opportunities.map(\.absolutePath).joined(separator: "|"))
     lines.append("dev-summary\t\(dev.summary.totalBytes)\t\(dev.summary.reclaimableBytes)\t\(dev.summary.keepBytes)\t\(dev.summary.toolCount)\t\(dev.summary.projectCount)")
     for t in FileTypeCatalog.totals(in: tree, sizes: totals, categories: FileTypeCatalog.loadBundled()) {
