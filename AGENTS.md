@@ -36,11 +36,16 @@ in order, with acceptance criteria: `TASKS.md`.
 
 ```bash
 swift build
-swift test
+scripts/test.sh        # not bare `swift test` — see below
 swift run DiskMapApp
 ```
 
-Run `swift test` after every change before calling a task done. If there's
+Run `scripts/test.sh` after every change before calling a task done. It is
+`swift test` plus the framework search path and rpaths that Command Line Tools
+26.6+ needs: that release ships Swift Testing as `Testing.framework`, SwiftPM
+passes its directory with `-I` instead of `-F`, and bare `swift test` fails
+with `no such module 'Testing'`. Arguments pass through
+(`scripts/test.sh --filter ScanIdentityTests`). If there's
 no test covering what you just changed, write one — see
 `Tests/DiskMapCoreTests` for the pattern (Swift Testing, not XCTest —
 Command Line Tools don't ship XCTest, so `import XCTest` fails `swift test`

@@ -45,11 +45,12 @@ decision log: `docs/ARCHITECTURE.md`. Ordered work breakdown + acceptance criter
 
 ```bash
 swift build
-swift test
+scripts/test.sh        # not bare `swift test` on Command Line Tools 26.6+
 swift run DiskMapApp
 ```
 
-- Run `swift test` after **every** change before calling a task done. If nothing covers
+- Run `scripts/test.sh` after **every** change (bare `swift test` fails on CLT 26.6+ with
+  `no such module 'Testing'`; the script adds the missing `-F` and rpaths) before calling a task done. If nothing covers
   what you changed, write a test — pattern in `Tests/DiskMapCoreTests`.
 - **Swift Testing, not XCTest** (`import XCTest` fails `swift test` without full Xcode).
   Prefer small real filesystem fixtures over mocks.
