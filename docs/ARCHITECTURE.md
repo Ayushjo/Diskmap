@@ -601,3 +601,24 @@ longer be measured. Making the walk itself parallel is left open.
 
 **Status:** verified on APFS and on a real FSKit ExFAT volume. 140 tests green,
 12/12 stability runs clean.
+
+### Per-screen catalogs are built on first visit (2026-09-28)
+
+**Measured first** (TASK-042): after the walk, the app built every screen's
+catalog before first paint — ~8.9 s on a home scan, longer than the walk
+itself. TASK-069 cut the catalogs' own cost; this makes first paint wait only
+for what Overview and Explore need.
+
+**Chosen.** `PreparedScan` carries rollups, counts, QuickWins, FileTypes and
+the `AnalysisSnapshot`. Forgotten, Reviewables, Developer, Old Downloads and
+Media are built by `ScanModel.ensureCatalog` when their screen appears, off the
+main actor. `readyCatalogs` records what is built for the current tree and
+basis — a separate fact from "has items", which the old `isEmpty` guard
+conflated. `catalogGeneration` bumps on any invalidation (new tree, basis
+toggle); screens key `.task(id:)` on it so an already-open screen rebuilds.
+
+**Alternative rejected:** keep eager builds but move them after first paint in
+the background. It would still spend seconds of CPU on screens most sessions
+never open, and it contends with the user's first interactions.
+
+**Status:** real app, 2.25M-item home: walk-finished to first paint 0.92 s.

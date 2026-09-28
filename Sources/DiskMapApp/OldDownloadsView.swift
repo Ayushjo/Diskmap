@@ -60,11 +60,7 @@ struct OldDownloadsView: View {
             }
         }
         .background(DiskMapTheme.cream)
-        .task {
-            if model.cachedOldDownloads.candidates.isEmpty, model.tree != nil {
-                model.refreshOldDownloadsCache()
-            }
-        }
+        .catalogGate(.oldDownloads, model: model, title: "Looking through Downloads…")
     }
 
     private var emptyScan: some View {
@@ -445,7 +441,7 @@ struct OldDownloadsView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Button("Rescan") {
-                model.refreshOldDownloadsCache()
+                Task { await model.rebuildCatalog(.oldDownloads) }
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(DiskMapTheme.info)

@@ -59,11 +59,7 @@ struct LargeMediaView: View {
             }
         }
         .background(DiskMapTheme.cream)
-        .task {
-            if model.cachedLargeMedia.candidates.isEmpty, model.tree != nil {
-                model.refreshLargeMediaCache()
-            }
-        }
+        .catalogGate(.largeMedia, model: model, title: "Finding large media…")
     }
 
     private var emptyScan: some View {
@@ -513,7 +509,7 @@ struct LargeMediaView: View {
             Text("\(visible.count) files · \(ByteFormat.string(visible.reduce(Int64(0)) { $0 + $1.bytes }))")
                 .font(.system(size: 11))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
-            Button("Rescan") { model.refreshLargeMediaCache() }
+            Button("Rescan") { Task { await model.rebuildCatalog(.largeMedia) } }
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(DiskMapTheme.info)
                 .buttonStyle(.plain)

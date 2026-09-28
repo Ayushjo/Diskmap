@@ -737,7 +737,7 @@ identity to exist.
   2 413 lines). Live home post-walk pipeline **8.88 s → 2.52 s**: Media
   3.79 → 0.52 s, OldDownloads 2.84 → 0.10 s, FileTypes 0.61 → 0.22 s.
 
-- [ ] **TASK-043: Lazy catalogs**
+- [x] **TASK-043: Lazy catalogs**
   `ContentView.swift:194-218` builds all catalogs sequentially before first
   paint, and `isScanning = false` only flips after all seven are assigned — so
   the user stares at a frozen "Almost there…", a frozen count and an
@@ -759,6 +759,22 @@ identity to exist.
   later refresh. Going lazy resolves it.
   Acceptance: `swift test` green; first paint no longer waits on any per-screen
   catalog; visiting each of the six views builds exactly once.
+
+  **Done 2026-09-28** on `feat/speed`. `PreparedScan` now holds only first-
+  paint data (rollups, counts, QuickWins, FileTypes, AnalysisSnapshot). The
+  five per-screen catalogs build on first visit via
+  `ScanModel.ensureCatalog`, off the main actor, with an explicit
+  `readyCatalogs` set (so an empty catalog is not rebuilt on every visit) and a
+  `catalogGeneration` counter that screens key their request on, so an open
+  screen refreshes itself after a rescan or basis toggle. A shared
+  `catalogGate` modifier shows a loading state instead of a misleading empty
+  one. Also fixed: toggling the size basis only rebuilt Forgotten and
+  Reviewables, leaving Developer, Old Downloads and Media stale; now every
+  catalog is invalidated. The eager path used allocated sizes while refreshes
+  used the selected basis — lazy builds use the selected basis throughout.
+  **Measured in the real app on a 2.25M-item home: walk-finished → first paint
+  0.92 s, from ~8.9 s** (TASK-042 baseline). 150 tests green, including five
+  new `LazyCatalogTests` in the app test target.
 
 - [ ] **TASK-044: Streaming first paint**
   Publish a tree snapshot every ~400 ms during the walk with partial rollups so

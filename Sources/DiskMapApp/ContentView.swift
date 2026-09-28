@@ -10,13 +10,8 @@ private struct PreparedScan: Sendable {
     var quickWins: [QuickWins.Hit]
     var fileTypes: [FileTypeTotals]
     var analysis: AnalysisSnapshot
-    var forgotten: [ForgottenCandidate]
-    var forgottenSummary: ForgottenSummary
-    var reviewables: [ReviewableTarget]
-    var reviewableSummary: ReviewableSummary
-    var developer: DeveloperCatalogResult
-    var oldDownloads: OldDownloadsCatalogResult
-    var largeMedia: MediaCatalogResult
+    // Per-screen catalogs are NOT here: they are built on first visit
+    // (TASK-043). Everything in this struct is what first paint needs.
 }
 
 struct CleanupStageRequest: Sendable {
@@ -200,6 +195,7 @@ final class ScanModel: ObservableObject {
         let scannedTree = result.tree
         let categories = fileTypeCategories
         let basis = sizeBasis
+        let postWalkStarted = ContinuousClock.now
         let prepared = await Task.detached(priority: .userInitiated) {
             let both = scannedTree.rollUpBoth()
             let counts = scannedTree.rollUpDescendantCounts()
@@ -209,17 +205,10 @@ final class ScanModel: ObservableObject {
                 tree: scannedTree, root: url, allocated: both.allocated, logical: both.logical,
                 basis: basis, quickWins: quickWins
             )
-            let forgotten = ForgottenFiles.candidates(tree: scannedTree, root: url, totals: both.allocated, limit: 400)
-            let reviewable = ReviewableCatalog.build(tree: scannedTree, root: url, totals: both.allocated, quickWins: quickWins)
             return PreparedScan(
                 allocated: both.allocated, logical: both.logical,
                 fileCounts: counts.files, folderCounts: counts.folders,
-                quickWins: quickWins, fileTypes: fileTypes, analysis: analysis,
-                forgotten: forgotten, forgottenSummary: ForgottenFiles.summary(from: forgotten),
-                reviewables: reviewable.targets, reviewableSummary: reviewable.summary,
-                developer: DeveloperCatalog.build(tree: scannedTree, root: url, totals: both.allocated),
-                oldDownloads: OldDownloadsCatalog.build(tree: scannedTree, root: url, totals: both.allocated),
-                largeMedia: MediaCatalog.build(tree: scannedTree, root: url, totals: both.allocated)
+                quickWins: quickWins, fileTypes: fileTypes, analysis: analysis
             )
         }.value
         guard generation == scanGeneration else {
@@ -236,13 +225,9 @@ final class ScanModel: ObservableObject {
         cachedQuickWins = prepared.quickWins
         cachedFileTypes = prepared.fileTypes
         analysis = prepared.analysis
-        cachedForgotten = prepared.forgotten
-        cachedForgottenSummary = prepared.forgottenSummary
-        cachedReviewables = prepared.reviewables
-        cachedReviewableSummary = prepared.reviewableSummary
-        cachedDeveloper = prepared.developer
-        cachedOldDownloads = prepared.oldDownloads
-        cachedLargeMedia = prepared.largeMedia
+        // New tree: every per-screen catalog is stale. Screens rebuild theirs
+        // on first visit (and any open screen immediately, via the generation).
+        invalidateCatalogs()
         duplicateGroups = []
         duplicatePhase = .idle
         duplicateProgressDone = 0
@@ -257,7 +242,9 @@ final class ScanModel: ObservableObject {
         rememberRecent(url)
         pendingRootURL = nil
         isScanning = false
-        log("scan finished items=\(result.itemCount)")
+        let postWalk = postWalkStarted.duration(to: .now).components
+        let postWalkSeconds = Double(postWalk.seconds) + Double(postWalk.attoseconds) / 1e18
+        log("scan finished items=\(result.itemCount) walk_seconds=\(String(format: "%.3f", result.elapsedSeconds)) post_walk_seconds=\(String(format: "%.3f", postWalkSeconds))")
     }
 
     /// Display paths for a few unreadable directories, for the notice.
@@ -406,74 +393,127 @@ final class ScanModel: ObservableObject {
         )
     }
 
-    func refreshReviewableCache() {
-        guard let tree, let rootURL, selectedTotals.count == tree.count else {
-            cachedReviewables = []
-            cachedReviewableSummary = .empty
-            return
-        }
-        let built = ReviewableCatalog.build(
-            tree: tree,
-            root: rootURL,
-            totals: selectedTotals,
-            quickWins: cachedQuickWins
-        )
-        cachedReviewables = built.targets
-        cachedReviewableSummary = built.summary
+    // MARK: - Per-screen catalogs, built on first visit (TASK-043)
+
+    /// A catalog that backs one screen. Built only when that screen asks,
+    /// off the main actor, and rebuilt when the tree or size basis changes.
+    /// Measured before this (TASK-042): building all five eagerly held first
+    /// paint for ~7.7 s on a home scan.
+    enum Catalog: Hashable, CaseIterable, Sendable {
+        case forgotten, reviewables, developer, oldDownloads, largeMedia
     }
 
-    func refreshOldDownloadsCache() {
-        guard let tree, let rootURL, selectedTotals.count == tree.count else {
-            cachedOldDownloads = .empty
-            return
-        }
-        cachedOldDownloads = OldDownloadsCatalog.build(
-            tree: tree,
-            root: rootURL,
-            totals: selectedTotals
-        )
+    /// Catalogs whose cache matches the current tree and basis. Distinguishes
+    /// "not built yet" from "built and genuinely empty" — the old `isEmpty`
+    /// check rebuilt an empty catalog on every visit.
+    @Published private(set) var readyCatalogs: Set<Catalog> = []
+    /// Bumped whenever cached catalogs go stale; screens key their build
+    /// request on it so an open screen refreshes by itself.
+    @Published private(set) var catalogGeneration = 0
+    private var catalogBuilds: [Catalog: Task<Void, Never>] = [:]
+
+    func isCatalogReady(_ catalog: Catalog) -> Bool { readyCatalogs.contains(catalog) }
+
+    /// Drop every per-screen catalog: new tree, or new size basis.
+    func invalidateCatalogs() {
+        catalogBuilds.values.forEach { $0.cancel() }
+        catalogBuilds = [:]
+        readyCatalogs = []
+        cachedForgotten = []
+        cachedForgottenSummary = .empty
+        cachedReviewables = []
+        cachedReviewableSummary = .empty
+        cachedDeveloper = .empty
+        cachedOldDownloads = .empty
+        cachedLargeMedia = .empty
+        catalogGeneration += 1
     }
 
-    func refreshLargeMediaCache() {
-        guard let tree, let rootURL, selectedTotals.count == tree.count else {
-            cachedLargeMedia = .empty
-            return
-        }
-        cachedLargeMedia = MediaCatalog.build(
-            tree: tree,
-            root: rootURL,
-            totals: selectedTotals
-        )
+    private enum BuiltCatalog: Sendable {
+        case forgotten([ForgottenCandidate])
+        case reviewables([ReviewableTarget], ReviewableSummary)
+        case developer(DeveloperCatalogResult)
+        case oldDownloads(OldDownloadsCatalogResult)
+        case largeMedia(MediaCatalogResult)
     }
 
+    /// Builds `catalog` if it is not ready, or waits for the build already in
+    /// flight. Safe to call from every `.task` that shows the screen.
+    func ensureCatalog(_ catalog: Catalog) async {
+        if readyCatalogs.contains(catalog) { return }
+        if let running = catalogBuilds[catalog] {
+            await running.value
+            return
+        }
+        guard let tree, let rootURL, selectedTotals.count == tree.count else { return }
+        let generation = catalogGeneration
+        let totals = selectedTotals
+        let quickWins = cachedQuickWins
+        let build = Task { [weak self] in
+            let built = await Task.detached(priority: .userInitiated) {
+                Self.build(catalog, tree: tree, root: rootURL, totals: totals, quickWins: quickWins)
+            }.value
+            guard let self, !Task.isCancelled, self.catalogGeneration == generation else { return }
+            self.apply(built)
+            self.readyCatalogs.insert(catalog)
+            self.catalogBuilds[catalog] = nil
+        }
+        catalogBuilds[catalog] = build
+        await build.value
+    }
+
+    /// Force a rebuild of one catalog (a screen's own "Rescan" button).
+    func rebuildCatalog(_ catalog: Catalog) async {
+        catalogBuilds[catalog]?.cancel()
+        catalogBuilds[catalog] = nil
+        readyCatalogs.remove(catalog)
+        await ensureCatalog(catalog)
+    }
+
+    nonisolated private static func build(
+        _ catalog: Catalog, tree: FileTree, root: URL, totals: [Int64], quickWins: [QuickWins.Hit]
+    ) -> BuiltCatalog {
+        switch catalog {
+        case .forgotten:
+            return .forgotten(ForgottenFiles.candidates(tree: tree, root: root, totals: totals, limit: 400))
+        case .reviewables:
+            let built = ReviewableCatalog.build(tree: tree, root: root, totals: totals, quickWins: quickWins)
+            return .reviewables(built.targets, built.summary)
+        case .developer:
+            return .developer(DeveloperCatalog.build(tree: tree, root: root, totals: totals))
+        case .oldDownloads:
+            return .oldDownloads(OldDownloadsCatalog.build(tree: tree, root: root, totals: totals))
+        case .largeMedia:
+            return .largeMedia(MediaCatalog.build(tree: tree, root: root, totals: totals))
+        }
+    }
+
+    private func apply(_ built: BuiltCatalog) {
+        switch built {
+        case .forgotten(let candidates):
+            cachedForgotten = candidates
+            cachedForgottenSummary = ForgottenFiles.summary(from: candidates)
+        case .reviewables(let targets, let summary):
+            cachedReviewables = targets
+            cachedReviewableSummary = summary
+        case .developer(let result):
+            cachedDeveloper = result
+        case .oldDownloads(let result):
+            cachedOldDownloads = result
+        case .largeMedia(let result):
+            cachedLargeMedia = result
+        }
+    }
+
+    /// Kept for callers and tests. With no tree it clears only this screen's
+    /// cache — the TASK-041 bug was clearing Old Downloads here too.
     func refreshDeveloperCache() {
-        guard let tree, let rootURL, selectedTotals.count == tree.count else {
-            // Clear only this screen's cache. A copy-paste slip here used to
-            // also wipe `cachedOldDownloads` (TASK-041).
+        guard let tree, selectedTotals.count == tree.count else {
             cachedDeveloper = .empty
+            readyCatalogs.remove(.developer)
             return
         }
-        cachedDeveloper = DeveloperCatalog.build(
-            tree: tree,
-            root: rootURL,
-            totals: selectedTotals
-        )
-    }
-
-    func refreshForgottenCache() {
-        guard let tree, let rootURL, selectedTotals.count == tree.count else {
-            cachedForgotten = []
-            cachedForgottenSummary = .empty
-            return
-        }
-        let forgotten = ForgottenFiles.candidates(
-            tree: tree,
-            root: rootURL,
-            totals: selectedTotals,
-            limit: 400
-        )
-        cachedForgotten = forgotten
-        cachedForgottenSummary = ForgottenFiles.summary(from: forgotten)
+        Task { await rebuildCatalog(.developer) }
     }
 
     func refreshQueue() async {
@@ -695,25 +735,23 @@ struct ContentView: View {
                 let basis = model.sizeBasis
                 let quickWins = model.cachedQuickWins
                 let categories = model.fileTypeCategories
+                // Every per-screen catalog was built from the other basis.
+                // Before TASK-043 only Forgotten and Reviewables were rebuilt
+                // here, so Developer, Old Downloads and Media went stale.
+                model.invalidateCatalogs()
                 let worker = Task.detached(priority: .userInitiated) {
                     let totals = basis == .logical ? logical : allocated
                     let analysis = AnalysisSnapshot.build(tree: tree, root: root, allocated: allocated,
                         logical: logical, basis: basis, quickWins: quickWins)
-                    let forgotten = ForgottenFiles.candidates(tree: tree, root: root, totals: totals, limit: 400)
-                    let review = ReviewableCatalog.build(tree: tree, root: root, totals: totals, quickWins: quickWins)
                     let types = FileTypeCatalog.totals(in: tree, sizes: totals, categories: categories)
-                    return (analysis, forgotten, review, types)
+                    return (analysis, types)
                 }
                 let result = await withTaskCancellationHandler {
                     await worker.value
                 } onCancel: { worker.cancel() }
                 guard !Task.isCancelled, model.rootURL == root, model.sizeBasis == basis else { return }
                 model.analysis = result.0
-                model.cachedForgotten = result.1
-                model.cachedForgottenSummary = ForgottenFiles.summary(from: result.1)
-                model.cachedReviewables = result.2.targets
-                model.cachedReviewableSummary = result.2.summary
-                model.cachedFileTypes = result.3
+                model.cachedFileTypes = result.1
             }
     }
 }

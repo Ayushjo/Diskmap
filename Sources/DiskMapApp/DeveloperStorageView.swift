@@ -52,11 +52,7 @@ struct DeveloperStorageView: View {
             }
         }
         .background(DiskMapTheme.cream)
-        .task {
-            if model.cachedDeveloper.items.isEmpty, model.tree != nil {
-                model.refreshDeveloperCache()
-            }
-        }
+        .catalogGate(.developer, model: model, title: "Sorting developer storage…")
     }
 
     private var emptyScan: some View {

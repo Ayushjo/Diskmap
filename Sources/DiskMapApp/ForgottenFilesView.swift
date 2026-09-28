@@ -99,11 +99,7 @@ struct ForgottenFilesView: View {
     var body: some View {
         AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init), main: mainColumn, inspector: inspectorColumn)
         .background(DiskMapTheme.cream)
-        .task {
-            if model.cachedForgotten.isEmpty, model.tree != nil {
-                model.refreshForgottenCache()
-            }
-        }
+        .catalogGate(.forgotten, model: model, title: "Finding forgotten files…")
     }
 
     private var mainColumn: some View {

@@ -74,11 +74,7 @@ struct CachesReviewView: View {
     var body: some View {
         AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID, main: mainColumn, inspector: inspector)
         .background(DiskMapTheme.cream)
-        .task {
-            if model.cachedReviewables.isEmpty, model.tree != nil {
-                model.refreshReviewableCache()
-            }
-        }
+        .catalogGate(.reviewables, model: model, title: "Finding caches…")
     }
 
     private var mainColumn: some View {
