@@ -25,6 +25,8 @@ struct Args {
     var saveSnapshot: String?
     var fromSnapshot: String?
     var catalogDump: String?
+    /// With --from-snapshot: time FileQuery (TASK-059) on a frozen tree.
+    var queries: [String] = []
     var json = false
     var label = "scan"
 }
@@ -57,6 +59,8 @@ func parseArgs() -> Args {
         case "--catalog-dump":
             args.catalogDump = rest.first
             if !rest.isEmpty { rest.removeFirst() }
+        case "--query":
+            if let text = rest.first { args.queries.append(text); rest.removeFirst() }
         case "--json":
             args.json = true
         case "--label":
@@ -182,6 +186,23 @@ if let snapshotPath = args.fromSnapshot {
         let started = ContinuousClock.now
         try dumpCatalogs(tree: snapshot.tree, root: snapRoot, to: dump)
         print("catalog-dump seconds=\(String(format: "%.3f", durationSeconds(from: started)))")
+    }
+    if !args.queries.isEmpty {
+        let totals = snapshot.tree.rollUpBoth().allocated
+        for text in args.queries {
+            let query = FileQuery.parse(text, home: snapshot.rootPath, root: snapshot.rootPath).query
+            var times: [Double] = []
+            var matches = 0
+            for _ in 1...args.repeats {
+                let started = ContinuousClock.now
+                matches = query.run(tree: snapshot.tree, root: snapRoot, totals: totals,
+                                    context: .init(home: snapshot.rootPath), limit: 500).matchCount
+                times.append(durationSeconds(from: started) * 1000)
+            }
+            times.sort()
+            print("query \"\(text)\" matches=\(matches) ms min=\(String(format: "%.1f", times[0])) "
+                + "median=\(String(format: "%.1f", times[times.count / 2])) max=\(String(format: "%.1f", times[times.count - 1]))")
+        }
     }
     if args.phases {
         let phases = timePostWalkPhases(tree: snapshot.tree, root: snapRoot)

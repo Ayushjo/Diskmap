@@ -276,6 +276,9 @@ public enum HumanUnits {
     }
 
     public static func format(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowsNonnumericFormatting = false   // "0 bytes", not "Zero KB"
+        return formatter.string(fromByteCount: bytes)
     }
 }

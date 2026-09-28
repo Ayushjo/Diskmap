@@ -7,6 +7,8 @@ struct CommandPalette: View {
     @State private var query: String
     @State private var searchHits: [SearchHit] = []
     @State private var isSearching = false
+    @State private var queryMatchCount = 0
+    @State private var queryMatchedBytes: Int64 = 0
     var onReviewCleanup: () -> Void
     var onExplain: () -> Void
 
@@ -28,6 +30,21 @@ struct CommandPalette: View {
         var path: String
         var isDirectory: Bool
         var isApplication: Bool
+        var bytes: Int64
+    }
+
+    /// TASK-059: the palette speaks the Find query language. Anything with a
+    /// `key:` or `size>`-style token is a query, not a command search.
+    private var parsedQuery: FileQuery.Parsed? {
+        guard let root = model.rootURL else { return nil }
+        return FileQuery.parse(query, home: NSHomeDirectory(), root: root.path)
+    }
+
+    private var isStructuredQuery: Bool { parsedQuery?.query.isStructured ?? false }
+
+    private func openInFind() {
+        model.findQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        model.destination = .find
     }
 
     private struct Command: Identifiable {
@@ -46,6 +63,9 @@ struct CommandPalette: View {
             },
             Command(title: "Find files larger than 1 GB", subtitle: "Biggest Files", symbol: "doc.fill") {
                 model.destination = .biggestFiles
+            },
+            Command(title: "Open Find", subtitle: "Search the scan: ext:mp4 size>500MB age>1y in:downloads", symbol: "magnifyingglass") {
+                model.destination = .find
             },
             Command(title: "Show biggest folders", subtitle: "Find", symbol: "folder.fill") {
                 model.destination = .biggestFolders
@@ -82,7 +102,7 @@ struct CommandPalette: View {
             for hit in searchHits {
                 list.append(Command(
                     title: hit.name,
-                    subtitle: hit.path,
+                    subtitle: ByteFormat.string(hit.bytes) + " · " + hit.path,
                     symbol: hit.isApplication ? "app" : (hit.isDirectory ? "folder" : "doc"),
                     category: hit.isApplication ? .applications : (hit.isDirectory ? .folders : .files)
                 ) {
@@ -98,8 +118,19 @@ struct CommandPalette: View {
     private var filtered: [Command] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return commands.filter { $0.category == .actions } }
+        if isStructuredQuery {
+            let meaning = parsedQuery?.query.describe(home: NSHomeDirectory()).joined(separator: " · ") ?? ""
+            let summary = isSearching ? "Searching…"
+                : "\(queryMatchCount.formatted()) match\(queryMatchCount == 1 ? "" : "es") · \(ByteFormat.string(queryMatchedBytes))"
+            let findAll = Command(title: "Show all in Find — \(summary)", subtitle: meaning, symbol: "magnifyingglass") {
+                openInFind()
+            }
+            return [findAll] + commands.filter { $0.category != .actions }
+        }
+        // File hits were already matched word by word; only actions are
+        // matched against the typed text here.
         return commands.filter {
-            $0.title.lowercased().contains(q) || $0.subtitle.lowercased().contains(q)
+            $0.category != .actions || $0.title.lowercased().contains(q) || $0.subtitle.lowercased().contains(q)
         }
     }
 
@@ -109,7 +140,7 @@ struct CommandPalette: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .accessibilityHidden(true)
-                TextField("Type a command or file name…", text: $query)
+                TextField("Type a command, a file name, or a query like ext:mp4 size>1GB", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
                     .accessibilityLabel("Command palette search")
@@ -119,6 +150,17 @@ struct CommandPalette: View {
                     .accessibilityLabel("Close command palette")
             }
             .padding(14)
+            if isStructuredQuery, let problems = parsedQuery?.problems, !problems.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(problems, id: \.token) { problem in
+                        Text("Ignoring \(problem.token) — \(problem.message)")
+                            .font(DiskMapType.caption)
+                            .foregroundStyle(DiskMapTheme.review)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 8)
+            }
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
@@ -185,8 +227,9 @@ struct CommandPalette: View {
 
     @MainActor
     private func updateSearch() async {
-        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalized.isEmpty, let tree = model.tree, let root = model.rootURL else {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, let tree = model.tree, let root = model.rootURL,
+              model.selectedTotals.count == tree.count else {
             searchHits = []
             isSearching = false
             return
@@ -194,31 +237,37 @@ struct CommandPalette: View {
         isSearching = true
         try? await Task.sleep(for: .milliseconds(150))
         guard !Task.isCancelled else { return }
-        let hits = await Task.detached(priority: .userInitiated) {
-            var found: [SearchHit] = []
-            found.reserveCapacity(100)
-            for index in 1..<tree.count {
-                if index & 1_023 == 0, Task.isCancelled { return found }
-                let id = Int32(index)
+        // Plain words search names only, largest first — the old search built
+        // a full path for every node on every keystroke.
+        let parsed = FileQuery.parse(normalized, home: NSHomeDirectory(), root: root.path)
+        let limit = parsed.query.isStructured ? 8 : 100
+        let totals = model.selectedTotals
+        let duplicates: Set<Int32>? = model.duplicateDidRun ? Set(model.duplicateGroups.flatMap(\.fileIDs)) : nil
+        let context = FileQuery.Context(home: NSHomeDirectory(), duplicateFileIDs: duplicates)
+        let work = Task.detached(priority: .userInitiated) { () -> (FileQuery.Result, [SearchHit]) in
+            let result = parsed.query.run(tree: tree, root: root, totals: totals, context: context,
+                                          limit: limit, isCancelled: { Task.isCancelled })
+            let hits = result.ids.map { id -> SearchHit in
+                let index = Int(id)
                 let name = tree.name(of: id)
-                let path = tree.path(of: id, root: root).path
-                guard name.localizedCaseInsensitiveContains(normalized)
-                        || path.localizedCaseInsensitiveContains(normalized) else { continue }
                 let directory = tree.isDirectory[index]
-                found.append(SearchHit(
+                return SearchHit(
                     nodeID: id,
                     parentID: tree.parent[index],
                     name: name,
-                    path: CanonicalPath.displayPath(absolutePath: path),
+                    path: CanonicalPath.displayPath(absolutePath: tree.path(of: id, root: root).path),
                     isDirectory: directory,
-                    isApplication: directory && name.lowercased().hasSuffix(".app")
-                ))
-                if found.count == 100 { break }
+                    isApplication: directory && name.lowercased().hasSuffix(".app"),
+                    bytes: totals[index]
+                )
             }
-            return found
-        }.value
-        guard !Task.isCancelled else { return }
+            return (result, hits)
+        }
+        let (result, hits) = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+        guard !Task.isCancelled, !result.wasCancelled else { return }
         searchHits = hits
+        queryMatchCount = result.matchCount
+        queryMatchedBytes = result.matchedBytes
         isSearching = false
     }
 }

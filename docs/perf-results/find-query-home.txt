@@ -1,0 +1,25 @@
+# FileQuery on a frozen real-home snapshot (2.25M nodes, ~685k distinct names), release,
+# DiskMapScanBench --from-snapshot SNAP --repeat 7 --query ... ; Mac16,13, 2026-09-29.
+# Machine under heavy memory pressure during all runs (19 GB swap in use); max values include swap stalls.
+
+## First version (String name tests)
+query "ext:mp4,mov size>100MB" matches=217 ms min=5.6 median=5.9 max=6.0
+query "in:downloads age>180d" matches=194 ms min=26.4 median=26.9 max=28.1
+query "node_modules type:folder" matches=3798 ms min=9.0 median=9.2 max=9.8
+query "name:*.log -xcode" matches=3428 ms min=382.7 median=765.0 max=902382.4
+query "kind:archive in:library" matches=1628 ms min=174.0 median=247.1 max=410.7
+query "type:any readme" matches=20755 ms min=231.6 median=274.3 max=583.7
+query "café" matches=1 ms min=975.8 median=1271.1 max=2086.0
+query "type:any a" matches=1388370 ms min=132.9 median=137.6 max=143.4
+query "in:caches type:file size>10MB" matches=240 ms min=14.0 median=14.1 max=14.4
+
+## After ASCII byte matcher + scratch buffer + non-ASCII shortcut
+query "name:*.log -xcode" matches=3428 ms min=326.2 median=372.2 max=408.0
+query "kind:archive in:library" matches=1628 ms min=71.3 median=77.1 max=78.2
+query "type:any readme" matches=20755 ms min=60.1 median=60.9 max=65.1
+query "café" matches=1 ms min=31.8 median=32.0 max=34.4
+query "ext:mp4,mov" matches=7147 ms min=34.4 median=34.5 max=37.1
+
+## After glob literal prefilter
+query "name:*.log -xcode" matches=3428 ms min=69.3 median=72.5 max=75.6
+query "name:*e?d*" matches=182117 ms min=312.7 median=327.3 max=335.9

@@ -691,3 +691,31 @@ show wrong totals rather than fewer rows.
 have to delete: the save panel already asked before overwriting, and keeping
 the app free of any `removeItem` call keeps rule 1 greppable.
 
+### One Find surface, next to the old screens (2026-09-29)
+
+**Chosen.** A single Find screen over the whole scan, driven by one query
+language (`FileQuery`) shared with ⌘K and `diskmap find`. Chips are not
+filters with their own state: each toggles one token in the query text, so
+what the list shows is always exactly what the box says, and any chip
+combination can be typed, copied, or run from a terminal.
+
+**Not yet: deleting screens.** Eight destinations are ranked file lists that
+differ by filter (Biggest Files, Forgotten, Old Downloads, Large Media, …).
+Find can express most of them, but some carry their own judgement — Safe to
+Review's app grouping, Duplicates' content hashing, Old Downloads' installer
+logic — that a query does not reproduce. Find ships beside them; chip use is
+counted in local preferences (never sent anywhere) so the decision to retire
+a screen rests on use, not on taste.
+
+**Defaults chosen for honesty over cleverness.** Size, age, extension and
+kind imply files, because folder totals nest and `size>1GB` over folders
+lists every ancestor of one big file. Unknown `key:` text stays a plain word.
+Bad values are shown and ignored rather than failing the whole query.
+`in:caches` means folders named Caches, DerivedData or `.cache` — the Caches
+screen's rule plus the XDG cache folder developer tools use.
+
+**No paths on the hot path.** Matching runs per distinct name on raw UTF-8
+and per node on integer arrays; a path is built only for the rows shown.
+The byte-level matcher declines anything non-ASCII, falling back to String
+comparison, so speed never changes an answer.
+

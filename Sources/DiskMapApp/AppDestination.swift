@@ -2,6 +2,7 @@ import Foundation
 
 enum AppDestination: Hashable, Identifiable {
     case overview
+    case find
     case biggestFiles
     case biggestFolders
     case forgottenFiles
@@ -26,6 +27,7 @@ enum AppDestination: Hashable, Identifiable {
     var label: String {
         switch self {
         case .overview: return "Overview"
+        case .find: return "Find"
         case .biggestFiles: return "Biggest Files"
         case .biggestFolders: return "Biggest Folders"
         case .forgottenFiles: return "Forgotten Files"
@@ -45,6 +47,7 @@ enum AppDestination: Hashable, Identifiable {
     var symbol: String {
         switch self {
         case .overview: return "square.grid.2x2"
+        case .find: return "magnifyingglass"
         case .biggestFiles: return "doc.fill"
         case .biggestFolders: return "folder.fill"
         case .forgottenFiles: return "clock.arrow.circlepath"
@@ -72,7 +75,7 @@ enum AppNavSection: String, CaseIterable, Identifiable {
     var items: [AppDestination] {
         switch self {
         case .main: return [.overview]
-        case .find: return [.biggestFiles, .biggestFolders, .forgottenFiles, .duplicates]
+        case .find: return [.find, .biggestFiles, .biggestFolders, .forgottenFiles, .duplicates]
         case .clean: return [.cleanSafe, .cleanCaches, .cleanDownloads, .cleanMedia]
         case .explore: return [.fileBrowser, .visualize, .developerStorage, .applications, .snapshots]
         }

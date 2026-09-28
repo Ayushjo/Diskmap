@@ -331,6 +331,10 @@ struct AppShellView: View {
                 },
                 onOpenBiggestFiles: { model.destination = .biggestFiles }
             )
+        case .find:
+            if let tree = model.tree, let root = model.rootURL {
+                FindView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })
+            } else { needsScan }
         case .fileBrowser:
             if let tree = model.tree, let root = model.rootURL {
                 FileBrowserView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })

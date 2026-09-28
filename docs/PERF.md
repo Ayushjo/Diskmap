@@ -396,3 +396,25 @@ Writing costs roughly 2.5–6.5 s on top of the walk, tracking output size. The
 app's Export Scan… reuses the in-memory tree, so it pays only the writing.
 Before the day-string cache and JSON fast path, NDJSON writing alone took ~18 s.
 
+## Find queries (TASK-059, 2026-09-29)
+
+`DiskMapScanBench --from-snapshot SNAP --repeat 7 --query "…"` on the frozen
+real home (2.25M nodes, ~685k distinct names), release. Recorded while the
+machine was swapping heavily (19 GB swap), so treat as upper bounds;
+`docs/perf-results/find-query-home.txt` has every run.
+
+| query | before | after |
+|---|---|---|
+| `ext:mp4,mov size>100MB` | 5.9 ms | — |
+| `in:downloads age>180d` | 26.9 ms | — |
+| `name:*.log -xcode` | 765 ms | 72.5 ms |
+| `kind:archive in:library` | 247 ms | 77.1 ms |
+| `type:any readme` | 274 ms | 60.9 ms |
+| `café` | 1 271 ms | 32.0 ms |
+| `type:any a` (1.39M matches) | 138 ms | — |
+
+What moved it: per-name tests on raw UTF-8 with a reused scratch buffer (no
+String per distinct name), a definite "no" for ASCII names against non-ASCII
+words, and a literal-substring prefilter before `fnmatch`. The worst case
+seen is a glob whose only literal is one letter (`name:*e?d*`, 327 ms).
+

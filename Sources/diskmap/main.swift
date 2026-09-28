@@ -18,6 +18,12 @@ USAGE
       Files with identical contents (APFS clones are reported as shared).
   diskmap check <path> --fail-over <size> [--json]
       Exit 1 when the folder is larger than <size> — for CI or git hooks.
+  diskmap find <path> <query…> [--sort largest|oldest|newest] [--limit N] [--json]
+      Files matching a query, e.g.  diskmap find ~ ext:mp4 size>500MB age>1y
+      Keys: ext: name: kind: size> size< age> age< path: in: is: type:
+      (in: downloads desktop documents library caches · is: duplicate
+      hardlink cloud · kind: video audio image media document developer
+      archive). Bare words match names; -word excludes.
   diskmap export <path> --format json|ndjson|csv|ncdu [--out FILE]
                  [--min-size SIZE] [--max-depth N]
       The whole scan, for jq, spreadsheets, or `ncdu -f FILE`.
@@ -51,7 +57,7 @@ let command = arguments.removeFirst()
 var flags: [String: String] = [:]
 var switches = Set<String>()
 var positional: [String] = []
-let valued: Set<String> = ["--top", "--older-than", "--min-size", "--fail-over", "--format", "--out", "--max-depth"]
+let valued: Set<String> = ["--sort", "--limit", "--top", "--older-than", "--min-size", "--fail-over", "--format", "--out", "--max-depth"]
 let booleans: Set<String> = ["--json", "--reclaimable"]
 while !arguments.isEmpty {
     let token = arguments.removeFirst()
@@ -61,7 +67,7 @@ while !arguments.isEmpty {
         arguments.removeFirst()
     } else if booleans.contains(token) {
         switches.insert(token)
-    } else if token.hasPrefix("-") {
+    } else if token.hasPrefix("--") || (token.hasPrefix("-") && command != "find") {
         fail("unknown option \(token) (see diskmap --help)", .usage)
     } else {
         positional.append(token)
@@ -265,6 +271,52 @@ case "check":
     }
     warnDenied(deniedPaths(result, root: root))
     exit(passed ? Exit.ok.rawValue : Exit.thresholdExceeded.rawValue)
+
+case "find":
+    let root = rootURL()
+    let text = positional.dropFirst().joined(separator: " ")
+    guard !text.isEmpty else { fail("find needs a query, e.g. diskmap find ~ ext:mp4 size>500MB", .usage) }
+    let home = NSHomeDirectory()
+    let parsed = FileQuery.parse(text, home: home, root: root.path)
+    for problem in parsed.problems {
+        FileHandle.standardError.write(Data("warning: ignoring \(problem.token): \(problem.message)\n".utf8))
+    }
+    guard let sort = FileQuery.Sort(rawValue: flags["--sort"] ?? "largest") else { fail("--sort is largest, oldest or newest", .usage) }
+    guard let limit = Int(flags["--limit"] ?? "50"), limit >= 0 else { fail("--limit needs a number", .usage) }
+    let result = await scan(root)
+    let tree = result.tree
+    let totals = tree.rollUpBoth().allocated
+    var duplicates: Set<Int32>?
+    if parsed.query.flags.contains(.duplicate) {
+        let groups = (try? await DuplicateFinder.scan(DuplicateFinder.candidates(in: tree, root: root)))?.groups ?? []
+        duplicates = Set(groups.flatMap(\.fileIDs))
+    }
+    let started = Date()
+    let found = parsed.query.run(tree: tree, root: root, totals: totals,
+                                 context: .init(home: home, duplicateFileIDs: duplicates), sort: sort, limit: limit)
+    let queryMilliseconds = Int(Date().timeIntervalSince(started) * 1000)
+    for note in found.notes { FileHandle.standardError.write(Data("note: \(note)\n".utf8)) }
+    if json {
+        emitJSON([
+            "schema": 1, "root": root.path, "query": text,
+            "meaning": parsed.query.describe(home: home),
+            "matchCount": found.matchCount, "matchedBytes": found.matchedBytes, "queryMilliseconds": queryMilliseconds,
+            "results": found.ids.map { id -> [String: Any] in
+                ["path": tree.path(of: id, root: root).path, "sizeBytes": totals[Int(id)],
+                 "type": tree.isDirectory[Int(id)] ? "dir" : "file",
+                 "modified": TreeExporter.isoDay(tree.modifiedDay[Int(id)])]
+            },
+        ])
+    } else {
+        say("\(parsed.query.describe(home: home).joined(separator: " · "))")
+        say("\(found.matchCount.formatted()) match\(found.matchCount == 1 ? "" : "es") · \(HumanUnits.format(found.matchedBytes))"
+            + (found.matchCount > found.ids.count ? " · showing \(found.ids.count) (--limit)" : "") + "\n")
+        for id in found.ids {
+            let day = TreeExporter.isoDay(tree.modifiedDay[Int(id)])
+            say("  \(HumanUnits.format(totals[Int(id)]).padding(toLength: 10, withPad: " ", startingAt: 0))  \(day.padding(toLength: 10, withPad: " ", startingAt: 0))  \(display(tree.path(of: id, root: root).path))")
+        }
+    }
+    warnDenied(deniedPaths(result, root: root))
 
 case "export":
     let root = rootURL()

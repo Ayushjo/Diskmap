@@ -9,6 +9,7 @@ import SwiftUI
 ///     DiskMapApp --scan ~/some/folder --snapshot-dir /tmp/shots \
 ///         [--snapshot-destinations overview,cleanSafe] [--appearance dark] \
 ///         [--snapshot-at 3]      # also capture a mid-scan frame
+///         [--find-query "size>100MB age>1y"]
 ///
 /// After the scan finishes it visits each destination, waits for it to
 /// settle, writes `<dir>/<destination>-<appearance>.png`, then quits.
@@ -51,6 +52,8 @@ enum SnapshotHarness {
             return
         }
         window.setContentSize(snapshotSize())
+        // `--find-query "ext:mp4 size>100MB"` renders Find with that query.
+        if let findQuery = value(after: "--find-query") { model.findQuery = findQuery }
 
         for destination in destinations() {
             model.destination = destination
@@ -106,7 +109,7 @@ enum SnapshotHarness {
     }
 
     private static let all: [(String, AppDestination)] = [
-        ("overview", .overview), ("biggestFiles", .biggestFiles), ("biggestFolders", .biggestFolders),
+        ("overview", .overview), ("find", .find), ("biggestFiles", .biggestFiles), ("biggestFolders", .biggestFolders),
         ("forgottenFiles", .forgottenFiles), ("duplicates", .duplicates), ("cleanSafe", .cleanSafe),
         ("cleanCaches", .cleanCaches), ("cleanDownloads", .cleanDownloads), ("cleanMedia", .cleanMedia),
         ("fileBrowser", .fileBrowser), ("visualize", .visualize), ("developerStorage", .developerStorage),

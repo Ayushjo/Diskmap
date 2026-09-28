@@ -88,6 +88,10 @@ final class ScanModel: ObservableObject {
     @Published var depthLevel: Double = 7
     @Published var topNav: TopNavTab = .explore
     @Published var destination: AppDestination = .overview
+    /// The Find screen's query text (TASK-060). Lives here so ⌘K can hand a
+    /// query over, and so it survives switching screens.
+    @Published var findQuery = ""
+    @Published var findSort: FileQuery.Sort = .largest
     @Published var analysis: AnalysisSnapshot = .empty
     /// When set, Biggest Files filters to files under this absolute path prefix.
     @Published var folderFilterPath: String? = nil

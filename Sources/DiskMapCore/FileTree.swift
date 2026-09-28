@@ -368,6 +368,15 @@ public struct FileTree: Sendable {
         nameString(at: nameIndex[Int(id)])
     }
 
+    /// The name's raw UTF-8, without building a String — for tests that
+    /// run over every distinct name (FileQuery).
+    public func withNameUTF8<R>(at nameID: Int32, _ body: (UnsafeBufferPointer<UInt8>) throws -> R) rethrows -> R {
+        let index = Int(nameID)
+        let start = Int(nameOffset[index])
+        let length = Int(nameLength[index])
+        return try nameBlob.withUnsafeBufferPointer { try body(UnsafeBufferPointer(rebasing: $0[start..<(start + length)])) }
+    }
+
     public func flags(of id: Int32) -> UInt8 {
         flags[Int(id)]
     }

@@ -1065,11 +1065,11 @@ walk; no second disk pass, no network.
 
 ## Milestone 13 — Find consolidation
 
-- [ ] **TASK-059: Query language in ⌘K**
+- [x] **TASK-059: Query language in ⌘K**
   `ext:mp4 size>500mb age>1y path:~/Downloads`, `name:*.log size>100mb`. Every
   field is already in `FileTree`. Extends the existing `CommandPalette.swift`.
 
-- [ ] **TASK-060: One Find surface**
+- [x] **TASK-060: One Find surface**
   Fourteen destinations, of which eight are ranked lists of files differing by
   filter and sort, not by concept — parity-shaped IA that mirrors DiskBuddy's
   menu rather than a user's task. Replace with one Find surface plus filter
@@ -1078,6 +1078,42 @@ walk; no second disk pass, no network.
   **Ship alongside the existing nav first and measure which chips get used
   before deleting screens.** Highest-leverage UX change in the roadmap and the
   most disruptive: own branch, own `docs/ARCHITECTURE.md` decision-log entry.
+
+  **Milestone 13 done 2026-09-29** on `feat/find`.
+  - `FileQuery` (DiskMapCore): `ext: name: kind: size>/< age>/< path: in:
+    is: type:`, bare words, `-word`, quoted values. Bad values are reported
+    per token and left out, so a half-typed `size>` never empties results;
+    unknown `key:` text stays an ordinary word (`10:30`). Size/age/ext/kind
+    imply files, because folder totals nest (`type:folder` asks for folders).
+    Matched bytes never count a folder inside a matched folder twice.
+  - Speed without paths: name tests once per distinct name, on raw UTF-8
+    for ASCII (String fallback otherwise — results identical), a literal
+    prefilter before `fnmatch`, places as one forward pass over parent links,
+    top-N by heap. Real home (2.25M nodes, frozen snapshot, release, machine
+    swapping heavily): size/age/place/folder queries 6–27 ms; name queries
+    32–77 ms; `name:*.log` 72 ms (was 765); worst seen `name:*e?d*`, 182k
+    matches, 327 ms. `docs/perf-results/find-query-home.txt`.
+  - Verified identical to a naive evaluator that builds every path, on 7
+    queries over the real home tree, and again after each speed-up (byte
+    path vs String path, including `café` and a 1.39M-match query).
+  - ⌘K: a query shows its meaning, top 8 hits with sizes, and "Show all in
+    Find"; plain words now search names via the same engine instead of
+    building a path per node per keystroke. `diskmap find <path> <query>`
+    exposes it on the command line (`--sort`, `--limit`, `--json`).
+    `DiskMapScanBench --from-snapshot F --query Q` times it.
+  - Find screen (new first item under Find): query box, sort, and chips
+    Large (`size>500MB`) · Old (`age>1y`) · Duplicated (`is:duplicate`) ·
+    Cached (`in:caches`) · Media (`kind:media`) · Downloads (`in:downloads`).
+    A chip only toggles its token in the text. Multi-select → Add to Cleanup
+    / Reveal / Copy Paths; context menu Reveal, Quick Look, Show in
+    Visualize, Copy Path. `is:duplicate` explains itself and links to
+    Duplicates until that search has run.
+  - Shipped **alongside** the existing screens; none removed. Chip use is
+    counted in local preferences only (`FindChipUses`) — the measurement the
+    ticket asks for, without telemetry.
+  - Checked visually with the snapshot harness (`--find-query`), light and
+    dark. The ⌘K query mode builds and is covered by the engine tests but
+    was not captured by the harness (it cannot open the palette).
 
 ## Milestone 14 — Incremental rescan
 
