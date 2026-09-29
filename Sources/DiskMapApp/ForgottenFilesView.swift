@@ -373,7 +373,14 @@ struct ForgottenFilesView: View {
             }
             .padding(.horizontal, 12)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .listKeyboard(
+            ids: visible.map(\.id), selection: $selectedID,
+            path: { id in visible.first { $0.id == id }?.absolutePath },
+            stage: { id in
+                if let candidate = visible.first(where: { $0.id == id }) { Task { await stageOne(candidate) } }
+            }
+        )
+        .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
     }
 
     private var emptyState: some View {

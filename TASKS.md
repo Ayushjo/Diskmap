@@ -1178,18 +1178,55 @@ walk; no second disk pass, no network.
 
 ## Milestone 15 — Native affordances
 
-- [ ] **TASK-062: Keyboard**
+- [x] **TASK-062: Keyboard**
   Six `keyboardShortcut` call sites today. Add `⌘1`–`⌘9` destinations, `⌘R`
   rescan, `↑↓`/`jk` row navigation in every list, `Space` Quick Look, `⌘↓`/`⌘↑`
   drill (currently File Browser only — make it global), `⌘⌫` stage, `⇧⌘⌫` open
   queue, `Enter` reveal in Finder.
 
-- [ ] **TASK-063: Drag a folder onto the window or Dock icon**
+- [x] **TASK-063: Drag a folder onto the window or Dock icon**
   Zero `onDrop` / `NSItemProvider` in the codebase; the README already promises
   "Finder-drag-to-scan".
 
-- [ ] **TASK-064: Menu bar extra**
+- [x] **TASK-064: Menu bar extra**
   Free space, delta since last scan, one-click rescan — the hook that turns
   DiskMap from a thing you remember when the disk is full into one that warns
   you first. Pairs with TASK-056 and TASK-061. Strictly passive: no
   notifications by default, no background scanning without consent.
+
+  **Milestone 15 done 2026-09-29** on `feat/native`.
+  - TASK-062: one `listKeyboard` modifier on all twelve ranked lists (↑↓ /
+    j k, Space Quick Look, Return reveal — File Browser opens folders — and
+    ⌘⌫ stage, which each list routes through its own staging so the safety
+    rules are unchanged; Developer Storage refuses for recipe-only items).
+    Menu commands: Go ▸ ⌘1–⌘9 (sidebar order) and ⌘↑/⌘↓, File ▸ ⌘R / ⇧⌘R /
+    ⇧⌘⌫. The cleanup sheet moved onto the model so a menu can open it.
+    Verified in the running app: the menus list every shortcut (dumped from
+    `NSApp.mainMenu`), and synthetic key events sent to the window moved the
+    Biggest Files selection by exactly three rows (`--click`/`--keys` in the
+    snapshot harness). Rows that select via tap gestures (File Browser, Find)
+    don't respond to synthetic clicks even without the modifier, so their
+    Return/open path is covered by review, not by that harness run.
+  - TASK-063: drop a folder on the window (dashed highlight while dragging;
+    files and `.app` bundles are refused with a hint), on the Dock icon, or
+    `open -a DiskMap <folder>`. The `.app` declares folders with
+    `LSHandlerRank None`, so DiskMap never becomes the default folder opener.
+    Verified by opening a folder through the ad-hoc–built `.app`.
+  - **Found on the way:** a packaged `.app` never used its own resources.
+    SwiftPM's `Bundle.module` only looks at the bundle root and then the
+    absolute build path, so the app read its JSON rules from `.build/` —
+    hanging on a Downloads-access prompt when launched from Finder (the repo
+    lives in ~/Downloads), and it would crash on any other Mac.
+    `DiskMapResources` now looks in `Contents/Resources` first.
+  - TASK-064: menu bar extra — free space (label turns into "24 GB free"
+    with a warning icon under 10%), change since the last scan (±50 MB is
+    "about the same"), the last scan's folder/size/age, stale-project line
+    when Developer Storage has been built, one-click quick Rescan, Open
+    DiskMap, and Hide (DiskMap ▸ Show in Menu Bar brings it back). Passive:
+    it scans only when clicked, never notifies; its only periodic work is
+    one statfs every five minutes. A `TimelineView` label spun SwiftUI's
+    menu bar controller in an endless update loop at launch (found by
+    sampling a hung launch) — replaced with a timer-backed observable that
+    publishes only on change. The last-scan record is written only by the
+    app's own model, never by tests.
+  - Tests: `NativeAffordanceTests` (6). 233 tests green.

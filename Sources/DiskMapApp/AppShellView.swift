@@ -5,7 +5,6 @@ import SwiftUI
 /// Task-oriented shell (Overview / Find / Clean / Explore) matching DiskMap1/2 IA.
 struct AppShellView: View {
     @ObservedObject var model: ScanModel
-    @State private var showCleanup = false
     @State private var showExplain = false
     @State private var showPalette = false
     @State private var showCompactSidebar = false
@@ -70,7 +69,7 @@ struct AppShellView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.toastMessage)
         .background(DiskMapTheme.cream)
         .frame(minWidth: 880, minHeight: 600)
-        .sheet(isPresented: $showCleanup) {
+        .sheet(isPresented: $model.isCleanupQueuePresented) {
             CleanupQueueView(model: model)
                 .frame(minWidth: 640, minHeight: 480)
         }
@@ -90,7 +89,7 @@ struct AppShellView: View {
                         model: model,
                         isPresented: $showPalette,
                         initialQuery: searchText,
-                        onReviewCleanup: { showPalette = false; showCleanup = true },
+                        onReviewCleanup: { showPalette = false; model.isCleanupQueuePresented = true },
                         onExplain: { showPalette = false; showExplain = true }
                     )
                 }
@@ -153,7 +152,7 @@ struct AppShellView: View {
                 .accessibilityElement(children: .combine)
             }
             Button {
-                showCleanup = true
+                model.isCleanupQueuePresented = true
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "trash")
@@ -329,7 +328,7 @@ struct AppShellView: View {
             OverviewView(
                 model: model,
                 pickFolder: pickFolder,
-                onReviewCleanup: { showCleanup = true },
+                onReviewCleanup: { model.isCleanupQueuePresented = true },
                 onExplain: { showExplain = true },
                 onOpenVisualize: { model.destination = .visualize },
                 onSelectFile: { id in
@@ -340,25 +339,25 @@ struct AppShellView: View {
             )
         case .find:
             if let tree = model.tree, let root = model.rootURL {
-                FindView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })
+                FindView(model: model, tree: tree, rootURL: root, onOpenCleanup: { model.isCleanupQueuePresented = true })
             } else { needsScan }
         case .fileBrowser:
             if let tree = model.tree, let root = model.rootURL {
-                FileBrowserView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })
+                FileBrowserView(model: model, tree: tree, rootURL: root, onOpenCleanup: { model.isCleanupQueuePresented = true })
             } else { needsScan }
         case .visualize:
-            VisualizeView(model: model, pickFolder: pickFolder, onOpenCleanup: { showCleanup = true })
+            VisualizeView(model: model, pickFolder: pickFolder, onOpenCleanup: { model.isCleanupQueuePresented = true })
         case .biggestFiles:
             if let tree = model.tree, let root = model.rootURL {
-                BiggestFilesView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })
+                BiggestFilesView(model: model, tree: tree, rootURL: root, onOpenCleanup: { model.isCleanupQueuePresented = true })
             } else { needsScan }
         case .biggestFolders:
             if let tree = model.tree, let root = model.rootURL {
-                BiggestFoldersView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })
+                BiggestFoldersView(model: model, tree: tree, rootURL: root, onOpenCleanup: { model.isCleanupQueuePresented = true })
             } else { needsScan }
         case .forgottenFiles:
             if let tree = model.tree, let root = model.rootURL {
-                ForgottenFilesView(model: model, tree: tree, rootURL: root, onOpenCleanup: { showCleanup = true })
+                ForgottenFilesView(model: model, tree: tree, rootURL: root, onOpenCleanup: { model.isCleanupQueuePresented = true })
             } else { needsScan }
         case .duplicates:
             if let tree = model.tree, let root = model.rootURL {
@@ -367,40 +366,40 @@ struct AppShellView: View {
         case .cleanSafe:
             SafeToReviewView(
                 model: model,
-                onOpenCleanup: { showCleanup = true },
+                onOpenCleanup: { model.isCleanupQueuePresented = true },
                 onOpenCaches: { model.destination = .cleanCaches }
             )
         case .cleanCaches:
             CachesReviewView(
                 model: model,
-                onOpenCleanup: { showCleanup = true },
+                onOpenCleanup: { model.isCleanupQueuePresented = true },
                 onBack: { model.destination = .cleanSafe }
             )
         case .cleanDownloads:
             OldDownloadsView(
                 model: model,
-                onOpenCleanup: { showCleanup = true },
+                onOpenCleanup: { model.isCleanupQueuePresented = true },
                 pickFolder: pickFolder
             )
         case .cleanMedia:
             LargeMediaView(
                 model: model,
-                onOpenCleanup: { showCleanup = true },
+                onOpenCleanup: { model.isCleanupQueuePresented = true },
                 pickFolder: pickFolder
             )
         case .developerStorage:
             DeveloperStorageView(
                 model: model,
                 pickFolder: pickFolder,
-                onOpenCleanup: { showCleanup = true }
+                onOpenCleanup: { model.isCleanupQueuePresented = true }
             )
         case .applications:
             AppsView(
                 model: model,
-                onOpenCleanup: { showCleanup = true }
+                onOpenCleanup: { model.isCleanupQueuePresented = true }
             )
         case .snapshots:
-            SnapshotsView(model: model, onOpenCleanup: { showCleanup = true })
+            SnapshotsView(model: model, onOpenCleanup: { model.isCleanupQueuePresented = true })
         }
     }
 

@@ -224,6 +224,14 @@ struct BiggestFoldersView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
         }
+        .listKeyboard(
+            ids: rows.map(\.id), selection: $selectedID,
+            path: { tree.path(of: $0, root: rootURL).path },
+            stage: { id in
+                model.stageRow(path: tree.path(of: id, root: rootURL).path, size: model.selectedTotals[Int(id)],
+                               reason: "Biggest folder: " + tree.name(of: id))
+            }
+        )
     }
 
     private func folderRow(_ row: (id: Int32, size: Int64)) -> some View {

@@ -261,6 +261,13 @@ struct CachesReviewView: View {
             }
             .padding(.horizontal, 12)
         }
+        .listKeyboard(
+            ids: visible.map(\.id), selection: $selectedID,
+            path: { id in visible.first { $0.id == id }?.paths.first },
+            stage: { id in
+                if let target = visible.first(where: { $0.id == id }) { Task { await stageOne(target) } }
+            }
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 

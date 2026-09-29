@@ -24,6 +24,15 @@
 - **Type scale.** 524 of 612 hand-set font sizes now go through
   `DiskMapType` and one `scale` factor, which is what a text-size pass needs.
 - **Counts pluralise** ("1 item", not "1 items") and follow the system locale.
+- **Keyboard (TASK-062).** Every ranked list — Find, Biggest Files/Folders,
+  Forgotten, Duplicates, Safe to Review, Caches, Old Downloads, Large Media,
+  Developer Storage, Applications, File Browser — moves with ↑↓ or j/k once a
+  row is selected, Space opens Quick Look, Return reveals in Finder (opens a
+  folder in File Browser), ⌘⌫ adds the row to Cleanup (the queue, never the
+  Trash). Menu: ⌘1–⌘9 go to the sidebar items in order, ⌘↑/⌘↓ enclosing /
+  open folder in Visualize and File Browser, ⌘R quick rescan, ⇧⌘R full
+  rescan, ⇧⌘⌫ cleanup queue, ⇧⌘E export. Checked by sending real key events
+  to the app's window through the snapshot harness (`--click`, `--keys`).
 
 ## Still open
 

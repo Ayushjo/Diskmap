@@ -304,6 +304,13 @@ struct AppsView: View {
             }
             .padding(.horizontal, 12)
         }
+        .listKeyboard(
+            ids: visible.map(\.id), selection: $selectedID,
+            path: { id in visible.first { $0.id == id }?.bundlePath },
+            stage: { id in
+                if let app = visible.first(where: { $0.id == id }) { Task { await stage(app) } }
+            }
+        )
     }
 
     private func appRow(_ app: ApplicationEntry, index: Int) -> some View {

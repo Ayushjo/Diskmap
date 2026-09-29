@@ -164,6 +164,7 @@ depending on Czkawka's MIT-licensed core without a license conflict.
    clone pair.
 3. Remaining visualizations (sunburst, flame, bubbles, mind map, top
    sizes, age map, folders) — same underlying data, different layout math.
-4. `AppLeftoverFinder` + Finder-drag-to-scan + `CleanupQueue` UI.
+4. `AppLeftoverFinder` + Finder-drag-to-scan (done: drop a folder on the
+   window or the Dock icon) + `CleanupQueue` UI.
 5. Snapshots (serialize `FileTree` + totals to disk, diff two scans).
 6. Notarization, signing, update mechanism, icon/polish.

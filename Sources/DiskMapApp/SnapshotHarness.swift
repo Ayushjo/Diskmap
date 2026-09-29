@@ -67,6 +67,14 @@ enum SnapshotHarness {
             }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             write(window: window, to: dir.appendingPathComponent("\(key(destination))-\(appearanceName).png"))
+            // `--click 600,300 --keys j,j,down` (window points from the top
+            // left): synthetic events sent to this window only, to check the
+            // keyboard wiring (TASK-062) without Accessibility permission.
+            if value(after: "--click") != nil || value(after: "--keys") != nil {
+                await sendInput(to: window)
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                write(window: window, to: dir.appendingPathComponent("\(key(destination))-keys-\(appearanceName).png"))
+            }
         }
         // `--explore-modes all` (or a comma list) also captures every
         // Visualize mode, since the harness otherwise only sees the default.
@@ -83,6 +91,43 @@ enum SnapshotHarness {
         // from it (quick rescan screenshots).
         await model.waitForCacheSave()
         NSApp.terminate(nil)
+    }
+
+    private static func sendInput(to window: NSWindow) async {
+        if let click = value(after: "--click") {
+            let parts = click.split(separator: ",").compactMap { Double($0) }
+            if parts.count == 2, let height = window.contentView?.bounds.height {
+                let point = NSPoint(x: parts[0], y: height - parts[1])
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    if let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                                                      timestamp: ProcessInfo.processInfo.systemUptime,
+                                                      windowNumber: window.windowNumber, context: nil,
+                                                      eventNumber: 0, clickCount: 1, pressure: 1) {
+                        window.sendEvent(event)
+                    }
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+                // Past the double-click interval, so single-tap gestures fire.
+                try? await Task.sleep(nanoseconds: UInt64((NSEvent.doubleClickInterval + 0.4) * 1_000_000_000))
+            }
+        }
+        guard let keys = value(after: "--keys") else { return }
+        let table: [String: (String, UInt16)] = [
+            "j": ("j", 38), "k": ("k", 40), "down": ("\u{F701}", 125), "up": ("\u{F700}", 126),
+            "return": ("\r", 36), "space": (" ", 49),
+        ]
+        for name in keys.split(separator: ",").map(String.init) {
+            guard let (characters, code) = table[name] else { continue }
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [],
+                                                timestamp: ProcessInfo.processInfo.systemUptime,
+                                                windowNumber: window.windowNumber, context: nil, characters: characters,
+                                                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code) {
+                    window.sendEvent(event)
+                }
+            }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
     }
 
     /// `--snapshot-size 1280x1600` for screens whose content runs below the fold.

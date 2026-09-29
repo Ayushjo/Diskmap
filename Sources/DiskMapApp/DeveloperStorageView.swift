@@ -77,6 +77,33 @@ struct DeveloperStorageView: View {
             }
             .padding(20)
         }
+        .listKeyboard(
+            ids: keyboardItemIDs, selection: $selectedID,
+            path: { id in catalog.items.first { $0.id == id }?.absolutePath },
+            stage: { id in
+                guard let item = catalog.items.first(where: { $0.id == id }) else { return }
+                if let recipe = item.recipe, recipe.trashIsUnsafe {
+                    // Same rule as the inspector: Trash would damage the tool's own state.
+                    model.showToast("Use the tool instead: \(recipe.command)")
+                } else {
+                    model.stageRow(path: item.absolutePath, size: item.bytes, reason: "Developer: \(item.displayName)")
+                }
+            }
+        )
+    }
+
+    /// Rows of the table tab on screen, in order, as item ids.
+    private var keyboardItemIDs: [String] {
+        switch tableTab {
+        case .projects:
+            return filteredProjects.prefix(40).compactMap { project in
+                catalog.items.first(where: { project.nodeIDs.contains($0.nodeID) })?.id
+            }
+        case .allItems:
+            return filteredItems.map(\.id)
+        case .opportunities:
+            return catalog.opportunities.map(\.id)
+        }
     }
 
     private var header: some View {

@@ -89,6 +89,13 @@ struct OldDownloadsView: View {
                 }
                 .padding(20)
             }
+            .listKeyboard(
+                ids: visible.prefix(200).map(\.nodeID), selection: $selectedID,
+                path: { id in visible.first { $0.nodeID == id }?.absolutePath },
+                stage: { id in
+                    if let item = visible.first(where: { $0.nodeID == id }) { Task { await stage([item]) } }
+                }
+            )
             if !checked.isEmpty {
                 selectionBar
             } else {

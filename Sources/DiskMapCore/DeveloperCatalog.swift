@@ -249,7 +249,7 @@ public enum DeveloperCatalog {
     }
 
     private static let ruleFile: RuleFile? = {
-        guard let url = Bundle.module.url(forResource: "developer-rules", withExtension: "json"),
+        guard let url = DiskMapResources.url(forResource: "developer-rules", withExtension: "json"),
               let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(RuleFile.self, from: data)
     }()
@@ -261,7 +261,7 @@ public enum DeveloperCatalog {
     /// A malformed or missing file yields no rules rather than a crash; the
     /// test suite asserts the bundled file decodes completely.
     static func loadRules(from data: Data? = nil) -> [Rule] {
-        let bytes = data ?? Bundle.module.url(forResource: "developer-rules", withExtension: "json")
+        let bytes = data ?? DiskMapResources.url(forResource: "developer-rules", withExtension: "json")
             .flatMap { try? Data(contentsOf: $0) }
         guard let bytes, let file = try? JSONDecoder().decode(RuleFile.self, from: bytes) else { return [] }
         return file.rules.compactMap { entry in

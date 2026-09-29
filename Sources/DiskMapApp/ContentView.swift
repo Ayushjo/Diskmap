@@ -36,7 +36,8 @@ struct CleanupStageSummary: Sendable {
 /// `scannedCount` updates.
 @MainActor
 final class ScanModel: ObservableObject {
-    static let shared = ScanModel(scanCache: ScanCache(directory: ScanCache.defaultDirectory(), slot: "app"))
+    static let shared = ScanModel(scanCache: ScanCache(directory: ScanCache.defaultDirectory(), slot: "app"),
+                                  recordsLastScan: true)
 
     @Published var tree: FileTree?
     @Published var allocatedTotals: [Int64] = []
@@ -67,8 +68,13 @@ final class ScanModel: ObservableObject {
     /// in memory instead of reading the cache back from disk.
     private var treeBaseline: ScanCache.Baseline?
 
-    init(scanCache: ScanCache? = nil) {
+    /// Only the app's own model remembers the last scan for the menu bar;
+    /// models made in tests never write to the user's preferences.
+    let recordsLastScan: Bool
+
+    init(scanCache: ScanCache? = nil, recordsLastScan: Bool = false) {
         self.scanCache = scanCache
+        self.recordsLastScan = recordsLastScan
     }
     /// Walking the disk, or turning the walk into the first screen (TASK-046).
     @Published var scanPhase: ScanPhase = .idle
@@ -116,6 +122,8 @@ final class ScanModel: ObservableObject {
     /// query over, and so it survives switching screens.
     @Published var findQuery = ""
     @Published var findSort: FileQuery.Sort = .largest
+    /// The cleanup queue sheet; published so ⇧⌘⌫ can open it from the menu.
+    @Published var isCleanupQueuePresented = false
     @Published var analysis: AnalysisSnapshot = .empty
     /// When set, Biggest Files filters to files under this absolute path prefix.
     @Published var folderFilterPath: String? = nil
@@ -316,6 +324,10 @@ final class ScanModel: ObservableObject {
             }
         }
         deniedDirectoryIDs = result.deniedDirectoryIDs
+        if recordsLastScan, let volume = VolumeStats.forPath(url.path) {
+            LastScanRecord(rootPath: url.path, scannedAt: Date(), freeBytes: volume.freeBytes,
+                           scannedBytes: prepared.allocated.first ?? 0).save()
+        }
         rememberRecent(url)
         pendingRootURL = nil
         scanPhase = .idle
@@ -833,6 +845,7 @@ struct ContentView: View {
 
     var body: some View {
         AppShellView(model: model)
+            .modifier(DropToScan(model: model))
             .task(id: model.sizeBasis) {
                 guard let tree = model.tree, let root = model.rootURL,
                       model.allocatedTotals.count == tree.count else { return }

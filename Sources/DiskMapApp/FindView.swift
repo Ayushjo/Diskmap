@@ -54,6 +54,7 @@ struct FindView: View {
     @State private var notes: [String] = []
     @State private var isRunning = false
     @State private var checked = Set<Int32>()
+    @State private var selectedID: Int32?
 
     private var home: String { NSHomeDirectory() }
     private var trimmedQuery: String { model.findQuery.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -285,6 +286,15 @@ struct FindView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
         }
+        .listKeyboard(
+            ids: rows.map(\.id), selection: $selectedID,
+            path: { id in rows.first { $0.id == id }?.absolutePath },
+            stage: { id in
+                if let row = rows.first(where: { $0.id == id }) {
+                    model.stageRow(path: row.absolutePath, size: row.bytes, reason: "Find: \(trimmedQuery)")
+                }
+            }
+        )
         .opacity(isRunning ? 0.6 : 1)
     }
 
@@ -331,12 +341,13 @@ struct FindView: View {
         .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isChecked ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
+                .fill(isChecked || selectedID == row.id ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
         )
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: row.absolutePath)])
         }
+        .simultaneousGesture(TapGesture().onEnded { selectedID = row.id })
         .contextMenu {
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: row.absolutePath)])

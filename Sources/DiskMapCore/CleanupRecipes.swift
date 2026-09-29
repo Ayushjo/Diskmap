@@ -29,7 +29,7 @@ public enum CleanupRecipes {
     public static let bundled: [CleanupRecipe] = load()
 
     static func load(from data: Data? = nil) -> [CleanupRecipe] {
-        let bytes = data ?? Bundle.module.url(forResource: "cleanup-recipes", withExtension: "json")
+        let bytes = data ?? DiskMapResources.url(forResource: "cleanup-recipes", withExtension: "json")
             .flatMap { try? Data(contentsOf: $0) }
         guard let bytes, let file = try? JSONDecoder().decode(File.self, from: bytes) else { return [] }
         return file.recipes

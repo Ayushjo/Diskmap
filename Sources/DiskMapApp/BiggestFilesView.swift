@@ -247,9 +247,10 @@ struct BiggestFilesView: View {
     }
 
     private var list: some View {
-        ScrollView {
+        let ids = Array(filtered.prefix(500))
+        return ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(Array(filtered.prefix(500).enumerated()), id: \.element) { index, id in
+                ForEach(Array(ids.enumerated()), id: \.element) { index, id in
                     fileRow(rank: index + 1, id: id)
                     Rectangle()
                         .fill(DiskMapTheme.cardStroke.opacity(0.65))
@@ -260,6 +261,15 @@ struct BiggestFilesView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
         }
+        .listKeyboard(
+            ids: ids, selection: $selectedID,
+            path: { tree.path(of: $0, root: rootURL).path },
+            stage: { id in
+                model.stageRow(path: tree.path(of: id, root: rootURL).path, size: totals[Int(id)],
+                               reason: "Biggest file: " + tree.name(of: id))
+            }
+        )
+        .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
     }
 
     private func fileRow(rank: Int, id: Int32) -> some View {

@@ -48,6 +48,14 @@ struct DuplicatesView: View {
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
                 .background(DiskMapTheme.cream)
+                .listKeyboard(
+                    ids: duplicateFileIDs, selection: keyboardSelection,
+                    path: { tree.path(of: $0, root: rootURL).path },
+                    stage: { id in
+                        model.stageRow(path: tree.path(of: id, root: rootURL).path, size: tree.allocatedSize[Int(id)],
+                                       reason: "Duplicate of \(tree.name(of: id))")
+                    }
+                )
 
                 if !checked.isEmpty {
                     SelectionToolbar(
@@ -242,6 +250,22 @@ struct DuplicatesView: View {
                 }
             }
         }
+    }
+
+    private var duplicateFileIDs: [Int32] { model.duplicateGroups.flatMap(\.fileIDs) }
+
+    /// The row highlight already follows `model.selectedNode`; the keyboard
+    /// moves the same selection.
+    private var keyboardSelection: Binding<Int32?> {
+        Binding(
+            get: { duplicateFileIDs.contains(model.selectedNode) ? model.selectedNode : nil },
+            set: { id in
+                guard let id else { return }
+                model.selectedNode = id
+                let parent = tree.parent[Int(id)]
+                if parent >= 0 { model.currentNode = parent }
+            }
+        )
     }
 
     private func binding(_ id: Int32) -> Binding<Bool> {

@@ -16,7 +16,7 @@ public struct FileTypeTotals: Sendable, Equatable {
 
 public enum FileTypeCatalog {
     public static func loadBundled() -> [FileTypeCategory] {
-        guard let url = Bundle.module.url(forResource: "file-type-categories", withExtension: "json"),
+        guard let url = DiskMapResources.url(forResource: "file-type-categories", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode(File.self, from: data) else {
             return []

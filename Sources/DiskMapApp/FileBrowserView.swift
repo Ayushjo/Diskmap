@@ -462,6 +462,20 @@ struct FileBrowserView: View {
                 }
             }
         }
+        .listKeyboard(
+            ids: rows.map(\.id), selection: $selectedID,
+            path: { tree.path(of: $0, root: rootURL).path },
+            stage: { id in Task { _ = await stageOne(id) } },
+            open: { id in
+                // Return opens a folder here, as in Finder's list view; files reveal.
+                if tree.isDirectory[Int(id)] {
+                    jumpTo(id, recordHistory: true)
+                } else {
+                    NSWorkspace.shared.activateFileViewerSelecting([tree.path(of: id, root: rootURL)])
+                }
+            }
+        )
+        .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 

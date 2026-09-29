@@ -752,3 +752,25 @@ code path that deletes files, against rule 1.
 running in the background, which the product promises not to do without
 consent. Replay on demand gets the same answer when asked.
 
+### Native affordances stay passive and go through the same paths (2026-09-29)
+
+**Keyboard.** One modifier gives every list the same keys, and ⌘⌫ calls each
+list's existing staging function rather than a new one — so the rules that
+decide what may be staged (protected paths, recipe-only tools, app-bundle
+contents) apply unchanged, and the result is still only a queued item.
+
+**Drop and open.** Folders only; files and app bundles are refused rather
+than guessing a parent. The app claims folders at `LSHandlerRank None`: it
+can open them, it never becomes the default for them.
+
+**Menu bar.** Informational and on demand. It never scans by itself and
+never notifies; the only periodic work is a statfs(2) every five minutes so
+the icon can say when space is low. It lives only while the app runs and
+can be hidden from the app menu.
+
+**Resources are looked up in the app first.** SwiftPM's generated
+`Bundle.module` does not know about `Contents/Resources`, so a packaged app
+silently fell back to the build folder's absolute path. `DiskMapResources`
+checks the app's Resources first and keeps `Bundle.module` for `swift run`
+and tests.
+

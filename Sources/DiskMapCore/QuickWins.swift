@@ -15,7 +15,7 @@ public enum QuickWins {
     }
 
     public static func bundledPatterns() -> Patterns {
-        if let url = Bundle.module.url(forResource: "quick-wins-patterns", withExtension: "json"),
+        if let url = DiskMapResources.url(forResource: "quick-wins-patterns", withExtension: "json"),
            let data = try? Data(contentsOf: url),
            let decoded = try? JSONDecoder().decode(Patterns.self, from: data) {
             return decoded
