@@ -53,6 +53,9 @@ public actor ScanEngine {
         /// Deleted between being listed and being opened — not an error.
         public var vanishedDirectoryCount: Int
         public var otherUnopenedDirectoryCount: Int
+        /// FSEvents id read just before the walk began: the point an
+        /// incremental update replays from (TASK-061).
+        public var eventIDAtStart: UInt64 = 0
     }
 
     /// What to store for one enumerated item. Split out so the iCloud
@@ -78,6 +81,7 @@ public actor ScanEngine {
         live: (@Sendable (ScanProgress) -> Void)? = nil
     ) async -> Result {
         let started = ContinuousClock.now
+        let eventIDAtStart = FSEventHistory.currentEventID()
         // `walk` owns the enumerator. Measuring after it returns is the
         // steady state: tree retained, enumerator and per-item
         // resourceValues released. The during-walk peak is sampled only
@@ -109,7 +113,8 @@ public actor ScanEngine {
             crossMountSkipCount: walked.crossMountSkipCount,
             deniedDirectoryIDs: walked.deniedDirectoryIDs,
             vanishedDirectoryCount: walked.vanishedDirectoryCount,
-            otherUnopenedDirectoryCount: walked.otherUnopenedDirectoryCount
+            otherUnopenedDirectoryCount: walked.otherUnopenedDirectoryCount,
+            eventIDAtStart: eventIDAtStart
         )
         logSummary(result)
         return result

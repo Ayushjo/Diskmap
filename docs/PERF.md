@@ -418,3 +418,20 @@ String per distinct name), a definite "no" for ASCII names against non-ASCII
 words, and a literal-substring prefilter before `fnmatch`. The worst case
 seen is a glob whose only literal is one letter (`name:*e?d*`, 327 ms).
 
+## Quick rescans (TASK-061, 2026-09-29)
+
+`DiskMapScanBench --incremental 7 ~` (release; machine swapping ~19 GB):
+full walk 8.017 s for 2 259 179 items, then quick updates from the tree in
+memory — as the app's Rescan does:
+
+| | min | median | max |
+|---|---|---|---|
+| quick update | 0.210 s | 0.247 s | 0.797 s |
+
+The first update is the slow one: it absorbs changes made during the walk.
+From the disk cache (relaunch, `diskmap … --incremental`) an update is
+~0.75 s: 0.45 s reading the cached tree, 0.19 s copying 2.25M nodes, ~0.1 s
+of spot checks, 28 ms for the event barrier and replay. Wall time for
+`diskmap check ~ --incremental` is 1.45–1.97 s against 9.3 s for a walk
+(`docs/perf-results/incremental-home.txt`).
+

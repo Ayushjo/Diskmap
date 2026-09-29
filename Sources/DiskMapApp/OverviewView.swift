@@ -86,14 +86,56 @@ struct OverviewView: View {
                     SegmentedStorageBar(segments: categorySegments(total: categorySum))
                         .padding(.top, 4)
                     categoryLegend
+                    scanKindRow
                 } else {
                     Text("\(ByteFormat.string(snap.scannedBytes)) in this scan")
                         .font(DiskMapType.body)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     SegmentedStorageBar(segments: categorySegments(total: categorySum))
                     categoryLegend
+                    scanKindRow
                 }
             }
+        }
+    }
+
+    /// TASK-061: say whether these numbers come from a full walk or a quick
+    /// update of the last one, and offer the full walk.
+    @ViewBuilder
+    private var scanKindRow: some View {
+        if let kind = model.lastScanKind {
+            HStack(spacing: 8) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .accessibilityHidden(true)
+                Text(Self.scanKindText(kind))
+                    .font(DiskMapType.caption)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .fixedSize(horizontal: false, vertical: true)
+                if case .quick = kind, let root = model.rootURL {
+                    Button("Full Rescan") { Task { await model.scan(root, mode: .full) } }
+                        .buttonStyle(.link)
+                        .font(DiskMapType.captionStrong)
+                        .disabled(model.isScanning)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("scan-kind")
+        }
+    }
+
+    static func scanKindText(_ kind: ScanModel.ScanKind) -> String {
+        switch kind {
+        case let .quick(seconds, changed, walked):
+            if changed == 0 && walked == 0 {
+                return "Updated from your last scan in \(String(format: "%.1f", seconds)) s — nothing changed; a sample of folders was re-read to confirm."
+            }
+            let walkedText = walked > 0 ? ", \(walked) new folder\(walked == 1 ? "" : "s") walked" : ""
+            return "Updated from your last scan in \(String(format: "%.1f", seconds)) s — "
+                + "\(changed) changed folder\(changed == 1 ? "" : "s") re-read\(walkedText), unchanged ones spot-checked."
+        case let .full(seconds, reason):
+            let base = "Full scan in \(String(format: "%.1f", seconds)) s."
+            return reason.map { base + " (Walked in full: \($0).)" } ?? base
         }
     }
 

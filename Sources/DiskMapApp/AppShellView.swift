@@ -143,7 +143,8 @@ struct AppShellView: View {
             if model.isScanning {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text(model.tree == nil ? "Scanning… \(model.scannedCount.formatted())" : "Rescanning… \(model.scannedCount.formatted())")
+                    Text(model.scanPhase == .checkingChanges ? "Checking what changed…"
+                         : model.tree == nil ? "Scanning… \(model.scannedCount.formatted())" : "Rescanning… \(model.scannedCount.formatted())")
                         .font(DiskMapType.captionMedium.monospacedDigit())
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .lineLimit(1)
@@ -190,6 +191,12 @@ struct AppShellView: View {
                 }
                 .buttonStyle(InkButtonStyle(filled: false))
                 .disabled(model.isScanning)
+                .help("Re-reads only what changed since the last scan. Right-click for a full rescan.")
+                .contextMenu {
+                    Button("Full Rescan — walk every folder") {
+                        if let root = model.rootURL { Task { await model.scan(root, mode: .full) } }
+                    }
+                }
             }
         }
         .padding(.horizontal, 16)

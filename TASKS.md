@@ -1117,7 +1117,7 @@ walk; no second disk pass, no network.
 
 ## Milestone 14 — Incremental rescan
 
-- [ ] **TASK-061: FSEvents-backed incremental scan**
+- [x] **TASK-061: FSEvents-backed incremental scan**
   Rescanning an unchanged home from scratch is pure waste, and rescanning is
   the common case for anyone who opens the app twice. Spec §40 calls for it.
   Persist the `FileTree` (the snapshot codec exists) plus the FSEvents stream
@@ -1128,6 +1128,53 @@ walk; no second disk pass, no network.
   fallback on `kFSEventStreamEventFlagMustScanSubDirs`, and periodic validation
   that the persisted tree still matches the volume — the spec is explicit that
   a notification system must never be assumed complete. Own milestone.
+
+  **Milestone 14 done 2026-09-29** on `feat/incremental`.
+  - Every full scan records the FSEvents id read *before* the walk and the
+    volume's FSEvents UUID, and saves tree + baseline to
+    `~/Library/Application Support/DiskMap/ScanCache` — one overwritten slot
+    per client (`app`, `cli`), so disk use is bounded (~150 MB for a 2.25M-node
+    home) and nothing ever needs deleting. Written in the background, tree
+    before baseline, both atomic.
+  - Rescan replays events since that id, re-lists only the reported folders
+    **and their parents** (a folder's own dates/sizes come from its parent's
+    listing), walks new folders and "must scan subdirs" subtrees with the
+    normal engine, and copies everything else. The copy keeps `parent[i] < i`
+    and drops deleted entries, so consumers can't tell it from a walk.
+  - Falls back to a full walk, saying why, on: no baseline, changed volume
+    UUID, event ids wrapped, root moved, replay timeout, >20 000 changed
+    folders, 20 quick updates in a row, a full walk older than 7 days, a
+    "/" scan (firmlink twins), or a **spot check** — the root plus 64 random
+    unchanged folders re-read and compared — that disagrees with the tree.
+  - Measured, not assumed: change events get their id ~0.1 s after the
+    syscall, so a replay right after a change missed it (`FlushSync` did not
+    help; 1 of 5 trials saw it). Fixed with an ordering barrier: touch a
+    marker in the cache folder and wait for its event (~12 ms); FIFO delivery
+    means every earlier change is then in the history. 8/8 afterwards, and the
+    test that exposed it (a permission change) passes repeatedly.
+  - Found on the way: the first name interned into a tree *decoded from a
+    snapshot* looped forever (intern table rebuilt at 1 024 slots for
+    ~685k names). Latent until now; fixed, with a test that hangs on the old
+    code.
+  - Correct on real data: an update of the real home diffed against a full
+    walk run immediately after differed in 71 of 2.22M nodes — every one a
+    log/SQLite/LevelDB file written, or a WhatsApp temp file deleted, during
+    that 10 s walk. Fixture tests compare every node field against a fresh
+    walk after creates, growth, deletes, moves and new subtrees.
+  - Speed (real home, release, machine swapping): full walk 8.0 s; quick
+    update from the in-memory tree (the app's Rescan) min 0.21 / median 0.25
+    / max 0.80 s; from the disk cache (relaunch, `diskmap --incremental`)
+    ~0.75 s of which 0.45 s is reading the cache. `DiskMapScanBench
+    --incremental N`; `docs/perf-results/incremental-home*.txt`.
+  - App: Rescan is quick by default ("Checking what changed…"); right-click
+    Rescan or ⌘K "Full rescan" walks everything. Overview says which it was
+    ("Updated from your last scan in 0.3 s — 6 changed folders re-read,
+    unchanged ones spot-checked. Full Rescan") or why a full walk was needed.
+    Unreadable folders carry across updates until they become readable.
+  - CLI: `--incremental` on any command.
+  - Not done: a live watcher (the ticket asks for replay on relaunch; a
+    running stream would also mean background activity the app promises not
+    to do without consent — TASK-064 can decide).
 
 ## Milestone 15 — Native affordances
 

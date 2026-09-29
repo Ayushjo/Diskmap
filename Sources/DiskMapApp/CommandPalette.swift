@@ -92,9 +92,14 @@ struct CommandPalette: View {
             Command(title: "Review cleanup", subtitle: "Opens review queue — never deletes directly", symbol: "leaf") {
                 onReviewCleanup()
             },
-            Command(title: "Scan again", subtitle: "Rescan current root", symbol: "arrow.clockwise") {
+            Command(title: "Scan again", subtitle: "Re-read what changed since the last scan", symbol: "arrow.clockwise") {
                 if let root = model.rootURL {
                     Task { await model.scan(root) }
+                }
+            },
+            Command(title: "Full rescan", subtitle: "Walk every folder again, ignoring the last scan", symbol: "arrow.clockwise.circle") {
+                if let root = model.rootURL {
+                    Task { await model.scan(root, mode: .full) }
                 }
             },
         ]

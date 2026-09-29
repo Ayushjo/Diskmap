@@ -167,6 +167,7 @@ struct FirstScanHero: View {
     private var scanHeadline: String {
         switch model.scanPhase {
         case .summarizing: return "Summarizing…"
+        case .checkingChanges: return "Checking what changed…"
         default:
             guard let root = model.pendingRootURL ?? model.rootURL else { return "Scanning your Mac…" }
             if root.path == "/" { return "Scanning your Mac…" }
@@ -177,6 +178,7 @@ struct FirstScanHero: View {
 
     private var scanSubhead: String {
         if model.scanPhase == .summarizing { return "Sizing folders and preparing the first screen." }
+        if model.scanPhase == .checkingChanges { return "Starting from your last scan and re-reading only what macOS reports as changed." }
         guard let folder = model.liveProgress?.currentFolder, !folder.isEmpty else { return "Reading folder sizes." }
         return CanonicalPath.displayPath(absolutePath: folder)
     }

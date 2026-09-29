@@ -56,6 +56,7 @@ The same engine as a read-only command-line tool (`diskmap --help`):
 ```bash
 swift run -c release diskmap scan ~/code --top 10
 swift run -c release diskmap dev --reclaimable --older-than 6m
+swift run -c release diskmap scan ~ --incremental   # later runs re-read only what changed
 swift run -c release diskmap find ~ ext:mp4,mov size\>500MB age\>1y       # same query language as Find / ⌘K
 swift run -c release diskmap check ~/Library/Developer --fail-over 50GB   # exit 1 when over
 swift run -c release diskmap export ~ --format ncdu --out home.json      # then: ncdu -f home.json

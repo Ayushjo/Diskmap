@@ -29,6 +29,8 @@ struct Args {
     var queries: [String] = []
     var json = false
     var label = "scan"
+    /// TASK-061: one full walk, then N quick updates from the in-memory tree.
+    var incrementalRuns = 0
 }
 
 func parseArgs() -> Args {
@@ -63,6 +65,9 @@ func parseArgs() -> Args {
             if let text = rest.first { args.queries.append(text); rest.removeFirst() }
         case "--json":
             args.json = true
+        case "--incremental":
+            args.incrementalRuns = max(1, Int(rest.first ?? "5") ?? 5)
+            if !rest.isEmpty { rest.removeFirst() }
         case "--label":
             args.label = rest.first ?? args.label
             if !rest.isEmpty { rest.removeFirst() }
@@ -207,6 +212,35 @@ if let snapshotPath = args.fromSnapshot {
     if args.phases {
         let phases = timePostWalkPhases(tree: snapshot.tree, root: snapRoot)
         print("phases-from-snapshot " + phases.map { "\($0.0)=\(String(format: "%.3f", $0.1))" }.joined(separator: " "))
+    }
+    exit(0)
+}
+
+if args.incrementalRuns > 0 {
+    let cacheDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("diskmap-bench-cache-\(UUID().uuidString)")
+    let cache = ScanCache(directory: cacheDirectory, slot: "bench")
+    let full = await ScanEngine().scan(root: root)
+    print("incremental full_walk_seconds=\(String(format: "%.3f", full.elapsedSeconds)) items=\(full.itemCount)")
+    guard var baseline = IncrementalScan.baselineAfterFullScan(root: root, eventIDAtStart: full.eventIDAtStart, deniedPaths: []) else {
+        print("incremental: no FSEvents volume id for \(root.path)")
+        exit(1)
+    }
+    var tree = full.tree
+    var times: [Double] = []
+    for run in 1...args.incrementalRuns {
+        switch await IncrementalScan.update(root: root, cache: cache, base: .init(tree: tree, baseline: baseline)) {
+        case .updated(let update):
+            times.append(update.elapsedSeconds)
+            print("incremental run=\(run) seconds=\(String(format: "%.3f", update.elapsedSeconds)) relisted=\(update.changedDirectories) walked=\(update.rewalkedSubtrees) spot_checked=\(update.spotChecked)")
+            tree = update.tree
+            baseline = update.baseline
+        case .fullScanNeeded(let reason):
+            print("incremental run=\(run) full_scan_needed=\"\(reason)\"")
+        }
+    }
+    if !times.isEmpty {
+        times.sort()
+        print("incremental_summary min=\(String(format: "%.3f", times[0])) median=\(String(format: "%.3f", times[times.count / 2])) max=\(String(format: "%.3f", times[times.count - 1]))")
     }
     exit(0)
 }

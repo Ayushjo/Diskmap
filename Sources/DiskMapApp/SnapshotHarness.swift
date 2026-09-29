@@ -79,6 +79,9 @@ enum SnapshotHarness {
                 write(window: window, to: dir.appendingPathComponent("mode-\(mode.rawValue)-\(appearanceName).png"))
             }
         }
+        // Let the scan cache finish writing, so a second harness run starts
+        // from it (quick rescan screenshots).
+        await model.waitForCacheSave()
         NSApp.terminate(nil)
     }
 

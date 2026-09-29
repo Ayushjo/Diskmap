@@ -719,3 +719,36 @@ and per node on integer arrays; a path is built only for the rows shown.
 The byte-level matcher declines anything non-ASCII, falling back to String
 comparison, so speed never changes an answer.
 
+### Rescans start from the last scan; FSEvents is a hint, the disk is the truth (2026-09-29)
+
+**Chosen.** Replay FSEvents history since the last scan, re-list only the
+folders it names (plus their parents), walk anything new or flagged
+"must scan subdirs", and copy the rest of the previous tree. Everything the
+history cannot vouch for — a reset event database, dropped or wrapped
+events, a moved root, too many changes, too many updates in a row, an old
+full walk — falls back to a full walk, and the UI says which happened.
+
+**Verification is built in, not assumed.** Each update re-reads the root and
+64 random unchanged folders and compares them with the tree; any
+disagreement means a full walk. The FSEvents docs are explicit that the
+history can be incomplete; this is the "periodic validation" the spec asks
+for, run on every update rather than on a timer.
+
+**Why parents are re-listed.** A folder's own dates and size fields come
+from its parent's `getattrlistbulk` records, and the parent gets no event
+when only the folder's contents change. Re-listing one level up keeps those
+fields exact at the cost of one more directory read per change.
+
+**Why an event barrier.** Event ids are assigned ~0.1 s after the change
+reaches the kernel. Writing a marker and waiting for its event (FIFO
+delivery) guarantees every earlier change is in the replay; without it,
+changes made in the last moment appeared one update late.
+
+**Cache shape.** One overwritten slot per client instead of one file per
+folder: bounded disk use, and no pruning — which would have been a second
+code path that deletes files, against rule 1.
+
+**Rejected: a live watcher.** It would make updates near-instant, but means
+running in the background, which the product promises not to do without
+consent. Replay on demand gets the same answer when asked.
+

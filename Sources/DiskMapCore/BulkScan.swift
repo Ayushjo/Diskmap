@@ -182,6 +182,70 @@ enum BulkScan {
         ))
     }
 
+    /// One directory's direct children, parsed exactly as the walk parses
+    /// them (same mask, same offsets, same skips), for incremental rescans
+    /// (TASK-061). Symlinks and unreadable entries are left out, as in the walk.
+    struct ListedEntry {
+        var name: [UInt8]
+        var isDirectory: Bool
+        var logical: Int64
+        var allocated: Int64
+        var day: Int32
+        var createdDay: Int32
+        var notDownloaded: Bool
+        var descend: Bool
+        var fileID: UInt64
+        var devID: Int32
+        var isHardLink: Bool
+
+        var flags: UInt8 {
+            (notDownloaded ? NodeFlags.notDownloaded : 0) | (isHardLink ? NodeFlags.hardLink : 0)
+        }
+    }
+
+    enum Listing {
+        case listed([ListedEntry])
+        case unopened(errno: Int32)
+    }
+
+    static func list(directoryPath: String) -> Listing {
+        let fd = Darwin.open(directoryPath, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { return .unopened(errno: errno) }
+        defer { close(fd) }
+        var list = attrlist()
+        memset(&list, 0, MemoryLayout<attrlist>.size)
+        list.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
+        list.commonattr = attrReturned | attrName | attrDevID | attrError | attrObjType
+            | attrCrTime | attrModTime | attrFlags | attrFileID
+        list.dirattr = attrDirLinkCount | attrDirAlloc | attrDirData
+        list.fileattr = attrFileLinkCount | attrFileTotal | attrFileAlloc
+        var buffer = [UInt8](repeating: 0, count: 256 * 1024)
+        var names = [UInt8]()
+        var entries: [Entry] = []
+        while true {
+            let count = buffer.withUnsafeMutableBytes { raw -> Int32 in
+                getattrlistbulk(fd, &list, raw.baseAddress, raw.count, options)
+            }
+            if count == 0 { break }
+            if count < 0 {
+                if errno == ERANGE, buffer.count < 8 * 1024 * 1024 {
+                    buffer = [UInt8](repeating: 0, count: buffer.count * 2)
+                    continue
+                }
+                break
+            }
+            parse(buffer: buffer, count: Int(count), names: &names, entries: &entries)
+        }
+        return .listed(entries.filter(\.include).map { entry in
+            ListedEntry(
+                name: Array(names[entry.nameStart..<(entry.nameStart + entry.nameCount)]),
+                isDirectory: entry.isDirectory, logical: entry.logical, allocated: entry.allocated,
+                day: entry.day, createdDay: entry.createdDay, notDownloaded: entry.notDownloaded,
+                descend: entry.descend, fileID: entry.fileID, devID: entry.devID, isHardLink: entry.isHardLink
+            )
+        })
+    }
+
     /// Offsets MEASURED by the `AttrProbe` target, not hand-derived — raw
     /// evidence in `docs/perf-results/attr-probe.txt` (2026-09-25, TASK-036).
     /// Adding ATTR_CMN_DEVID (+4 at 36), ATTR_CMN_FILEID (+8 at 80) and

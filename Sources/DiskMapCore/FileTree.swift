@@ -262,6 +262,49 @@ public struct FileTree: Sendable {
         return id
     }
 
+    /// A tree with this tree's name table and no nodes, so nodes can be
+    /// copied across by name id (incremental rescans, TASK-061).
+    func emptiedKeepingNames() -> FileTree {
+        var copy = self
+        copy.nameIndex = []
+        copy.parent = []
+        copy.firstChild = []
+        copy.nextSibling = []
+        copy.logicalSize = []
+        copy.allocatedSize = []
+        copy.modifiedDay = []
+        copy.createdDay = []
+        copy.isDirectory = []
+        copy.flags = []
+        copy.fileID = []
+        copy.reserveNodeCapacity(count)
+        return copy
+    }
+
+    /// Appends a node whose name is already in this tree's table (from
+    /// `emptiedKeepingNames`, or interned earlier).
+    @discardableResult
+    mutating func appendNodeReusingName(
+        _ nameID: Int32,
+        parent parentID: Int32,
+        isDirectory: Bool,
+        logicalSize: Int64,
+        allocatedSize: Int64,
+        modifiedDaysSinceEpoch: Int32,
+        createdDaysSinceEpoch: Int32,
+        flags: UInt8,
+        fileID: UInt64
+    ) -> Int32 {
+        appendNode(nameID: nameID, parent: parentID, isDirectory: isDirectory, logicalSize: logicalSize,
+                   allocatedSize: allocatedSize, modifiedDaysSinceEpoch: modifiedDaysSinceEpoch,
+                   createdDaysSinceEpoch: createdDaysSinceEpoch, flags: flags, fileID: fileID)
+    }
+
+    /// Interns a name without adding a node.
+    mutating func nameID(forUTF8 bytes: UnsafeBufferPointer<UInt8>) -> Int32 {
+        internUTF8(bytes)
+    }
+
     private mutating func internUTF8(_ bytes: UnsafeBufferPointer<UInt8>) -> Int32 {
         if internSlotHash.isEmpty { growIntern(to: 1024) }
         let hash = fnv1a(bytes)
@@ -321,7 +364,12 @@ public struct FileTree: Sendable {
     }
 
     private mutating func growIntern(to count: Int) {
-        let size = max(count, 1024)
+        // Power of two (the probe masks with size - 1), and at least twice
+        // the names already present: a tree decoded from a snapshot starts
+        // with an empty table and hundreds of thousands of names, and a
+        // table smaller than that would never find a free slot.
+        var size = max(count, 1024)
+        while size < (nameOffset.count + 1) * 2 { size *= 2 }
         internSlotHash = Array(repeating: 0, count: size)
         internSlotIndex = Array(repeating: -1, count: size)
         internCount = 0

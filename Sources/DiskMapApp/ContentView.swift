@@ -36,7 +36,7 @@ struct CleanupStageSummary: Sendable {
 /// `scannedCount` updates.
 @MainActor
 final class ScanModel: ObservableObject {
-    static let shared = ScanModel()
+    static let shared = ScanModel(scanCache: ScanCache(directory: ScanCache.defaultDirectory(), slot: "app"))
 
     @Published var tree: FileTree?
     @Published var allocatedTotals: [Int64] = []
@@ -45,7 +45,31 @@ final class ScanModel: ObservableObject {
     @Published var scannedCount = 0
     /// What the walk has found so far, a few times a second (TASK-044).
     @Published var liveProgress: ScanProgress?
-    enum ScanPhase: Equatable { case idle, walking, summarizing }
+    enum ScanPhase: Equatable { case idle, checkingChanges, walking, summarizing }
+
+    /// Quick: start from the cached last scan and re-read only what changed
+    /// (TASK-061), falling back to a full walk when that can't be trusted.
+    enum ScanMode { case quick, full }
+
+    /// How the tree on screen was produced — shown on Overview so a quick
+    /// update is never mistaken for a fresh walk.
+    enum ScanKind: Equatable {
+        case full(seconds: Double, fallbackReason: String?)
+        case quick(seconds: Double, changedFolders: Int, walkedFolders: Int)
+    }
+    @Published var lastScanKind: ScanKind?
+
+    /// Where quick rescans start from. Nil for models made in tests, so they
+    /// never write into the user's Application Support.
+    let scanCache: ScanCache?
+    private var cacheSave: Task<Void, Never>?
+    /// The baseline that describes `tree`, so a Rescan can update the tree
+    /// in memory instead of reading the cache back from disk.
+    private var treeBaseline: ScanCache.Baseline?
+
+    init(scanCache: ScanCache? = nil) {
+        self.scanCache = scanCache
+    }
     /// Walking the disk, or turning the walk into the first screen (TASK-046).
     @Published var scanPhase: ScanPhase = .idle
     @Published var rootURL: URL?
@@ -139,7 +163,7 @@ final class ScanModel: ObservableObject {
         log("scan cancelled")
     }
 
-    func scan(_ url: URL) async {
+    func scan(_ url: URL, mode: ScanMode = .quick) async {
         scanGeneration += 1
         let generation = scanGeneration
         let hasCommittedScan = tree != nil
@@ -172,6 +196,22 @@ final class ScanModel: ObservableObject {
         let before = ProcessMemory.current()
         log("rss_before_scan=\(before?.residentBytes ?? 0)")
 
+        var quickUpdate: IncrementalScan.Update?
+        var fallbackReason: String?
+        if mode == .quick, let scanCache, !CanonicalPath.mayContainFirmlinkTwins(scanRootPath: url.path) {
+            scanPhase = .checkingChanges
+            let base = tree.flatMap { current in
+                treeBaseline.map { IncrementalScan.Base(tree: current, baseline: $0) }
+            }
+            switch await IncrementalScan.update(root: url, cache: scanCache, base: base) {
+            case .updated(let update): quickUpdate = update
+            case .fullScanNeeded(let reason): fallbackReason = reason
+            }
+            guard generation == scanGeneration else { return }
+            log("quick rescan: \(quickUpdate.map { "updated, \($0.changedDirectories) folders re-read" } ?? "full walk — \(fallbackReason ?? "")")")
+            if quickUpdate == nil { scanPhase = .walking }
+        }
+
         let engine = ScanEngine()
         let live: @Sendable (ScanProgress) -> Void = { [weak self] progress in
             Task { @MainActor in self?.deliverLive(progress, generation: generation) }
@@ -185,7 +225,12 @@ final class ScanModel: ObservableObject {
                 self.scannedCount = count
             }
         }
-        let result = await engine.scan(root: url, progress: counted, live: live)
+        let result: ScanEngine.Result
+        if let quickUpdate {
+            result = quickUpdate.scanResult
+        } else {
+            result = await engine.scan(root: url, progress: counted, live: live)
+        }
         guard generation == scanGeneration else {
             log("scan discarded (cancelled) path=\(url.path)")
             return
@@ -256,6 +301,20 @@ final class ScanModel: ObservableObject {
         selectedNode = 0
         currentNode = 0
         lastScanSeconds = result.elapsedSeconds
+        if let quickUpdate {
+            lastScanKind = .quick(seconds: quickUpdate.elapsedSeconds, changedFolders: quickUpdate.changedDirectories,
+                                  walkedFolders: quickUpdate.rewalkedSubtrees)
+            saveScanCache(tree: scannedTree, baseline: quickUpdate.baseline)
+        } else {
+            lastScanKind = .full(seconds: result.elapsedSeconds, fallbackReason: mode == .quick ? fallbackReason : nil)
+            if let baseline = IncrementalScan.baselineAfterFullScan(
+                root: url, eventIDAtStart: result.eventIDAtStart,
+                deniedPaths: result.deniedDirectoryIDs.map { scannedTree.path(of: $0, root: url).path }) {
+                saveScanCache(tree: scannedTree, baseline: baseline)
+            } else {
+                treeBaseline = nil   // nothing describes this tree; the next Rescan walks
+            }
+        }
         deniedDirectoryIDs = result.deniedDirectoryIDs
         rememberRecent(url)
         pendingRootURL = nil
@@ -265,6 +324,27 @@ final class ScanModel: ObservableObject {
         let postWalk = postWalkStarted.duration(to: .now).components
         let postWalkSeconds = Double(postWalk.seconds) + Double(postWalk.attoseconds) / 1e18
         log("scan finished items=\(result.itemCount) walk_seconds=\(String(format: "%.3f", result.elapsedSeconds)) post_walk_seconds=\(String(format: "%.3f", postWalkSeconds))")
+    }
+
+    /// Writes the cache off the main thread, one save at a time, so the
+    /// first screen never waits on a 100+ MB write.
+    private func saveScanCache(tree: FileTree, baseline: ScanCache.Baseline) {
+        treeBaseline = baseline
+        guard let scanCache else { return }
+        let previous = cacheSave
+        cacheSave = Task.detached(priority: .utility) {
+            await previous?.value
+            do {
+                try scanCache.save(tree: tree, baseline: baseline)
+            } catch {
+                ScanModel.appendLog("scan cache save failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// For tests and the harness: the cache write started by the last scan.
+    func waitForCacheSave() async {
+        await cacheSave?.value
     }
 
     /// Drops reports from a scan that was cancelled or superseded.

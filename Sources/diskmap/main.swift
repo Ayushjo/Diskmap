@@ -28,6 +28,11 @@ USAGE
                  [--min-size SIZE] [--max-depth N]
       The whole scan, for jq, spreadsheets, or `ncdu -f FILE`.
 
+--incremental (any command): start from the last scan of the same folder
+    and re-read only what macOS reports as changed; falls back to a full
+    walk when that can't be trusted. The cache lives in
+    ~/Library/Application Support/DiskMap/ScanCache.
+
 SIZES   50GB, 1.5TB, 500MB, 2GiB (GB = 1000³, as Finder reports; GiB = 1024³)
 AGES    30d, 2w, 6m, 1y
 
@@ -58,7 +63,7 @@ var flags: [String: String] = [:]
 var switches = Set<String>()
 var positional: [String] = []
 let valued: Set<String> = ["--sort", "--limit", "--top", "--older-than", "--min-size", "--fail-over", "--format", "--out", "--max-depth"]
-let booleans: Set<String> = ["--json", "--reclaimable"]
+let booleans: Set<String> = ["--json", "--reclaimable", "--incremental"]
 while !arguments.isEmpty {
     let token = arguments.removeFirst()
     if valued.contains(token) {
@@ -74,6 +79,7 @@ while !arguments.isEmpty {
     }
 }
 let json = switches.contains("--json")
+let incremental = switches.contains("--incremental")
 
 func rootURL(default fallback: String? = nil) -> URL {
     guard let raw = positional.first ?? fallback else { fail("\(command) needs a path", .usage) }
@@ -91,12 +97,31 @@ func display(_ path: String) -> String { CanonicalPath.displayPath(absolutePath:
 
 /// Progress goes to stderr, and only to a terminal: piped output stays clean.
 func scan(_ root: URL) async -> ScanEngine.Result {
+    let cache = ScanCache(directory: ScanCache.defaultDirectory(), slot: "cli")
+    if incremental {
+        switch await IncrementalScan.update(root: root, cache: cache) {
+        case .updated(let update):
+            FileHandle.standardError.write(Data(("updated from the last scan: \(update.changedDirectories) folders re-read, "
+                + "\(update.rewalkedSubtrees) walked, \(update.spotChecked) spot-checked, "
+                + "\(String(format: "%.2f", update.elapsedSeconds)) s\n").utf8))
+            try? cache.save(tree: update.tree, baseline: update.baseline)
+            return update.scanResult
+        case .fullScanNeeded(let reason):
+            FileHandle.standardError.write(Data("full scan: \(reason)\n".utf8))
+        }
+    }
     let interactive = isatty(STDERR_FILENO) != 0
     let result = await ScanEngine().scan(root: root, progress: { count in
         guard interactive else { return }
         FileHandle.standardError.write(Data("\rScanning… \(count.formatted()) items".utf8))
     })
     if interactive { FileHandle.standardError.write(Data("\r\u{1B}[K".utf8)) }
+    if incremental,
+       let baseline = IncrementalScan.baselineAfterFullScan(
+           root: root, eventIDAtStart: result.eventIDAtStart,
+           deniedPaths: result.deniedDirectoryIDs.map { result.tree.path(of: $0, root: root).path }) {
+        try? cache.save(tree: result.tree, baseline: baseline)
+    }
     return result
 }
 
