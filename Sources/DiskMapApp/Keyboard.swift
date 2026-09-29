@@ -86,6 +86,10 @@ struct ListKeyboard<ID: Hashable>: ViewModifier {
     var stage: ((ID) -> Void)?
     /// Return. Defaults to revealing `path` in Finder.
     var open: ((ID) -> Void)?
+    /// ⌘A: select every row (for multi-select lists).
+    var selectAll: (() -> Void)?
+    /// Esc: drop a multi-selection.
+    var clearSelection: (() -> Void)?
 
     @FocusState private var focused: Bool
 
@@ -124,6 +128,14 @@ struct ListKeyboard<ID: Hashable>: ViewModifier {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
             }
             return .handled
+        case "a" where command:
+            guard let selectAll else { return .ignored }
+            selectAll()
+            return .handled
+        case .escape:
+            guard let clearSelection else { return .ignored }
+            clearSelection()
+            return .handled
         case .delete where command:
             guard let current = selection, let stage else { return .ignored }
             stage(current)
@@ -155,8 +167,10 @@ struct ListKeyboard<ID: Hashable>: ViewModifier {
 extension View {
     func listKeyboard<ID: Hashable>(
         ids: [ID], selection: Binding<ID?>, path: @escaping (ID) -> String?,
-        stage: ((ID) -> Void)? = nil, open: ((ID) -> Void)? = nil
+        stage: ((ID) -> Void)? = nil, open: ((ID) -> Void)? = nil,
+        selectAll: (() -> Void)? = nil, clearSelection: (() -> Void)? = nil
     ) -> some View {
-        modifier(ListKeyboard(ids: ids, selection: selection, path: path, stage: stage, open: open))
+        modifier(ListKeyboard(ids: ids, selection: selection, path: path, stage: stage, open: open,
+                              selectAll: selectAll, clearSelection: clearSelection))
     }
 }

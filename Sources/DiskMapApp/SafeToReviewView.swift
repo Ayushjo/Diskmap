@@ -247,7 +247,9 @@ struct SafeToReviewView: View {
             path: { id in visible.first { $0.id == id }?.paths.first },
             stage: { id in
                 if let target = visible.first(where: { $0.id == id }) { Task { await stageOne(target) } }
-            }
+            },
+            selectAll: { checked = Set(visible.map(\.id)) },
+            clearSelection: { checked.removeAll() }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }

@@ -130,6 +130,7 @@ struct VisualizeView: View {
                         .background(DiskMapTheme.cardFill)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(DiskMapTheme.cardStroke, lineWidth: 1))
+                    NodeSelectionToolbar(model: model)
                     HStack {
                         Button {
                             showsLargestItems.toggle()
@@ -137,6 +138,10 @@ struct VisualizeView: View {
                             Label("Largest items", systemImage: showsLargestItems ? "chevron.down" : "chevron.right")
                         }.buttonStyle(.plain)
                         Spacer()
+                        if model.multiSelection.count < 2 {
+                            MultiSelectHint()
+                            Text("·").foregroundStyle(DiskMapTheme.mutedLabel)
+                        }
                         Text("Area represents \(model.sizeBasis == .allocated ? "space on disk" : "logical file size")")
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }.font(DiskMapType.caption).frame(height: 24)

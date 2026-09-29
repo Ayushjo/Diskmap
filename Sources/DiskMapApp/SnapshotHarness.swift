@@ -19,12 +19,17 @@ enum SnapshotHarness {
 
     static var isActive: Bool { value(after: "--snapshot-dir") != nil }
 
+    /// The modifiers of the synthetic click being delivered. A synthetic
+    /// event cannot hold a real key down, so selection code asks here first.
+    static var clickModifiers: NSEvent.ModifierFlags?
+
     static func startIfRequested() {
         guard let dir = value(after: "--snapshot-dir") else { return }
         if let appearance = value(after: "--appearance") {
             // hc-* renders the Increase Contrast token values via an in-app
             // override; the system setting itself is left alone.
             DiskMapTheme.forceIncreasedContrast = appearance.hasPrefix("hc-")
+            AppAppearance.harnessOverride = true
             NSApp.appearance = NSAppearance(named: appearance.hasSuffix("dark") ? .darkAqua : .aqua)
         }
         Task { await run(into: URL(fileURLWithPath: dir, isDirectory: true)) }
@@ -54,6 +59,8 @@ enum SnapshotHarness {
         window.setContentSize(snapshotSize())
         // `--find-query "ext:mp4 size>100MB"` renders Find with that query.
         if let findQuery = value(after: "--find-query") { model.findQuery = findQuery }
+        // `--start-mode "Mind Map"`: the Visualize mode to open with.
+        if let mode = value(after: "--start-mode").flatMap(ExploreViewMode.init(rawValue:)) { model.exploreMode = mode }
 
         for destination in destinations() {
             model.destination = destination
@@ -97,12 +104,18 @@ enum SnapshotHarness {
     }
 
     private static func sendInput(to window: NSWindow) async {
-        if let click = value(after: "--click") {
-            let parts = click.split(separator: ",").compactMap { Double($0) }
+        // `--click "500,330;cmd@500,420;shift@500,600"`: clicks in order,
+        // each optionally holding ⌘ or ⇧.
+        for spec in (value(after: "--click") ?? "").split(separator: ";").map(String.init) {
+            let flags: NSEvent.ModifierFlags = spec.hasPrefix("cmd@") ? .command : spec.hasPrefix("shift@") ? .shift : []
+            let coordinates = spec.split(separator: "@").last.map(String.init) ?? spec
+            let parts = coordinates.split(separator: ",").compactMap { Double($0) }
             if parts.count == 2, let height = window.contentView?.bounds.height {
                 let point = NSPoint(x: parts[0], y: height - parts[1])
+                clickModifiers = flags
+                defer { clickModifiers = nil }
                 for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                    if let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                    if let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: flags,
                                                       timestamp: ProcessInfo.processInfo.systemUptime,
                                                       windowNumber: window.windowNumber, context: nil,
                                                       eventNumber: 0, clickCount: 1, pressure: 1) {

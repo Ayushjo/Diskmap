@@ -102,15 +102,22 @@ struct LayoutChartView: View {
         selectedNode = id
     }
 
+    /// Opening a folder moves the view, not the selection, so a ⌘-selection
+    /// can be collected across folders (the shell selects the new folder
+    /// itself when `currentNode` changes).
     private func drill(_ id: Int32?) {
         guard let id, id >= 0, Int(id) < tree.count else { return }
-        selectedNode = id
-        guard tree.isDirectory[Int(id)] else { return }
+        guard tree.isDirectory[Int(id)] else {
+            selectedNode = id
+            return
+        }
         currentNode = id
     }
 }
 
 private struct SunburstChart: View {
+    @Environment(\.multiSelection) private var multi
+    private func isSelected(_ id: Int32?) -> Bool { id != nil && (id == selected || multi.contains(id ?? -1)) }
     let slices: [ChartSlice]
     let size: CGSize
     let color: (Int32?) -> Color
@@ -123,7 +130,7 @@ private struct SunburstChart: View {
         Canvas { context, _ in
             for wedge in layout {
                 let path = wedgePath(wedge)
-                let isSel = wedge.nodeID == selected
+                let isSel = wedge.nodeID == selected || wedge.nodeID.map(multi.contains) == true
                 context.fill(path, with: .color(color(wedge.nodeID)))
                 context.stroke(path, with: .color(isSel ? DiskMapTheme.tileLabel : .black.opacity(0.25)), lineWidth: isSel ? 2 : 1)
                 let sweep = wedge.end - wedge.start
@@ -150,6 +157,8 @@ private struct SunburstChart: View {
 }
 
 private struct FlameChart: View {
+    @Environment(\.multiSelection) private var multi
+    private func isSelected(_ id: Int32?) -> Bool { id != nil && (id == selected || multi.contains(id ?? -1)) }
     let slices: [ChartSlice]
     let size: CGSize
     let color: (Int32?) -> Color
@@ -162,7 +171,7 @@ private struct FlameChart: View {
         Canvas { context, _ in
             for bar in bars {
                 let path = Path(bar.rect.insetBy(dx: 0.5, dy: 0.5))
-                let isSel = bar.nodeID == selected
+                let isSel = bar.nodeID == selected || bar.nodeID.map(multi.contains) == true
                 context.fill(path, with: .color(color(bar.nodeID)))
                 context.stroke(path, with: .color(isSel ? DiskMapTheme.tileLabel : .black.opacity(0.25)), lineWidth: isSel ? 2 : 1)
                 if bar.rect.width > 56 && bar.rect.height > 18 {
@@ -187,6 +196,8 @@ private struct FlameChart: View {
 }
 
 private struct BubbleChart: View {
+    @Environment(\.multiSelection) private var multi
+    private func isSelected(_ id: Int32?) -> Bool { id != nil && (id == selected || multi.contains(id ?? -1)) }
     let slices: [ChartSlice]
     let size: CGSize
     let color: (Int32?) -> Color
@@ -209,7 +220,7 @@ private struct BubbleChart: View {
                     height: circle.radius * 2
                 )
                 let path = Path(ellipseIn: rect)
-                let isSel = circle.nodeID == selected
+                let isSel = circle.nodeID == selected || circle.nodeID.map(multi.contains) == true
                 let base = color(circle.nodeID)
                 // Containers slightly washed so children read on top.
                 let fill = DiskMapTheme.wash(base, strength: circle.isContainer ? 0.55 : 0.92)
@@ -269,6 +280,8 @@ private struct BubbleChart: View {
 /// rolled-up total; "+N more" says how many items and how many bytes it
 /// stands for; lines are drawn from where the cards actually are.
 private struct MindMapChart: View {
+    @Environment(\.multiSelection) private var multi
+    private func isSelected(_ id: Int32?) -> Bool { id != nil && (id == selected || multi.contains(id ?? -1)) }
     let slices: [ChartSlice]
     let size: CGSize
     let tree: FileTree
@@ -362,8 +375,8 @@ private struct MindMapChart: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DiskMapTheme.cardFill, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(color(slice.nodeID).opacity(slice.nodeID == selected ? 0.9 : 0.45),
-                                                          lineWidth: slice.nodeID == selected ? 2 : 1))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(color(slice.nodeID).opacity(isSelected(slice.nodeID) ? 0.9 : 0.45),
+                                                          lineWidth: isSelected(slice.nodeID) ? 2 : 1))
     }
 
     /// Everything under 0.5% of the folder, folded into one card — which can
@@ -438,7 +451,7 @@ private struct MindMapChart: View {
                     Spacer(minLength: 0)
                 }
                 .padding(4).contentShape(Rectangle())
-                .background(slice.nodeID == selected && !isGroup ? DiskMapTheme.ink.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 5))
+                .background(isSelected(slice.nodeID) && !isGroup ? DiskMapTheme.ink.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 5))
             }
             .buttonStyle(.plain).disabled(isGroup).help(title)
             .accessibilityLabel("\(title), \(ByteFormat.string(slice.size)), \(percent(slice.size, of: parentSize)) of its folder")

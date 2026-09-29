@@ -473,7 +473,9 @@ struct FileBrowserView: View {
                 } else {
                     NSWorkspace.shared.activateFileViewerSelecting([tree.path(of: id, root: rootURL)])
                 }
-            }
+            },
+            selectAll: { checked = Set(rows.map(\.id)) },
+            clearSelection: { checked.removeAll() }
         )
         .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

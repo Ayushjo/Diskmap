@@ -108,6 +108,7 @@ struct BiggestFilesView: View {
             } else {
                 list
             }
+            NodeSelectionToolbar(model: model)
         }
     }
 
@@ -144,6 +145,7 @@ struct BiggestFilesView: View {
                     .font(DiskMapType.body)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .fixedSize(horizontal: false, vertical: true)
+                MultiSelectHint()
             }
             Spacer(minLength: 16)
             VStack(alignment: .trailing, spacing: 2) {
@@ -251,7 +253,7 @@ struct BiggestFilesView: View {
         return ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(Array(ids.enumerated()), id: \.element) { index, id in
-                    fileRow(rank: index + 1, id: id)
+                    fileRow(rank: index + 1, id: id, ordered: ids)
                     Rectangle()
                         .fill(DiskMapTheme.cardStroke.opacity(0.65))
                         .frame(height: 1)
@@ -267,29 +269,39 @@ struct BiggestFilesView: View {
             stage: { id in
                 model.stageRow(path: tree.path(of: id, root: rootURL).path, size: totals[Int(id)],
                                reason: "Biggest file: " + tree.name(of: id))
-            }
+            },
+            selectAll: { model.multiSelection = Set(ids) },
+            clearSelection: { model.clearMultiSelection() }
         )
         .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
     }
 
-    private func fileRow(rank: Int, id: Int32) -> some View {
+    private func fileRow(rank: Int, id: Int32, ordered: [Int32]) -> some View {
         let i = Int(id)
         let name = tree.name(of: id)
         let abs = tree.path(of: id, root: rootURL).path
         let kind = FileKind.classify(fileName: name, path: abs)
         let size = totals[i]
-        let selected = id == selectedID
+        let inMulti = model.multiSelection.contains(id)
+        let selected = id == selectedID || inMulti
         let parent = CanonicalPath.parentDisplay(of: abs)
         let modified = relativeModified(tree.modifiedDay[i])
         return Button {
             selectedID = id
-            model.selectedNode = id
+            model.select(id, ordered: ordered)
         } label: {
             HStack(alignment: .center, spacing: 12) {
-                Text("\(rank)")
-                    .font(.system(size: 12, weight: .bold).monospacedDigit())
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .frame(width: 28, alignment: .center)
+                Group {
+                    if inMulti {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(DiskMapTheme.info)
+                    } else {
+                        Text("\(rank)")
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                    }
+                }
+                .font(.system(size: 12, weight: .bold).monospacedDigit())
+                .frame(width: 28, alignment: .center)
                 FileIdentityIcon(url: URL(fileURLWithPath: abs), kind: kind, size: 34)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(name)

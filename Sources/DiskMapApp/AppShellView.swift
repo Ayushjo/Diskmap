@@ -88,6 +88,7 @@ struct AppShellView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.toastMessage)
         .background(DiskMapTheme.cream)
         .frame(minWidth: 880, minHeight: 600)
+        .onChange(of: model.destination) { _, _ in model.clearMultiSelection() }
         .sheet(isPresented: $model.isCleanupQueuePresented) {
             CleanupQueueView(model: model)
                 .frame(minWidth: 640, minHeight: 480)
@@ -196,6 +197,7 @@ struct AppShellView: View {
                      ? "Review items staged for Trash"
                      : "\(countLabel(model.stagedItems.count, "item")) · \(ByteFormat.string(model.reclaimableBytes)) reclaimable"))
             .accessibilityLabel(model.stagedItems.isEmpty ? "Cleanup" : "Cleanup, \(countLabel(model.stagedItems.count, "item"))")
+            AppearanceMenuButton()
             if hasCompletedScan {
                 Button {
                     if let root = model.rootURL {

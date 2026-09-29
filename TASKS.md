@@ -1230,3 +1230,46 @@ walk; no second disk pass, no network.
     publishes only on change. The last-scan record is written only by the
     app's own model, never by tests.
   - Tests: `NativeAffordanceTests` (6). 233 tests green.
+
+## Milestone 16 — UX pass from review (2026-09-29)
+
+- [x] **TASK-070: Mind map says what it shows**
+  Found: it inherited Visualize's depth slider, which at default folded
+  everything under ~2.4% into "Other" (four top-level folders shown for a
+  280 GB home); "N more branches" counted the lumped Other as one branch
+  (Library: "2 more", really 39 items / 6.7 GB); the centre total was a sum
+  of slices; connector stubs on the second row joined nothing. Now: its own
+  0.5% threshold, the folder's real total and item count, each branch's
+  share, "+N more · X GB — open", a listable "N smaller items" card, and
+  connectors routed from the cards' measured frames.
+- [x] **TASK-071: Snapshot compare that explains itself**
+  Found: the flat diff repeated one change at every ancestor (five changes
+  filled the top 15 rows on a real home), took 52 s (debug) and ran on the
+  main thread, freezing the window. Now `SnapshotComparison` aligns the
+  trees lazily by name (4.2 s to set up, 0.3 ms per level, 41 ms for
+  hotspots on the same snapshots), off the main thread, automatically when
+  both sides are picked. Page: net change with before/after bars, grew /
+  freed split, Mac free-space change, a story built from the hotspots, "What
+  changed most" (where each change happened; spread changes stay one row),
+  and a breadcrumb drill-down whose rows add up to their folder. Also fixed:
+  automatic names said "Today — …" forever.
+- [x] **TASK-072: Short windows scroll**
+  Found with scroll events sent to the window: screens with a fixed header
+  over an inner list gave the list 56 pt (Safe to Review) or nothing
+  (Caches) at 600 pt tall, with no page scroll. Below 720 pt those screens
+  now scroll as a page. (Both sidebars already scrolled; the earlier harness
+  scroll tool was sending screen coordinates — fixed.)
+- [x] **TASK-073: Appearance control**
+  System / Light / Dark from a top-bar button or View ▸ Appearance, stored
+  and applied app-wide at launch. Verified: Light on a dark system renders
+  light.
+- [x] **TASK-074: Select several things**
+  ⌘-click adds/removes, ⇧-click takes a range, plain click resets — in every
+  Visualize chart, Biggest Files and Biggest Folders — with a toolbar
+  (count, bytes counting a folder and its contents once, Add to Cleanup,
+  Reveal, Copy Paths, Clear). ⌘A / Esc select all / clear in every
+  checkbox list. Modifiers are read from the keys held, because SwiftUI runs
+  button actions after the click event (measured). Verified with ⌘-clicks
+  in Biggest Files and the mind map; tap-gesture charts (treemap) ignore
+  synthetic clicks, so there only the shared code path is tested.
+  243 tests green.

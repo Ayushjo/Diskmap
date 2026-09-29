@@ -94,7 +94,9 @@ struct LargeMediaView: View {
                 path: { id in visible.first { $0.nodeID == id }?.absolutePath },
                 stage: { id in
                     if let item = visible.first(where: { $0.nodeID == id }) { Task { await stage([item]) } }
-                }
+                },
+                selectAll: { checked = Set(visible.prefix(300).map(\.nodeID)) },
+                clearSelection: { checked.removeAll() }
             )
             if !checked.isEmpty {
                 selectionBar

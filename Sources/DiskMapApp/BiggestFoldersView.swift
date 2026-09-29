@@ -90,6 +90,7 @@ struct BiggestFoldersView: View {
             } else {
                 list
             }
+            NodeSelectionToolbar(model: model)
         }
     }
 
@@ -103,6 +104,7 @@ struct BiggestFoldersView: View {
                     .font(DiskMapType.body)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                     .fixedSize(horizontal: false, vertical: true)
+                MultiSelectHint()
             }
             Spacer(minLength: 16)
             VStack(alignment: .trailing, spacing: 2) {
@@ -230,14 +232,16 @@ struct BiggestFoldersView: View {
             stage: { id in
                 model.stageRow(path: tree.path(of: id, root: rootURL).path, size: model.selectedTotals[Int(id)],
                                reason: "Biggest folder: " + tree.name(of: id))
-            }
+            },
+            selectAll: { model.multiSelection = Set(rows.map(\.id)) },
+            clearSelection: { model.clearMultiSelection() }
         )
     }
 
     private func folderRow(_ row: (id: Int32, size: Int64)) -> some View {
         let isDir = tree.isDirectory[Int(row.id)]
         let name = tree.name(of: row.id)
-        let selected = row.id == (selectedID ?? activeSelection)
+        let selected = row.id == (selectedID ?? activeSelection) || model.multiSelection.contains(row.id)
         let frac = Double(row.size) / Double(parentTotal)
         let fileCount = model.descendantFileCounts.indices.contains(Int(row.id))
             ? model.descendantFileCounts[Int(row.id)] : 0
@@ -249,7 +253,7 @@ struct BiggestFoldersView: View {
         return HStack(spacing: 0) {
             Button {
                 selectedID = row.id
-                model.selectedNode = row.id
+                model.select(row.id, ordered: rows.map(\.id))
             } label: {
                 HStack(spacing: 12) {
                     ZStack {

@@ -697,6 +697,11 @@ struct ExploreCanvas: View {
         return max(0.001, 0.002 + t * 0.04)
     }
 
+    /// Clicks in any chart go through `select`, which reads ⌘ and ⇧.
+    private var chartSelection: Binding<Int32> {
+        Binding(get: { model.selectedNode }, set: { model.select($0) })
+    }
+
     var body: some View {
         Group {
             switch model.exploreMode {
@@ -705,32 +710,34 @@ struct ExploreCanvas: View {
                     tree: tree,
                     totals: totals,
                     currentNode: $model.currentNode,
-                    selectedNode: $model.selectedNode,
+                    selectedNode: chartSelection,
                     colorMode: model.colorMode,
                     categories: model.fileTypeCategories,
                     showInlineChrome: !hideTreemapChrome
                 )
+                .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             case .sunburst:
-                LayoutChartView(kind: .sunburst, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: $model.selectedNode, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
+                LayoutChartView(kind: .sunburst, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
                     .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             case .flame:
-                LayoutChartView(kind: .flame, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: $model.selectedNode, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
+                LayoutChartView(kind: .flame, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
                     .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             case .bubbles:
-                LayoutChartView(kind: .bubbles, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: $model.selectedNode, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
+                LayoutChartView(kind: .bubbles, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
                     .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             case .mindMap:
-                LayoutChartView(kind: .mindMap, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: $model.selectedNode, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
+                LayoutChartView(kind: .mindMap, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
                     .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             case .topSizes:
-                TopSizesView(tree: tree, totals: totals, rootURL: rootURL, selectedNode: $model.selectedNode)
+                TopSizesView(tree: tree, totals: totals, rootURL: rootURL, selectedNode: chartSelection)
             case .ageMap:
                 AgeMapView(model: model, tree: tree, totals: totals, rootURL: rootURL)
             case .folders:
-                FoldersView(tree: tree, totals: totals, rootURL: rootURL, currentNode: $model.currentNode, selectedNode: $model.selectedNode)
+                FoldersView(tree: tree, totals: totals, rootURL: rootURL, currentNode: $model.currentNode, selectedNode: chartSelection)
                     .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             }
         }
+        .environment(\.multiSelection, model.multiSelection)
     }
 }
 
@@ -746,6 +753,7 @@ struct ExploreTreemapView: View {
     /// When false, breadcrumbs/size chrome are provided by VisualizeView.
     var showInlineChrome: Bool = true
 
+    @Environment(\.multiSelection) private var multi
     @State private var layoutRects: [TreemapRect] = []
     @State private var canvasSize: CGSize = .zero
     @State private var layoutTask: Task<Void, Never>?
@@ -772,7 +780,7 @@ struct ExploreTreemapView: View {
                 for r in layoutRects {
                     let inset = r.rect.insetBy(dx: 1, dy: 1)
                     let path = Path(roundedRect: inset, cornerRadius: 5)
-                    let selected = r.id == selectedNode
+                    let selected = r.id == selectedNode || multi.contains(r.id)
                     context.fill(path, with: .color(colorFor(id: r.id)))
                     context.stroke(path, with: .color(selected ? DiskMapTheme.tileLabel : .black.opacity(0.25)), lineWidth: selected ? 2 : 1)
                     if inset.width > 52 && inset.height > 20 {
@@ -806,10 +814,11 @@ struct ExploreTreemapView: View {
             .gesture(
                 SpatialTapGesture(count: 2).onEnded { event in
                     guard let hit = SquarifiedTreemap.hitTest(layoutRects, at: event.location) else { return }
-                    selectedNode = hit
                     if tree.isDirectory[Int(hit)] {
-                        currentNode = hit
+                        currentNode = hit   // the shell selects the opened folder
                         cacheLayout()
+                    } else {
+                        selectedNode = hit
                     }
                 }
             )

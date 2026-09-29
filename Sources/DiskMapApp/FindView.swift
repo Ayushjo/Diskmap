@@ -293,7 +293,9 @@ struct FindView: View {
                 if let row = rows.first(where: { $0.id == id }) {
                     model.stageRow(path: row.absolutePath, size: row.bytes, reason: "Find: \(trimmedQuery)")
                 }
-            }
+            },
+            selectAll: { checked = Set(rows.map(\.id)) },
+            clearSelection: { checked.removeAll() }
         )
         .opacity(isRunning ? 0.6 : 1)
     }

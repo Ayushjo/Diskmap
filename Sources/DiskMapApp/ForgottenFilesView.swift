@@ -378,7 +378,9 @@ struct ForgottenFilesView: View {
             path: { id in visible.first { $0.id == id }?.absolutePath },
             stage: { id in
                 if let candidate = visible.first(where: { $0.id == id }) { Task { await stageOne(candidate) } }
-            }
+            },
+            selectAll: { checked = Set(visible.map(\.id)) },
+            clearSelection: { checked.removeAll() }
         )
         .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
     }

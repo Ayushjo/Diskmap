@@ -124,6 +124,9 @@ final class ScanModel: ObservableObject {
     @Published var findSort: FileQuery.Sort = .largest
     /// The cleanup queue sheet; published so ⇧⌘⌫ can open it from the menu.
     @Published var isCleanupQueuePresented = false
+    /// Nodes ⌘/⇧-selected together (MultiSelection.swift).
+    @Published var multiSelection: Set<Int32> = []
+    var selectionAnchor: Int32?
     @Published var analysis: AnalysisSnapshot = .empty
     /// When set, Biggest Files filters to files under this absolute path prefix.
     @Published var folderFilterPath: String? = nil
@@ -308,6 +311,7 @@ final class ScanModel: ObservableObject {
         folderFilterPath = nil
         selectedNode = 0
         currentNode = 0
+        clearMultiSelection()   // node ids from the old tree mean nothing now
         lastScanSeconds = result.elapsedSeconds
         if let quickUpdate {
             lastScanKind = .quick(seconds: quickUpdate.elapsedSeconds, changedFolders: quickUpdate.changedDirectories,

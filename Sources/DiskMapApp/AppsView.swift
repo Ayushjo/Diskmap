@@ -309,7 +309,9 @@ struct AppsView: View {
             path: { id in visible.first { $0.id == id }?.bundlePath },
             stage: { id in
                 if let app = visible.first(where: { $0.id == id }) { Task { await stage(app) } }
-            }
+            },
+            selectAll: { checked = Set(visible.map(\.id)) },
+            clearSelection: { checked.removeAll() }
         )
     }
 

@@ -774,3 +774,24 @@ silently fell back to the build folder's absolute path. `DiskMapResources`
 checks the app's Resources first and keeps `Bundle.module` for `swift run`
 and tests.
 
+### Snapshot compare aligns trees lazily and reports hotspots (2026-09-29)
+
+**Chosen.** Two snapshots are compared by walking both trees together by
+child name, one folder at a time, on demand. Every level's rows sum to the
+folder above them, and the first screen needs only the root's children.
+"Hotspots" descend from the root while at most three children explain 80% of
+a change (same direction), and stop at a file, at a folder that is new or
+gone as a whole, or at a folder whose change is spread — so the list names
+where a change happened instead of every ancestor of it.
+
+**Rejected: a flat list of every changed folder.** It needs a path per
+folder of both trees (52 s on a real home) and repeats one change at every
+level above it.
+
+### Multi-selection reads held keys (2026-09-29)
+
+SwiftUI runs a button's action after the click has been dispatched, so
+`NSApp.currentEvent` is usually another event; the modifier keys held at the
+time of the action are the reliable source. The snapshot harness supplies
+its synthetic clicks' modifiers through a debug-only seam.
+

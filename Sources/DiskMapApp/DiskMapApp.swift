@@ -14,6 +14,7 @@ struct DiskMapApp: App {
             ExportScanCommands(model: ScanModel.shared)
             KeyboardCommands(model: ScanModel.shared)
             MenuBarCommands()
+            AppearanceCommands()
         }
         MenuBarExtra(isInserted: $showMenuBarExtra) {
             MenuBarStatusView(model: ScanModel.shared)
@@ -27,6 +28,7 @@ struct DiskMapApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        AppAppearance.current.apply()
         NSApp.activate(ignoringOtherApps: true)
         for window in NSApp.windows {
             window.makeKeyAndOrderFront(nil)
