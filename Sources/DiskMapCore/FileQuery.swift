@@ -494,11 +494,11 @@ extension FileQuery {
         return true
     }
 
-    enum NodeLookup: Equatable { case found(Int32), outside, missing }
+    public enum NodeLookup: Equatable, Sendable { case found(Int32), outside, missing }
 
     /// Finds a folder by walking child names from the root — a handful of
     /// sibling scans, never a path per node.
-    static func node(atPath path: String, tree: FileTree, rootPath: String) -> NodeLookup {
+    public static func node(atPath path: String, tree: FileTree, rootPath: String) -> NodeLookup {
         if path == rootPath { return .found(0) }
         let prefix = rootPath == "/" ? "/" : rootPath + "/"
         guard path.hasPrefix(prefix) else { return .outside }

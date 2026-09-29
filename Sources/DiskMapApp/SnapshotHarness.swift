@@ -65,12 +65,15 @@ enum SnapshotHarness {
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
             }
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            // `--settle 8`: screens that do real work on appear (a snapshot
+            // compare) need longer than the default 1.5 s.
+            let settle = value(after: "--settle").flatMap(Double.init) ?? 1.5
+            try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
             write(window: window, to: dir.appendingPathComponent("\(key(destination))-\(appearanceName).png"))
             // `--click 600,300 --keys j,j,down` (window points from the top
             // left): synthetic events sent to this window only, to check the
             // keyboard wiring (TASK-062) without Accessibility permission.
-            if value(after: "--click") != nil || value(after: "--keys") != nil {
+            if value(after: "--click") != nil || value(after: "--keys") != nil || value(after: "--scroll") != nil {
                 await sendInput(to: window)
                 try? await Task.sleep(nanoseconds: 800_000_000)
                 write(window: window, to: dir.appendingPathComponent("\(key(destination))-keys-\(appearanceName).png"))
@@ -109,6 +112,27 @@ enum SnapshotHarness {
                 }
                 // Past the double-click interval, so single-tap gestures fire.
                 try? await Task.sleep(nanoseconds: UInt64((NSEvent.doubleClickInterval + 0.4) * 1_000_000_000))
+            }
+        }
+        // `--scroll 900,400,1200`: scroll down 1200 points with the pointer at (900, 400).
+        if let scroll = value(after: "--scroll") {
+            let parts = scroll.split(separator: ",").compactMap { Double($0) }
+            if parts.count == 3, let height = window.contentView?.bounds.height {
+                // An event made from a CGEvent has no window, so the window
+                // hit-tests its location as if it were window coordinates:
+                // encode the window point, not the screen point.
+                let windowPoint = NSPoint(x: parts[0], y: height - parts[1])
+                let flipped = CGPoint(x: windowPoint.x, y: (NSScreen.screens.first?.frame.height ?? 0) - windowPoint.y)
+                var remaining = Int32(parts[2])
+                while remaining > 0 {
+                    let step = min(remaining, 200)
+                    if let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -step, wheel2: 0, wheel3: 0) {
+                        cg.location = flipped
+                        if let event = NSEvent(cgEvent: cg) { window.sendEvent(event) }
+                    }
+                    remaining -= step
+                    try? await Task.sleep(nanoseconds: 30_000_000)
+                }
             }
         }
         guard let keys = value(after: "--keys") else { return }

@@ -13,6 +13,14 @@ struct AppShellView: View {
 
     private var hasCompletedScan: Bool { model.tree != nil }
 
+    static let comfortablePageHeight: CGFloat = 720
+    /// Destinations whose list lives in its own scroll view under a fixed
+    /// header. Pages that already scroll as a whole are not listed.
+    static let pageScrollsWhenShort: Set<AppDestination> = [
+        .find, .biggestFiles, .biggestFolders, .forgottenFiles, .duplicates,
+        .cleanSafe, .cleanCaches, .fileBrowser, .visualize, .applications,
+    ]
+
     var body: some View {
         GeometryReader { window in
             let compactSidebar = window.size.width < 1_000
@@ -27,12 +35,23 @@ struct AppShellView: View {
                             Divider().overlay(DiskMapTheme.cardStroke)
                         }
                         GeometryReader { geo in
-                            destinationBody
+                            let page = destinationBody
                                 .environment(
                                     \.diskMapContentWidth,
                                     geo.size.width + (compactSidebar ? 0 : DiskMapMetric.sidebarWidth + 1)
                                 )
-                                .frame(width: geo.size.width, height: geo.size.height)
+                            // Screens built as "fixed header + inner list" squeezed the
+                            // list to nothing in a short window (Safe to Review's list
+                            // measured 56 pt at 600 pt tall, Caches' 0). Below a
+                            // comfortable height they lay out at that height inside a
+                            // page scroll instead, so everything stays reachable.
+                            if Self.pageScrollsWhenShort.contains(model.destination), geo.size.height < Self.comfortablePageHeight {
+                                ScrollView(.vertical) {
+                                    page.frame(width: geo.size.width, height: Self.comfortablePageHeight)
+                                }
+                            } else {
+                                page.frame(width: geo.size.width, height: geo.size.height)
+                            }
                         }
                     }
                 }

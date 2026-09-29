@@ -67,7 +67,16 @@ public struct SnapshotRecord: Sendable, Equatable, Identifiable {
         self.isCurrent = isCurrent
     }
 
-    public var displayName: String { meta.name.isEmpty ? SnapshotMeta.defaultName(for: header.capturedAt) : meta.name }
+    /// The saved name, except that an automatic "Today — 8:51 PM" is
+    /// re-derived from the capture date: stored as-is it still said "Today"
+    /// two weeks later.
+    public var displayName: String {
+        let captured = header.capturedAt
+        if meta.name.isEmpty || meta.name == "Today — \(captured.formatted(date: .omitted, time: .shortened))" {
+            return SnapshotMeta.defaultName(for: captured)
+        }
+        return meta.name
+    }
 
     /// Short label for compare pickers (avoids truncating to "Curre…").
     public var pickerLabel: String {

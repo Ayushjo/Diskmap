@@ -12,14 +12,15 @@ struct SnapshotsView: View {
     @State private var selectedID: String?
     @State private var beforeID: String?
     @State private var afterID: String?
-    @State private var report: SnapshotCompareReport = .empty
+    @State private var comparison: SnapshotComparison?
+    @State private var hotspots: [SnapshotComparison.Entry] = []
+    @State private var comparedIDs: (before: String, after: String)?
+    @State private var browsePath = ""
+    @State private var compareTask: Task<Void, Never>?
     @State private var isComparing = false
     @State private var showSave = false
     @State private var saveName = ""
     @State private var saveNote = ""
-    @State private var changeFilter: ChangeFilter = .all
-    @State private var changeQuery = ""
-    @State private var minDelta: Int64 = 100_000_000
     @State private var selectedChangePath: String?
     @State private var listFilter: ListFilter = .all
     @State private var statusMessage: String?
@@ -32,29 +33,6 @@ struct SnapshotsView: View {
             switch self {
             case .all: return "All Snapshots"
             case .favorites: return "Favorites"
-            }
-        }
-    }
-
-    private enum ChangeFilter: String, CaseIterable, Identifiable {
-        case all, added, removed, grew, shrunk
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .all: return "All"
-            case .added: return "Added"
-            case .removed: return "Removed"
-            case .grew: return "Grew"
-            case .shrunk: return "Shrank"
-            }
-        }
-        var kind: SnapshotChangeKind? {
-            switch self {
-            case .all: return nil
-            case .added: return .added
-            case .removed: return .removed
-            case .grew: return .grew
-            case .shrunk: return .shrunk
             }
         }
     }
@@ -102,21 +80,14 @@ struct SnapshotsView: View {
         allRecords.first { $0.id == selectedID } ?? visibleRecords.first
     }
 
-    private var visibleChanges: [SnapshotChange] {
-        SnapshotCompare.filterChanges(
-            report.folderChanges,
-            kind: changeFilter.kind,
-            query: changeQuery,
-            minAbsDelta: minDelta
-        )
+    private func record(_ id: String?) -> SnapshotRecord? {
+        guard let id else { return nil }
+        return allRecords.first { $0.id == id }
     }
 
-    private var selectedChange: SnapshotChange? {
-        if let selectedChangePath {
-            return visibleChanges.first { $0.path == selectedChangePath }
-                ?? report.folderChanges.first { $0.path == selectedChangePath }
-        }
-        return visibleChanges.first
+    private var selectedEntry: SnapshotComparison.Entry? {
+        guard let comparison, let selectedChangePath else { return nil }
+        return comparison.entry(atPath: selectedChangePath)
     }
 
     var body: some View {
@@ -355,19 +326,34 @@ struct SnapshotsView: View {
         VStack(alignment: .leading, spacing: 14) {
             compareSelectors
             if isComparing {
-                ProgressView("Comparing…")
-                    .frame(maxWidth: .infinity, minHeight: 120)
-            } else if report.folderChanges.isEmpty && report.categoryDeltas.isEmpty && beforeID != nil {
-                noChangeCard
-            } else if !report.folderChanges.isEmpty || !report.categoryDeltas.isEmpty {
-                deltaSummary
-                categorySection
-                changesTable
+                VStack(spacing: 8) {
+                    ProgressView()
+                    Text("Reading both snapshots…")
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                }
+                .frame(maxWidth: .infinity, minHeight: 160)
+                .background(SnapshotCompareText.card)
+            } else if let comparison, let ids = comparedIDs,
+                      let before = record(ids.before), let after = record(ids.after) {
+                SnapshotCompareView(
+                    comparison: comparison, hotspots: hotspots,
+                    beforeRecord: before, afterRecord: after,
+                    browsePath: $browsePath, selectedPath: $selectedChangePath
+                )
             } else {
-                Text("Choose Before and After snapshots, then Compare.")
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .padding(.vertical, 24)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(records.isEmpty ? "Save a snapshot to compare against later." : "Pick two snapshots to see what changed between them.")
+                        .font(DiskMapType.body)
+                        .foregroundStyle(DiskMapTheme.ink)
+                    Text("You'll see the net change, the handful of places it actually happened, and a drill-down whose rows always add up.")
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(SnapshotCompareText.card)
             }
             if let statusMessage {
                 Text(statusMessage)
@@ -376,250 +362,59 @@ struct SnapshotsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: beforeID) { _, _ in scheduleCompare() }
+        .onChange(of: afterID) { _, _ in scheduleCompare() }
     }
 
     private var compareSelectors: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Compare storage")
-                .font(DiskMapType.bodyStrong)
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Before")
-                        .font(DiskMapType.microStrong)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    Picker("", selection: $beforeID) {
-                        Text("Select…").tag(String?.none)
-                        ForEach(records) { rec in
-                            Text(rec.pickerLabel).tag(Optional(rec.id))
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
-                }
-                Image(systemName: "arrow.right")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("After")
-                        .font(DiskMapType.microStrong)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    Picker("", selection: $afterID) {
-                        Text("Select…").tag(String?.none)
-                        ForEach(records) { rec in
-                            Text(rec.pickerLabel).tag(Optional(rec.id))
-                        }
-                        if let current = currentRecord {
-                            Text(current.pickerLabel).tag(Optional(current.id))
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
-                }
-                Button("Compare") { Task { await runCompare() } }
-                    .buttonStyle(InkButtonStyle())
-                    .disabled(!canCompare)
+        HStack(alignment: .bottom, spacing: 10) {
+            snapshotPicker("Before", selection: $beforeID)
+            Button {
+                swap(&beforeID, &afterID)
+            } label: {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(DiskMapType.captionStrong)
+                    .frame(width: 30, height: 26)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(DiskMapTheme.navSelected))
             }
+            .buttonStyle(.plain)
+            .help("Swap Before and After")
+            .padding(.bottom, 1)
+            snapshotPicker("After", selection: $afterID)
         }
         .padding(14)
         .background(cardBG)
+    }
+
+    private func snapshotPicker(_ title: String, selection: Binding<String?>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(DiskMapType.microStrong)
+                .foregroundStyle(DiskMapTheme.mutedLabel)
+            Picker("", selection: selection) {
+                Text("Select…").tag(String?.none)
+                if let current = currentRecord {
+                    Text("Current scan (now)").tag(Optional(current.id))
+                }
+                ForEach(records) { rec in
+                    Text(rec.pickerLabel).tag(Optional(rec.id))
+                }
+            }
+            .labelsHidden()
+            .frame(minWidth: 150, maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var canCompare: Bool {
         guard let beforeID, let afterID, beforeID != afterID else { return false }
-        // before must be saved; after can be current
-        return records.contains { $0.id == beforeID }
-            && (records.contains { $0.id == afterID } || currentRecord?.id == afterID)
-    }
-
-    private var deltaSummary: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Storage changed")
-                .font(DiskMapType.smallStrong)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text(signed(report.usedDelta) + " used")
-                .font(.system(size: 28, weight: .semibold).monospacedDigit())
-                .foregroundStyle(report.usedDelta > 0 ? DiskMapTheme.review : DiskMapTheme.safe)
-            Text("\(ByteFormat.string(report.beforeUsed)) → \(ByteFormat.string(report.afterUsed))")
-                .font(DiskMapType.body)
-                .foregroundStyle(DiskMapTheme.ink)
-            if report.beforeFree > 0 || report.afterFree > 0 {
-                Text("Free space \(ByteFormat.string(report.beforeFree)) → \(ByteFormat.string(report.afterFree)) (\(signed(report.freeDelta)))")
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
-            Text(SnapshotCompare.narrative(for: report))
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
-                .fixedSize(horizontal: false, vertical: true)
-            if report.incomplete, let reason = report.incompleteReason {
-                Text(reason)
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.review)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBG)
-    }
-
-    private var noChangeCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("No meaningful storage changes")
-                .font(DiskMapType.callout)
-            Text("Your storage is effectively unchanged between these snapshots.")
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBG)
-    }
-
-    private var categorySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Where did the change happen?")
-                .font(DiskMapType.bodyStrong)
-            let maxAbs = max(1, report.categoryDeltas.map { abs($0.delta) }.max() ?? 1)
-            ForEach(report.categoryDeltas.prefix(8)) { cat in
-                Button {
-                    changeQuery = cat.title
-                    changeFilter = .all
-                } label: {
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(DiskMapTheme.color(forHint: cat.colorHint))
-                            .frame(width: 8, height: 8)
-                        Text(cat.title)
-                            .font(DiskMapType.smallMedium)
-                            .foregroundStyle(DiskMapTheme.ink)
-                            .frame(width: 110, alignment: .leading)
-                        Text(signed(cat.delta))
-                            .font(DiskMapType.smallStrong.monospacedDigit())
-                            .foregroundStyle(cat.delta >= 0 ? DiskMapTheme.review : DiskMapTheme.safe)
-                            .frame(width: 80, alignment: .trailing)
-                        GeometryReader { geo in
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(DiskMapTheme.color(forHint: cat.colorHint).opacity(0.85))
-                                .frame(width: max(4, geo.size.width * CGFloat(abs(cat.delta)) / CGFloat(maxAbs)))
-                        }
-                        .frame(height: 8)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(14)
-        .background(cardBG)
-    }
-
-    private var changesTable: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Largest changes")
-                    .font(DiskMapType.bodyStrong)
-                Spacer()
-                Picker("", selection: $minDelta) {
-                    Text("> 10 MB").tag(Int64(10_000_000))
-                    Text("> 100 MB").tag(Int64(100_000_000))
-                    Text("> 500 MB").tag(Int64(500_000_000))
-                    Text("> 1 GB").tag(Int64(1_000_000_000))
-                    Text("Any").tag(Int64(0))
-                }
-                .labelsHidden()
-                .frame(width: 110)
-            }
-            HStack(spacing: 8) {
-                ForEach(ChangeFilter.allCases) { f in
-                    Button {
-                        changeFilter = f
-                    } label: {
-                        Text(f.title)
-                            .font(.system(size: 11, weight: changeFilter == f ? .semibold : .regular))
-                            .foregroundStyle(changeFilter == f ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(changeFilter == f ? DiskMapTheme.navSelected : Color.clear))
-                    }
-                    .buttonStyle(.plain)
-                }
-                Spacer()
-                TextField("Search changes…", text: $changeQuery)
-                    .textFieldStyle(.plain)
-                    .padding(6)
-                    .frame(width: 160)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8).stroke(DiskMapTheme.cardStroke)
-                    )
-            }
-
-            HStack {
-                Text("NAME").frame(maxWidth: .infinity, alignment: .leading)
-                Text("CHANGE").frame(width: 90, alignment: .trailing)
-                Text("AFTER").frame(width: 80, alignment: .trailing)
-                Text("TYPE").frame(width: 70, alignment: .leading)
-            }
-            .font(DiskMapType.microStrong)
-            .foregroundStyle(DiskMapTheme.mutedLabel)
-
-            if visibleChanges.isEmpty {
-                Text("No changes match this filter.")
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .padding(.vertical, 12)
-            } else {
-                ForEach(visibleChanges.prefix(80), id: \.path) { change in
-                    Button {
-                        selectedChangePath = change.path
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(URL(fileURLWithPath: change.path).lastPathComponent)
-                                    .font(DiskMapType.smallStrong)
-                                    .foregroundStyle(DiskMapTheme.ink)
-                                    .lineLimit(1)
-                                Text(change.displayPath)
-                                    .font(DiskMapType.micro)
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                                    .lineLimit(1)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(signed(change.delta))
-                                .font(DiskMapType.smallStrong.monospacedDigit())
-                                .foregroundStyle(change.delta >= 0 ? DiskMapTheme.review : DiskMapTheme.safe)
-                                .frame(width: 90, alignment: .trailing)
-                            Text(ByteFormat.string(change.after))
-                                .font(DiskMapType.caption.monospacedDigit())
-                                .frame(width: 80, alignment: .trailing)
-                            Text(change.kind.title)
-                                .font(DiskMapType.caption)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .frame(width: 70, alignment: .leading)
-                        }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(selectedChangePath == change.path ? DiskMapTheme.navSelected : Color.clear)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    Divider().overlay(DiskMapTheme.cardStroke.opacity(0.5))
-                }
-                if report.folderChanges.count > 80 {
-                    Text("Showing top matches — \(Self.formatCount(report.folderChanges.count)) folder changes total.")
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                }
-            }
-        }
-        .padding(14)
-        .background(cardBG)
+        return record(beforeID) != nil && record(afterID) != nil
     }
 
     private var inspector: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if let change = selectedChange {
-                    changeInspector(change)
+                if let entry = selectedEntry {
+                    changeInspector(entry)
                 } else if let rec = selectedRecord {
                     snapshotInspector(rec)
                 } else {
@@ -683,43 +478,60 @@ struct SnapshotsView: View {
         }
     }
 
-    private func changeInspector(_ change: SnapshotChange) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(URL(fileURLWithPath: change.path).lastPathComponent)
-                .font(DiskMapType.headline)
-            Text(signed(change.delta))
-                .font(.system(size: 24, weight: .semibold).monospacedDigit())
-                .foregroundStyle(change.delta >= 0 ? DiskMapTheme.review : DiskMapTheme.safe)
-            Text(change.displayPath)
+    private func changeInspector(_ entry: SnapshotComparison.Entry) -> some View {
+        let path = comparison?.absolutePath(of: entry) ?? entry.path
+        let existsNow = FileManager.default.fileExists(atPath: path)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Text(entry.name)
+                    .font(DiskMapType.headline)
+                    .lineLimit(2)
+                if let kind = entry.kind { KindBadge(kind: kind) }
+            }
+            Text(SnapshotCompareText.signed(entry.delta))
+                .font(.system(size: 26, weight: .semibold).monospacedDigit())
+                .foregroundStyle(SnapshotCompareText.color(for: entry.delta))
+            Text(CanonicalPath.displayPath(absolutePath: path))
                 .font(DiskMapType.caption)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
+                .textSelection(.enabled)
             VStack(alignment: .leading, spacing: 6) {
-                StatRow(label: "Before", value: ByteFormat.string(change.before))
-                StatRow(label: "After", value: ByteFormat.string(change.after))
-                StatRow(label: "Type", value: change.kind.title)
+                StatRow(label: "Before", value: entry.beforeID == nil ? "Not there" : ByteFormat.string(entry.before))
+                StatRow(label: "After", value: entry.afterID == nil ? "Gone" : ByteFormat.string(entry.after))
+                if entry.before > 0, entry.after > 0 {
+                    StatRow(label: "Change", value: String(format: "%+.0f%%", Double(entry.delta) / Double(entry.before) * 100))
+                }
             }
             .padding(12)
             .background(cardBG)
-
-            Button("Reveal in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: change.path)])
+            if entry.isDirectory {
+                Button("Show what changed inside") { browsePath = entry.path }
+                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
             }
-            .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-            Button("Open File Browser") {
-                model.destination = .fileBrowser
-            }
-            .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-            Button("Explore in Visualize") {
-                model.destination = .visualize
-            }
-            .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-            if change.displayPath.lowercased().contains("library/developer")
-                || change.displayPath.lowercased().contains("node_modules")
-                || change.displayPath.lowercased().contains("deriveddata") {
-                Button("View Developer Storage") {
-                    model.destination = .developerStorage
+            if existsNow {
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
                 }
                 .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
+                if let tree = model.tree, let root = model.rootURL,
+                   case .found(let id) = FileQuery.node(atPath: path, tree: tree, rootPath: root.path) {
+                    Button("Show in File Browser") {
+                        model.selectedNode = id
+                        model.currentNode = tree.isDirectory[Int(id)] ? id : max(0, tree.parent[Int(id)])
+                        model.destination = .fileBrowser
+                    }
+                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
+                    if entry.delta > 0 {
+                        Button("Add to Cleanup") {
+                            model.stageRow(path: path, size: model.selectedTotals[Int(id)], reason: "Grew since snapshot: \(entry.name)")
+                        }
+                        .buttonStyle(InkButtonStyle(fullWidth: true))
+                    }
+                }
+            } else if entry.kind != .removed {
+                Text("This isn't on disk any more.")
+                    .font(DiskMapType.caption)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
             }
         }
     }
@@ -851,52 +663,47 @@ struct SnapshotsView: View {
         } else if records.count >= 2 {
             beforeID = records[1].id
         }
-        Task { await runCompare() }
+        scheduleCompare()
     }
 
+    /// Selection changes land here; a newer choice cancels an older compare.
+    private func scheduleCompare() {
+        compareTask?.cancel()
+        guard canCompare else { return }
+        compareTask = Task { await runCompare() }
+    }
+
+    /// Loading two trees and rolling both up takes seconds on a large home,
+    /// so it runs off the main thread (it used to freeze the window).
     private func runCompare() async {
-        guard canCompare, let beforeID, let afterID else { return }
+        guard canCompare, let beforeID, let afterID,
+              let beforeRec = record(beforeID), let afterRec = record(afterID) else { return }
+        if let done = comparedIDs, done.before == beforeID, done.after == afterID, comparison != nil { return }
         isComparing = true
-        report = .empty
-        defer { isComparing = false }
-
+        statusMessage = nil
         let basis = model.sizeBasis
-        do {
-            let beforeRec = records.first { $0.id == beforeID }
-            guard let beforeRec else { return }
-            let before = try SnapshotStore.load(from: beforeRec.url)
-
-            let afterSnap: DiskSnapshot
-            let afterMeta: SnapshotMeta?
-            if let afterRec = records.first(where: { $0.id == afterID }) {
-                afterSnap = try SnapshotStore.load(from: afterRec.url)
-                afterMeta = afterRec.meta
-            } else if let tree = model.tree, let root = model.rootURL, currentRecord?.id == afterID {
-                afterSnap = DiskSnapshot(rootPath: root.path, capturedAt: Date(), tree: tree)
-                afterMeta = currentRecord?.meta
-            } else {
-                return
+        let current = model.tree.flatMap { tree in model.rootURL.map { DiskSnapshot(rootPath: $0.path, capturedAt: Date(), tree: tree) } }
+        let work = Task.detached(priority: .userInitiated) { () -> (SnapshotComparison, [SnapshotComparison.Entry])? in
+            func load(_ rec: SnapshotRecord) -> DiskSnapshot? {
+                rec.isCurrent ? current : try? SnapshotStore.load(from: rec.url)
             }
-
-            let built = SnapshotCompare.report(
-                before: before,
-                after: afterSnap,
-                beforeMeta: beforeRec.meta,
-                afterMeta: afterMeta,
-                basis: basis,
-                minAbsDelta: 0
-            )
-            await MainActor.run {
-                report = built
-                selectedChangePath = built.folderChanges.first?.path
-                statusMessage = "\(built.folderChanges.count) folder changes"
-            }
-        } catch {
-            await MainActor.run {
-                report = .empty
-                statusMessage = "Could not compare those snapshots"
-            }
+            guard let before = load(beforeRec), !Task.isCancelled, let after = load(afterRec), !Task.isCancelled else { return nil }
+            let built = SnapshotComparison(before: before, after: after, basis: basis)
+            return (built, built.hotspots(minimumChange: built.defaultMinimumChange, limit: 25))
         }
+        let result = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+        guard !Task.isCancelled else { return }
+        isComparing = false
+        guard let (built, spots) = result else {
+            comparison = nil
+            statusMessage = "Could not read those snapshots"
+            return
+        }
+        comparison = built
+        hotspots = spots
+        comparedIDs = (beforeID, afterID)
+        browsePath = ""
+        selectedChangePath = spots.first?.path
     }
 
     private func signed(_ delta: Int64) -> String {

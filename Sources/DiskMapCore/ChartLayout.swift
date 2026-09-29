@@ -9,14 +9,19 @@ public struct ChartSlice: Sendable, Equatable, Identifiable {
     public let label: String
     public let drillable: Bool
     public let children: [ChartSlice]
+    /// How many items this slice stands for: 1, or the number of small items
+    /// folded into an "Other" slice.
+    public let collapsedCount: Int
 
-    public init(id: String, nodeID: Int32?, size: Int64, label: String, drillable: Bool, children: [ChartSlice]) {
+    public init(id: String, nodeID: Int32?, size: Int64, label: String, drillable: Bool, children: [ChartSlice],
+                collapsedCount: Int = 1) {
         self.id = id
         self.nodeID = nodeID
         self.size = size
         self.label = label
         self.drillable = drillable
         self.children = children
+        self.collapsedCount = collapsedCount
     }
 }
 
@@ -98,7 +103,8 @@ public enum ChartLayout {
                 size: otherSize,
                 label: "Other (\(otherCount))",
                 drillable: false,
-                children: []
+                children: [],
+                collapsedCount: otherCount
             ))
         }
         return slices
