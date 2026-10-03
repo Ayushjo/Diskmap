@@ -118,6 +118,9 @@ final class ScanModel: ObservableObject {
     @Published var depthLevel: Double = 7
     @Published var topNav: TopNavTab = .explore
     @Published var destination: AppDestination = .overview
+    /// New value per committed scan — views key one-shot work (the Search
+    /// page's name index) to it instead of recomputing on every render (PR #16).
+    @Published var scanID = UUID()
     /// The Find screen's query text (TASK-060). Lives here so ⌘K can hand a
     /// query over, and so it survives switching screens.
     @Published var findQuery = ""
@@ -291,6 +294,7 @@ final class ScanModel: ObservableObject {
         }
         logNotDownloadedContrast(tree: scannedTree, logical: prepared.logical, allocated: prepared.allocated)
         tree = scannedTree
+        scanID = UUID()
         rootURL = url
         allocatedTotals = prepared.allocated
         logicalTotals = prepared.logical

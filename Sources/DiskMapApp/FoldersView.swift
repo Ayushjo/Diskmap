@@ -66,7 +66,9 @@ struct FoldersView: View {
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
                         )
-                    Image(systemName: tree.isDirectory[Int(row.id)] ? "folder.fill" : "doc")
+                    // PR #16: an evicted iCloud item says so before anyone reveals it.
+                    Image(systemName: tree.flags[Int(row.id)] & NodeFlags.notDownloaded != 0
+                          ? "icloud" : tree.isDirectory[Int(row.id)] ? "folder.fill" : "doc")
                         .font(DiskMapType.bodyStrong)
                         .foregroundStyle(selected ? DiskMapTheme.onInk : DiskMapTheme.mutedLabel)
                 }

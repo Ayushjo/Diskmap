@@ -282,6 +282,38 @@ prefixes were not changed.
     (~10 s flat) and was reverted. Path strings stay on the job.
   - Do not re-run TASK-002c memory experiments as a goal.
 
+## Search + developer storage view (2026-09-19)
+
+- [x] **Find-as-you-type search.** `FileSearchIndex` in DiskMapCore —
+  substring match runs once per interned name, node ids are grouped by
+  name id with a counting sort, results ranked by size through a bounded
+  insert (no full sort). Search page in the sidebar: kind filter
+  (All/Folders/Files), ranked live results, Show-in-map jump, double-tap
+  reveal. Index builds once per scan (keyed on `ScanModel.scanID`).
+- [x] **Developer page.** `quick-wins-patterns.json` now carries
+  categories (JavaScript, Python, Rust, JVM, Go, Ruby, Flutter/Dart,
+  Xcode/iOS, macOS caches). `QuickWins.findCategorized` walks the tree
+  once and attributes each hit to a category; Developer page groups hits
+  per ecosystem with a why-it's-safe note and per-category Stage All.
+  The flat Quick Wins page still uses the union of all categories; the
+  old flat JSON shape still decodes.
+- [x] **Interactive age map.** Tap a heatmap bucket to filter the file
+  list to that age band (`AgeMap.files`); tap again or Clear to revert
+  to Big & Untouched.
+- [x] **Main-actor fixes.** Quick Wins / Age Map aggregations were
+  computed properties re-running on every render — now cached state
+  computed once per scan, off-actor. Snapshot save/load/diff, duplicate
+  candidate collection, and Apps leftover lookup moved to detached
+  tasks. Duplicate candidates are size-colliding only, so `tree.path`
+  building skips files that can never match. Roll-ups run off-actor.
+- [x] **UI fixes.** Choose Folder disabled while a scan is in flight
+  (was a second concurrent scan). iCloud (not-downloaded) icons on file
+  rows in Folders / Top Sizes / Age Map / Search. Double-tap a file in
+  the treemap reveals it in Finder. Cleanup commit report is bounded in
+  a scroll view instead of growing without limit.
+
+## Scan performance (2026-09-13/14)
+
 - [x] **TASK-025: Stable benches, UTF-8 paths, rollUpBoth, worker/buffer defaults**
   Done on `perf/scan-and-runtime` (2026-09-14). Playbook + raw runs:
   `docs/PERF.md`, `docs/perf-results/`.

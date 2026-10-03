@@ -78,10 +78,18 @@ struct TopSizesView: View {
                     )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(tree.name(of: id))
-                        .font(DiskMapType.smallStrong)
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(tree.name(of: id))
+                            .font(DiskMapType.smallStrong)
+                            .foregroundStyle(DiskMapTheme.ink)
+                            .lineLimit(1)
+                        if tree.flags[Int(id)] & NodeFlags.notDownloaded != 0 {
+                            Image(systemName: "icloud")
+                                .font(DiskMapType.micro)
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                                .help("Not downloaded — revealing may trigger an iCloud download")
+                        }
+                    }
                     Text(CanonicalPath.parentDisplay(of: tree.path(of: id, root: rootURL).path))
                         .font(DiskMapType.captionMedium)
                         .foregroundStyle(DiskMapTheme.mutedLabel)

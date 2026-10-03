@@ -116,12 +116,18 @@ struct CleanupQueueView: View {
             }
 
             if !model.lastCommitLines.isEmpty {
-                Text(model.lastCommitLines.joined(separator: "\n"))
-                    .font(.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(DiskMapTheme.inspectorFill)
+                // PR #16: a big commit reports one line per item — bound it so
+                // the receipt can't push the staged list out of the window.
+                ScrollView {
+                    Text(model.lastCommitLines.joined(separator: "\n"))
+                        .font(.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .textSelection(.enabled)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 140)
+                .background(DiskMapTheme.inspectorFill)
             }
         }
         .background(DiskMapTheme.cream)

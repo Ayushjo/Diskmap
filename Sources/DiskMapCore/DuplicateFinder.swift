@@ -121,10 +121,11 @@ public enum DuplicateFinder {
     public static func candidatesAsync(
         in tree: FileTree,
         root: URL,
+        collidingSizesOnly: Bool = true,
         progress: (@Sendable (_ examined: Int, _ candidates: Int) -> Void)? = nil
     ) async throws -> [(id: Int32, url: URL, size: Int64)] {
         let worker = Task.detached(priority: .userInitiated) {
-            try cancellableCandidates(in: tree, root: root, progress: progress)
+            try cancellableCandidates(in: tree, root: root, collidingSizesOnly: collidingSizesOnly, progress: progress)
         }
         return try await withTaskCancellationHandler {
             try await worker.value
@@ -133,13 +134,38 @@ public enum DuplicateFinder {
         }
     }
 
+    /// `candidates` restricted to sizes occurring at least twice — the
+    /// files that can actually collide (PR #16). `tree.path` is O(depth)
+    /// string work per node, so building it only for size-colliding files
+    /// skips nearly all of it on a real scan. Produces the same groups as
+    /// running `scan` over `candidates`.
+    public static func sizeCollidingCandidates(in tree: FileTree, root: URL) -> [(id: Int32, url: URL, size: Int64)] {
+        (try? cancellableCandidates(in: tree, root: root, collidingSizesOnly: true, progress: nil)) ?? []
+    }
+
+    private static func isCandidate(_ index: Int, in tree: FileTree) -> Bool {
+        !tree.isDirectory[index]
+            && tree.flags[index] & NodeFlags.notDownloaded == 0
+            && tree.logicalSize[index] > 0
+    }
+
     private static func cancellableCandidates(
         in tree: FileTree,
         root: URL,
+        collidingSizesOnly: Bool = false,
         progress: (@Sendable (_ examined: Int, _ candidates: Int) -> Void)?
     ) throws -> [(id: Int32, url: URL, size: Int64)] {
         var result: [(id: Int32, url: URL, size: Int64)] = []
         guard tree.count > 0 else { return result }
+        // Size pre-pass (PR #16): a size seen once cannot be a duplicate. It
+        // counts every name, so two names of one inode may still pass here;
+        // the inode check below then keeps one of them, which is harmless.
+        var countsBySize: [Int64: Int] = [:]
+        if collidingSizesOnly {
+            for index in 1..<tree.count where isCandidate(index, in: tree) {
+                countsBySize[tree.logicalSize[index], default: 0] += 1
+            }
+        }
         var stack: [Int32] = [0]
         var examined = 0
         // Two names of one hard-linked inode are the same file, not a copy:
@@ -152,11 +178,10 @@ public enum DuplicateFinder {
                 progress?(examined, result.count)
             }
             let index = Int(id)
-            if index > 0 {
-                let notDownloaded = tree.flags[index] & NodeFlags.notDownloaded != 0
+            if index > 0, isCandidate(index, in: tree),
+               !collidingSizesOnly || countsBySize[tree.logicalSize[index], default: 0] > 1 {
                 let isLinked = tree.flags[index] & NodeFlags.hardLink != 0 && tree.fileID[index] != 0
-                let firstNameOfInode = !isLinked || seenLinkedInodes.insert(tree.fileID[index]).inserted
-                if !tree.isDirectory[index], !notDownloaded, tree.logicalSize[index] > 0, firstNameOfInode {
+                if !isLinked || seenLinkedInodes.insert(tree.fileID[index]).inserted {
                     result.append((id, tree.path(of: id, root: root), tree.logicalSize[index]))
                 }
             }
