@@ -52,3 +52,18 @@ struct QuickRescanTests {
                 == "Full scan in 11.3 s. (Walked in full: periodic full rescan.)")
     }
 }
+
+/// PR #16's concern: a second scan of the folder already being scanned.
+@MainActor
+@Suite("Scan entry")
+struct ScanEntryTests {
+    @Test func aRepeatRequestForTheFolderBeingScannedIsIgnored() async {
+        let model = ScanModel()
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("diskmap-dup-\(UUID().uuidString)")
+        model.isScanning = true
+        model.pendingRootURL = root
+        await model.scan(root)
+        #expect(model.tree == nil, "no second walk started")
+        #expect(model.isScanning, "the running scan is left alone")
+    }
+}

@@ -178,6 +178,15 @@ final class ScanModel: ObservableObject {
     }
 
     func scan(_ url: URL, mode: ScanMode = .quick) async {
+        // PR #16 guarded against a second concurrent scan. Here a different
+        // folder still supersedes the running scan (the generation check
+        // drops the old result), but a repeat request for the folder already
+        // being scanned is ignored rather than starting a duplicate walk.
+        if isScanning, let current = pendingRootURL ?? rootURL,
+           current.standardizedFileURL.path == url.standardizedFileURL.path {
+            log("scan ignored: already scanning \(url.path)")
+            return
+        }
         scanGeneration += 1
         let generation = scanGeneration
         let hasCommittedScan = tree != nil

@@ -32,15 +32,17 @@ struct DeveloperView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Regenerable developer data")
-                    .font(.headline)
-                Text("Dependencies, build output and caches your tools recreate on demand — grouped so you can weigh each ecosystem.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("Regenerable Data")
+                    .font(DiskMapType.title)
+                    .foregroundStyle(DiskMapTheme.ink)
+                Text("Dependencies, build output and caches your tools recreate on demand — grouped so you can weigh each ecosystem. For rebuild cost and git state, see Developer Storage.")
+                    .font(DiskMapType.body)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal)
-            .padding(.top, 8)
-            .padding(.bottom, 6)
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 8)
 
             if let hits {
                 if hits.isEmpty {

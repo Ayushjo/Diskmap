@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>DiskMap — website visual study</title>
+  <style>
+    :root { --ink:#252b31; --muted:#66717e; --paper:#f8f7f4; --violet:#7966da; --line:#e1e2e5; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; background:var(--paper); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+    a { color:inherit; }
+    .shell { width:min(1380px,calc(100% - 72px)); margin-inline:auto; }
+    .topbar { min-height:92px; display:flex; align-items:center; justify-content:space-between; gap:24px; border-bottom:1px solid var(--line); }
+    .wordmark { display:block; width:176px; height:auto; }
+    .top-links { display:flex; align-items:center; gap:32px; font-size:13px; font-weight:650; }
+    .top-links a { text-decoration:none; }
+    .top-links a:hover { color:var(--violet); }
+    .top-links .outlined { border:1px solid #bfc4cd; border-radius:100px; padding:11px 17px; }
+    .hero { display:grid; grid-template-columns:minmax(0,.83fr) minmax(0,1.17fr); align-items:center; gap:4vw; padding:98px 0 90px; }
+    .eyebrow { display:flex; align-items:center; gap:10px; color:#6a608d; font-size:12px; font-weight:750; letter-spacing:.16em; text-transform:uppercase; }
+    .eyebrow:before { content:""; width:18px; height:18px; border:5px solid #a99be7; border-radius:6px; }
+    h1 { font-size:clamp(58px,6.25vw,106px); line-height:.98; letter-spacing:-.075em; margin:30px 0 28px; font-weight:740; }
+    h1 em { color:var(--violet); font-style:normal; }
+    .lede { max-width:590px; font-size:clamp(18px,1.45vw,23px); line-height:1.5; color:#59636f; letter-spacing:-.012em; }
+    .actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-top:34px; }
+    .button { min-height:50px; display:inline-flex; align-items:center; justify-content:center; padding:0 21px; border-radius:10px; text-decoration:none; font-size:14px; font-weight:700; }
+    .button.primary { background:var(--ink); color:#fff; }
+    .button.secondary { border:1px solid #cdd0d5; }
+    .button:hover { transform:translateY(-2px); transition:transform .16s ease; }
+    .hero-art { width:100%; max-width:860px; justify-self:end; filter:drop-shadow(0 22px 50px rgba(48,39,87,.06)); }
+    .figure-note { margin:10px 0 0; font-size:12px; color:#8b929a; text-align:right; }
+    .principles { border-block:1px solid var(--line); display:grid; grid-template-columns:repeat(3,1fr); gap:18px; padding:23px 0; }
+    .principles div { display:flex; align-items:center; gap:12px; font-size:14px; font-weight:650; }
+    .principles b { color:var(--violet); font-size:13px; }
+    section { padding-block:118px; }
+    .section-head { max-width:850px; margin-bottom:48px; }
+    .kicker { color:#7666bc; font-size:12px; font-weight:750; letter-spacing:.15em; text-transform:uppercase; }
+    h2 { font-size:clamp(44px,4.7vw,78px); line-height:1.04; letter-spacing:-.065em; margin:18px 0; }
+    .section-head p { font-size:19px; line-height:1.55; color:var(--muted); max-width:670px; }
+    .flow { display:block; width:100%; height:auto; }
+    .dark-band { background:#252b31; color:#f7f7f5; overflow:hidden; }
+    .dark-band .kicker { color:#b9aaf5; }
+    .dark-band h2 { max-width:800px; }
+    .dark-band p { max-width:570px; color:#c5c9cf; font-size:18px; line-height:1.6; }
+    .feature-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; align-items:center; }
+    .snapshot { width:100%; max-width:680px; }
+    .card-list { display:grid; gap:13px; padding:0; margin:34px 0 0; list-style:none; }
+    .card-list li { border-top:1px solid #d6d8dc; padding-top:14px; display:flex; gap:15px; font-size:16px; }
+    .card-list span { color:var(--violet); font-weight:800; }
+    .end { text-align:center; padding-block:100px 115px; }
+    .end h2 { max-width:790px; margin-inline:auto; }
+    .end p { max-width:600px; margin:20px auto 30px; color:var(--muted); font-size:18px; line-height:1.5; }
+    footer { border-top:1px solid var(--line); padding:28px 0 48px; display:flex; justify-content:space-between; align-items:center; color:#7c858e; font-size:12px; }
+    footer img { width:132px; }
+    @media(max-width:1050px) { .hero { grid-template-columns:1fr; padding-top:68px; } .hero-art { justify-self:center; } .figure-note { text-align:center; } .feature-grid { grid-template-columns:1fr; } }
+    @media(max-width:700px) { .shell { width:min(100% - 36px,1380px); } .topbar { min-height:74px; } .wordmark { width:145px; } .top-links a:not(.outlined) { display:none; } .hero { padding:66px 0 64px; } h1 { font-size:clamp(56px,12vw,80px); } .principles { grid-template-columns:1fr; gap:15px; } section { padding-block:75px; } .flow { min-width:680px; } .flow-wrap { overflow-x:auto; } footer { gap:20px; align-items:flex-start; flex-direction:column; } }
+    @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .button:hover { transform:none; } }
+  </style>
+</head>
+<body>
+  <header class="shell topbar">
+    <img class="wordmark" src="diskmap-wordmark.svg" alt="DiskMap">
+    <nav class="top-links" aria-label="Concept preview navigation">
+      <a href="#how">How it works</a><a href="#explore">Explore</a><a class="outlined" href="#principles">Why DiskMap ↗</a>
+    </nav>
+  </header>
+  <main>
+    <div class="shell hero">
+      <div>
+        <div class="eyebrow">A clearer view of your Mac</div>
+        <h1>Space makes<br><em>sense</em> here.</h1>
+        <p class="lede">See what fills your Mac. Follow the big folders. Review everything before it moves to Trash.</p>
+        <div class="actions"><a class="button primary" href="#explore">Explore DiskMap →</a><a class="button secondary" href="#how">See how it works</a></div>
+      </div>
+      <div><img class="hero-art" src="hero-storage-map.svg" alt="Illustrated storage map with a selected Downloads folder and inspector"><p class="figure-note">A visual concept with illustrative data. Product screenshots should use a real scan.</p></div>
+    </div>
+    <div id="principles" class="shell principles"><div><b>01</b> Your files stay on your Mac</div><div><b>02</b> Every file has a place on the map</div><div><b>03</b> Cleanup waits for your review</div></div>
+    <section id="how" class="shell">
+      <div class="section-head"><div class="kicker">The idea</div><h2>From “where did it go?”<br>to “there it is.”</h2><p>DiskMap gives the scan a shape you can explore. Select a folder to understand it, then choose what belongs in Cleanup.</p></div>
+      <div class="flow-wrap"><img class="flow" src="review-flow.svg" alt="Scan, inspect, then review selected files for cleanup"></div>
+    </section>
+    <section class="dark-band"><div class="shell"><div class="kicker">The difference</div><h2>Clarity before cleanup.</h2><p>Make the visuals useful: one storage map, direct inspection, honest explanations, and a queue you review before anything moves.</p></div></section>
+    <section id="explore" class="shell feature-grid">
+      <div><div class="kicker">Keep the story</div><h2>See what changed.</h2><p class="lede">Save a snapshot, scan again later, and see which folders grew. The website can reveal this with a quiet before-and-after transition.</p><ul class="card-list"><li><span>↗</span> Find the folders that grew</li><li><span>◫</span> Understand what is inside</li><li><span>✓</span> Decide what to review</li></ul></div>
+      <img class="snapshot" src="snapshot-change.svg" alt="Illustration comparing an earlier storage map with a later scan">
+    </section>
+    <section class="end shell"><div class="kicker">DiskMap</div><h2>A better relationship with your storage.</h2><p>Know what is using space. Keep what matters. Review the rest with confidence.</p><a class="button primary" href="#how">Explore the concept ↑</a></section>
+  </main>
+  <footer class="shell"><img src="diskmap-wordmark.svg" alt="DiskMap"><span>Visual study · SVG artwork is original and illustrative</span></footer>
+</body>
+</html>

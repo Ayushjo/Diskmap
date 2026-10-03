@@ -114,15 +114,23 @@ enum SnapshotHarness {
                 let point = NSPoint(x: parts[0], y: height - parts[1])
                 clickModifiers = flags
                 defer { clickModifiers = nil }
-                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                    if let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: flags,
-                                                      timestamp: ProcessInfo.processInfo.systemUptime,
-                                                      windowNumber: window.windowNumber, context: nil,
-                                                      eventNumber: 0, clickCount: 1, pressure: 1) {
-                        window.sendEvent(event)
-                    }
-                    try? await Task.sleep(nanoseconds: 50_000_000)
+                func make(_ type: NSEvent.EventType) -> NSEvent? {
+                    NSEvent.mouseEvent(with: type, location: point, modifierFlags: flags,
+                                       timestamp: ProcessInfo.processInfo.systemUptime,
+                                       windowNumber: window.windowNumber, context: nil,
+                                       eventNumber: 0, clickCount: 1, pressure: 1)
                 }
+                // Some views (SwiftUI text fields among them) run AppKit's own
+                // tracking loop inside mouseDown and wait for the mouseUp; a
+                // harness that sends the up after the down returns deadlocks
+                // there (measured). So queue the up first, then deliver the
+                // down: a tracking loop dequeues it, anything else gets it
+                // from the normal event queue a moment later.
+                if let down = make(.leftMouseDown), let up = make(.leftMouseUp) {
+                    NSApp.postEvent(up, atStart: false)
+                    window.sendEvent(down)
+                }
+                try? await Task.sleep(nanoseconds: 100_000_000)
                 // Past the double-click interval, so single-tap gestures fire.
                 try? await Task.sleep(nanoseconds: UInt64((NSEvent.doubleClickInterval + 0.4) * 1_000_000_000))
             }
@@ -194,7 +202,7 @@ enum SnapshotHarness {
     }
 
     private static let all: [(String, AppDestination)] = [
-        ("overview", .overview), ("find", .find), ("biggestFiles", .biggestFiles), ("biggestFolders", .biggestFolders),
+        ("overview", .overview), ("find", .find), ("search", .search), ("regenerableData", .regenerableData), ("biggestFiles", .biggestFiles), ("biggestFolders", .biggestFolders),
         ("forgottenFiles", .forgottenFiles), ("duplicates", .duplicates), ("cleanSafe", .cleanSafe),
         ("cleanCaches", .cleanCaches), ("cleanDownloads", .cleanDownloads), ("cleanMedia", .cleanMedia),
         ("fileBrowser", .fileBrowser), ("visualize", .visualize), ("developerStorage", .developerStorage),

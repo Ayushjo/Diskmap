@@ -29,7 +29,7 @@
   Developer Storage, Applications, File Browser — moves with ↑↓ or j/k once a
   row is selected, Space opens Quick Look, Return reveals in Finder (opens a
   folder in File Browser), ⌘⌫ adds the row to Cleanup (the queue, never the
-  Trash). Menu: ⌘1–⌘9 go to the sidebar items in order, ⌘↑/⌘↓ enclosing /
+  Trash). Menu: ⌘1–⌘9 go to the first nine sidebar items in order (Overview, Find, Search, Biggest Files, Biggest Folders, Forgotten Files, Duplicates, Safe to Review, Caches — Search moved the rest down one when PR #16 was merged), ⌘↑/⌘↓ enclosing /
   open folder in Visualize and File Browser, ⌘R quick rescan, ⇧⌘R full
   rescan, ⇧⌘⌫ cleanup queue, ⇧⌘E export. Checked by sending real key events
   to the app's window through the snapshot harness (`--click`, `--keys`).

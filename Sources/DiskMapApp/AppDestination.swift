@@ -3,6 +3,8 @@ import Foundation
 enum AppDestination: Hashable, Identifiable {
     case overview
     case find
+    /// PR #16's find-as-you-type name search (FileSearchIndex), kept beside Find.
+    case search
     case biggestFiles
     case biggestFolders
     case forgottenFiles
@@ -14,6 +16,8 @@ enum AppDestination: Hashable, Identifiable {
     case fileBrowser
     case visualize
     case developerStorage
+    /// PR #16's ecosystem-grouped Quick Wins page, kept beside Developer Storage.
+    case regenerableData
     case applications
     case snapshots
 
@@ -28,6 +32,8 @@ enum AppDestination: Hashable, Identifiable {
         switch self {
         case .overview: return "Overview"
         case .find: return "Find"
+        case .search: return "Search"
+        case .regenerableData: return "Regenerable Data"
         case .biggestFiles: return "Biggest Files"
         case .biggestFolders: return "Biggest Folders"
         case .forgottenFiles: return "Forgotten Files"
@@ -48,6 +54,8 @@ enum AppDestination: Hashable, Identifiable {
         switch self {
         case .overview: return "square.grid.2x2"
         case .find: return "magnifyingglass"
+        case .search: return "text.magnifyingglass"
+        case .regenerableData: return "arrow.3.trianglepath"
         case .biggestFiles: return "doc.fill"
         case .biggestFolders: return "folder.fill"
         case .forgottenFiles: return "clock.arrow.circlepath"
@@ -75,9 +83,9 @@ enum AppNavSection: String, CaseIterable, Identifiable {
     var items: [AppDestination] {
         switch self {
         case .main: return [.overview]
-        case .find: return [.find, .biggestFiles, .biggestFolders, .forgottenFiles, .duplicates]
+        case .find: return [.find, .search, .biggestFiles, .biggestFolders, .forgottenFiles, .duplicates]
         case .clean: return [.cleanSafe, .cleanCaches, .cleanDownloads, .cleanMedia]
-        case .explore: return [.fileBrowser, .visualize, .developerStorage, .applications, .snapshots]
+        case .explore: return [.fileBrowser, .visualize, .developerStorage, .regenerableData, .applications, .snapshots]
         }
     }
 }

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 690" role="img" aria-labelledby="title desc">
+  <title id="title">Storage comes into focus</title>
+  <desc id="desc">An illustrative storage map and an inspector panel showing how DiskMap makes large folders understandable.</desc>
+  <defs>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#F4F5F7"/></linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#AA99E9"/><stop offset="1" stop-color="#7966DA"/></linearGradient>
+    <linearGradient id="rose" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E9A4B4"/><stop offset="1" stop-color="#C97891"/></linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#A9C4E4"/><stop offset="1" stop-color="#7193B7"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="150%" height="170%"><feDropShadow dx="0" dy="25" stdDeviation="28" flood-color="#292D3D" flood-opacity=".13"/></filter>
+    <clipPath id="map"><rect x="58" y="127" width="722" height="464" rx="17"/></clipPath>
+  </defs>
+  <circle cx="1005" cy="90" r="86" fill="#EEEAFE"/>
+  <circle cx="1047" cy="588" r="45" fill="#F5E9E8"/>
+  <g filter="url(#shadow)"><rect x="18" y="16" width="1124" height="633" rx="26" fill="url(#shell)" stroke="#D9DDE4"/></g>
+  <path d="M18 87H1142" stroke="#E4E7EC"/>
+  <circle cx="53" cy="51" r="7" fill="#E19A99"/><circle cx="77" cy="51" r="7" fill="#E7C88D"/><circle cx="101" cy="51" r="7" fill="#8DBFA6"/>
+  <text x="140" y="58" fill="#262B35" font-family="-apple-system,Arial,sans-serif" font-size="19" font-weight="700">Your storage, mapped</text>
+  <rect x="969" y="35" width="134" height="34" rx="17" fill="#F0ECFC"/><circle cx="989" cy="52" r="5" fill="#7966DA"/><text x="1002" y="58" fill="#5F54A7" font-family="-apple-system,Arial,sans-serif" font-size="14" font-weight="600">Local scan</text>
+  <g clip-path="url(#map)">
+    <rect x="58" y="127" width="722" height="464" fill="#E9EAF0"/>
+    <rect x="58" y="127" width="357" height="279" fill="url(#violet)"/>
+    <rect x="423" y="127" width="357" height="183" fill="url(#rose)"/>
+    <rect x="423" y="318" width="222" height="273" fill="url(#blue)"/>
+    <rect x="653" y="318" width="127" height="159" fill="#A2C5B4"/>
+    <rect x="653" y="485" width="127" height="106" fill="#D6BA8B"/>
+    <rect x="58" y="414" width="222" height="177" fill="#C9D3E4"/>
+    <rect x="288" y="414" width="127" height="99" fill="#DEC1CB"/>
+    <rect x="288" y="521" width="127" height="70" fill="#C6C4D0"/>
+    <g fill="none" stroke="#FFFFFF" stroke-width="8"><path d="M419 127V595M58 410H419M419 314H780M649 314V595M284 410V595M284 517H419M649 481H780"/></g>
+  </g>
+  <rect x="58" y="127" width="722" height="464" rx="17" fill="none" stroke="#D6D9E1"/>
+  <g fill="#FFFFFF" font-family="-apple-system,Arial,sans-serif">
+    <text x="86" y="173" font-size="22" font-weight="700">Library</text><text x="86" y="204" font-size="16">Applications and support</text>
+    <text x="450" y="170" font-size="22" font-weight="700">Downloads</text><text x="450" y="198" font-size="16">Files worth a closer look</text>
+    <text x="451" y="355" font-size="20" font-weight="700">Personal files</text>
+    <text x="82" y="451" font-size="19" font-weight="700">Developer</text>
+  </g>
+  <g font-family="-apple-system,Arial,sans-serif">
+    <rect x="804" y="127" width="300" height="464" rx="17" fill="#FFFFFF" stroke="#E2E5EB"/>
+    <rect x="828" y="153" width="52" height="52" rx="13" fill="#EDE9FC"/>
+    <path d="M842 171h12l5 5h10v14h-27z" fill="none" stroke="#7966DA" stroke-width="3" stroke-linejoin="round"/>
+    <text x="896" y="171" fill="#77808B" font-size="12" font-weight="700" letter-spacing="1.5">SELECTED FOLDER</text>
+    <text x="896" y="197" fill="#252B31" font-size="20" font-weight="700">Downloads</text>
+    <text x="828" y="261" fill="#252B31" font-size="37" font-weight="700">57.9 GB</text>
+    <text x="828" y="285" fill="#68717E" font-size="14">Size on disk · example</text>
+    <path d="M828 311H1080" stroke="#E5E7EC"/>
+    <text x="828" y="341" fill="#68717E" font-size="13">What’s inside</text>
+    <circle cx="833" cy="367" r="5" fill="#C97891"/><text x="847" y="373" fill="#252B31" font-size="15">Video</text><text x="1076" y="373" text-anchor="end" fill="#68717E" font-size="14">53%</text>
+    <rect x="828" y="385" width="252" height="5" rx="2.5" fill="#E9EAF0"/><rect x="828" y="385" width="134" height="5" rx="2.5" fill="#C97891"/>
+    <circle cx="833" cy="417" r="5" fill="#D6BA8B"/><text x="847" y="423" fill="#252B31" font-size="15">Archives</text><text x="1076" y="423" text-anchor="end" fill="#68717E" font-size="14">23%</text>
+    <rect x="828" y="435" width="252" height="5" rx="2.5" fill="#E9EAF0"/><rect x="828" y="435" width="58" height="5" rx="2.5" fill="#D6BA8B"/>
+    <rect x="828" y="475" width="252" height="48" rx="10" fill="#F0ECFC"/><text x="954" y="505" text-anchor="middle" fill="#5F54A7" font-size="15" font-weight="700">Inspect this folder →</text>
+    <text x="828" y="560" fill="#8B93A0" font-size="12">Illustrative data</text>
+  </g>
+</svg>

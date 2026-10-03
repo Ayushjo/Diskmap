@@ -20,6 +20,7 @@ struct SearchView: View {
     /// Bumped when the index finishes building, so a query typed during
     /// the build re-runs once the index exists.
     @State private var indexGeneration = 0
+    @State private var selectedID: Int32?
 
     /// The inputs a run depends on — `.task(id:)` keys to this.
     private struct SearchKey: Equatable {
@@ -33,6 +34,17 @@ struct SearchView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Search")
+                    .font(DiskMapType.title)
+                    .foregroundStyle(DiskMapTheme.ink)
+                Text("Every scanned name, as you type. For sizes, ages and file types, use Find.")
+                    .font(DiskMapType.body)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 8)
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
@@ -84,6 +96,15 @@ struct SearchView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .listKeyboard(
+                    ids: result.ids, selection: $selectedID,
+                    path: { tree.path(of: $0, root: rootURL).path },
+                    stage: { id in
+                        model.stageRow(path: tree.path(of: id, root: rootURL).path, size: totals[Int(id)],
+                                       reason: "Search: \(query)")
+                    }
+                )
+                .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
                 footer
             }
         }
@@ -112,8 +133,9 @@ struct SearchView: View {
             // Debounce: wait out a fast typist, then run off-actor.
             try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { return }
+            let filter = kind, sourceTree = tree, sourceTotals = totals
             let found = await Task.detached(priority: .userInitiated) {
-                index.search(needle, in: tree, totals: totals, kind: kind)
+                index.search(needle, in: sourceTree, totals: sourceTotals, kind: filter)
             }.value
             // A newer keystroke already superseded this result.
             guard !Task.isCancelled else { return }
@@ -122,13 +144,12 @@ struct SearchView: View {
     }
 
     private func hint(_ text: String) -> some View {
-        Spacer()
-            .overlay {
-                Text(text)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding()
-            }
+        Text(text)
+            .font(DiskMapType.body)
+            .foregroundStyle(DiskMapTheme.mutedLabel)
+            .multilineTextAlignment(.center)
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var footer: some View {
@@ -177,8 +198,9 @@ struct SearchView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 6).fill(selectedID == id ? DiskMapTheme.navSelected : .clear))
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { revealDownloadedFile(id, tree: tree, root: rootURL) }
-        .onTapGesture(count: 1) {}
+        .onTapGesture(count: 1) { selectedID = id }
     }
 }
