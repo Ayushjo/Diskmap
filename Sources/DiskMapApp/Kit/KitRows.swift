@@ -112,6 +112,8 @@ struct FileInspector: View {
     var note: (label: String, text: String)? = nil
     /// False where the page has its own reason not to offer cleanup.
     var allowStage = true
+    /// Shown above the header (Large Media's thumbnail).
+    var preview: AnyView? = nil
 
     private var usedDenominator: Int64 {
         if let vol = model.analysis.volume { return max(1, Int64(vol.usedBytes)) }
@@ -129,9 +131,10 @@ struct FileInspector: View {
         let staged = model.isStaged(url)
 
         return InspectorColumn {
+            if let preview { preview }
             InspectorHeader(name: name, size: ByteFormat.string(size),
                             detail: "\(kind.title) · \(Self.percent(share)) of used space") {
-                FileIdentityIcon(url: url, kind: kind, size: 40)
+                if preview == nil { FileIdentityIcon(url: url, kind: kind, size: 40) }
             }
             Hairline()
             FactRow(label: "Location", value: CanonicalPath.parentDisplay(of: abs))

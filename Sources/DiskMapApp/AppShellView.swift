@@ -419,25 +419,20 @@ struct AppShellView: View {
         case .cleanSafe:
             SafeToReviewView(
                 model: model,
-                onOpenCleanup: { model.isCleanupQueuePresented = true },
                 onOpenCaches: { model.destination = .cleanCaches }
             )
         case .cleanCaches:
             CachesReviewView(
-                model: model,
-                onOpenCleanup: { model.isCleanupQueuePresented = true },
-                onBack: { model.destination = .cleanSafe }
+                model: model
             )
         case .cleanDownloads:
             OldDownloadsView(
                 model: model,
-                onOpenCleanup: { model.isCleanupQueuePresented = true },
                 pickFolder: pickFolder
             )
         case .cleanMedia:
             LargeMediaView(
                 model: model,
-                onOpenCleanup: { model.isCleanupQueuePresented = true },
                 pickFolder: pickFolder
             )
         case .developerStorage:

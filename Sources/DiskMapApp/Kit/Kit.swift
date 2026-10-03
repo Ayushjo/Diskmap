@@ -519,6 +519,11 @@ enum RelativeAge {
         return "\(days / 365) y"
     }
 
+    /// From an age in days rather than a modified day.
+    static func short(ageDays: Int32) -> String {
+        short(day: AgeMap.today() - ageDays)
+    }
+
     /// Spelled out for inspectors and VoiceOver: "3 days ago".
     static func long(day: Int32, today: Int32 = AgeMap.today()) -> String {
         guard day > 0 else { return "Unknown" }
