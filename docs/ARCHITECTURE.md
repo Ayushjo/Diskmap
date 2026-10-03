@@ -957,3 +957,11 @@ after a relaunch, and is replaced (atomically, by an empty record) once used.
 Only items moved by themselves are recorded; a child that went with its
 folder comes back with the folder. Rule 1 in AGENTS.md is unchanged: nothing
 is removed except through `CleanupQueue.commit()` → Trash.
+
+### Rejected: reserving tree capacity from the last scan (2026-10-03)
+
+Reserving the arrays and intern table for the last scan's size (× 1.1) was
+measured in alternating pairs against the fixed 1M/400k reservation and was
+no faster (paired median 1.07×). Amortised regrowth of a few hundred MB costs
+tens of milliseconds in a ~16 s walk; the walk's tail came from other load on
+the machine. Kept simple: the fixed reservation stays.

@@ -457,3 +457,17 @@ side table is 24 bytes per clone row — 884k rows, ~21 MB, on this home.
 What it changes: `diskmap scan ~` reports 353.45 GB without it and 270.36 GB
 with it (83.09 GB in 715,110 cloned copies counted once; ~/Library 152.19 →
 85.3 GB).
+
+## Walk-time tail (TASK-086, 2026-10-03)
+
+Goal was p95 ≤ 1.25 × median. A sequential 20-run home walk gave median
+15.52 s, p95 24.06 s (1.55×), slow runs clustered together. Suspect: the
+walk reserves 1M nodes / 400k names, but the home has 2.68M nodes and 950k
+names, so the arrays and the intern table regrow mid-walk. Tested reserving
+from the last scan's counts × 1.1, in 12 alternating pairs: the hinted walk
+was **not faster** (paired median 1.07×, range 0.78–1.47×; p95 17.67 s plain
+vs 20.20 s hinted). Regrowth costs tens of milliseconds, not seconds. Load
+average was 6.5–10 throughout and a Docker VM swung between idle and 100% CPU
+from run to run — the tail follows outside load. Not shipped; evidence in
+`docs/perf-results/p95-walk-tail.txt`. Measure walk variance only on a quiet
+machine (no VM), alternating A/B, never sequential blocks.

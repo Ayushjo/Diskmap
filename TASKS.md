@@ -1477,3 +1477,12 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   status item once) and waits for it; arrow keys; note that `-Key value`
   defaults must come before valueless flags, or the value is taken as a
   document to open and SwiftUI opens no window. 303 tests green.
+- [x] **TASK-086: Scan time consistency (p95) — investigated, closed**
+  Baseline (sequential, 20 runs): median 15.52 s, p95 24.06 s (1.55×).
+  The prime suspect — fixed 1M/400k reservation against a 2.68M-node,
+  950k-name home — was tested with a capacity hint from the last scan in
+  12 alternating pairs: no improvement (paired median 1.07×, p95 worse),
+  so it was reverted rather than shipped. The tail tracked outside load
+  (load average 6.5–10, a Docker VM at 0–100% CPU run to run). Evidence:
+  `docs/perf-results/p95-walk-tail.txt`; PERF.md updated with the
+  method lesson (alternate A/B, quiet machine).
