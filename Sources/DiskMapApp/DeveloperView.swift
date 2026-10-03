@@ -94,13 +94,13 @@ struct DeveloperView: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text("\(category.title) — \(group.count) items, \(ByteCountFormatter.string(fromByteCount: bytes(group), countStyle: .file))")
-                    .font(.subheadline.weight(.semibold))
+                    .font(DiskMapType.small.weight(.semibold))
                 Spacer()
                 Button("Stage All") { stage(group.map(\.id)) }
             }
             if !category.note.isEmpty {
                 Text(category.note)
-                    .font(.caption)
+                    .font(DiskMapType.caption)
                     .foregroundStyle(.secondary)
                     .textCase(.none)
             }
@@ -114,7 +114,7 @@ struct DeveloperView: View {
         return Toggle(isOn: binding(for: hit.id)) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(hit.name).font(.body)
+                    Text(hit.name).font(DiskMapType.body)
                     if size >= impactThreshold {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
@@ -122,7 +122,7 @@ struct DeveloperView: View {
                     }
                 }
                 Text(url.path)
-                    .font(.caption)
+                    .font(DiskMapType.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -134,7 +134,7 @@ struct DeveloperView: View {
     private var footer: some View {
         VStack(spacing: 6) {
             Text("Across categories: \(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file))")
-                .font(.caption)
+                .font(DiskMapType.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack {

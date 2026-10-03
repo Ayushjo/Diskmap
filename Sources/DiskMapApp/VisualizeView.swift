@@ -224,7 +224,7 @@ struct VisualizeView: View {
                         ForEach(Array(crumbs.enumerated()), id: \.element) { i, id in
                             if i > 0 {
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 9, weight: .semibold))
+                                    .font(.system(size: DiskMapType.scaled(9), weight: .semibold))
                                     .foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                             Button {
@@ -232,7 +232,7 @@ struct VisualizeView: View {
                                 model.selectedNode = id
                             } label: {
                                 Text(crumbLabel(id, tree: tree, root: root))
-                                    .font(.system(size: 12, weight: id == currentID ? .semibold : .medium))
+                                    .font(.system(size: DiskMapType.scaled(12), weight: id == currentID ? .semibold : .medium))
                                     .foregroundStyle(id == currentID ? DiskMapTheme.ink : DiskMapTheme.info)
                                     .lineLimit(1)
                             }
@@ -278,7 +278,7 @@ struct VisualizeView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 Image(systemName: "folder.fill")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: DiskMapType.scaled(20), weight: .semibold))
                     .foregroundStyle(DiskMapTheme.folderTint)
                     .frame(width: 40, height: 40)
                     .background(
@@ -659,7 +659,7 @@ private struct VisualizeFolderInspector: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "folder.fill")
-                        .font(.system(size: 20))
+                        .font(.system(size: DiskMapType.scaled(20)))
                         .foregroundStyle(DiskMapTheme.folderTint)
                         .frame(width: 48, height: 48)
                         .background(RoundedRectangle(cornerRadius: 12).fill(DiskMapTheme.folderTint.opacity(0.12)))
@@ -793,7 +793,7 @@ private struct VisualizeFileInspector: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: kind.symbolName)
-                        .font(.system(size: 20))
+                        .font(.system(size: DiskMapType.scaled(20)))
                         .frame(width: 48, height: 48)
                         .background(RoundedRectangle(cornerRadius: 12).fill(DiskMapTheme.ink.opacity(0.08)))
                     VStack(alignment: .leading, spacing: 2) {

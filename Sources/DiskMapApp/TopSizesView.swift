@@ -69,7 +69,7 @@ struct TopSizesView: View {
         } label: {
             HStack(alignment: .center, spacing: 12) {
                 Text("\(index + 1)")
-                    .font(.system(size: 12, weight: .bold).monospacedDigit())
+                    .font(.system(size: DiskMapType.scaled(12), weight: .bold).monospacedDigit())
                     .foregroundStyle(selected ? DiskMapTheme.onInk : DiskMapTheme.mutedLabel)
                     .frame(width: 28, height: 28)
                     .background(

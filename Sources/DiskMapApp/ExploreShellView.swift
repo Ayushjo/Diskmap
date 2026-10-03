@@ -103,7 +103,7 @@ struct ExploreShellView: View {
                 ForEach(Array(crumbs.enumerated()), id: \.element) { i, id in
                     if i > 0 {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: DiskMapType.scaled(9), weight: .semibold))
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                     Button {
@@ -111,7 +111,7 @@ struct ExploreShellView: View {
                         model.selectedNode = id
                     } label: {
                         Text(id == 0 ? (VolumeStats.forPath(root.path)?.volumeName ?? tree.name(of: id)) : tree.name(of: id))
-                            .font(.system(size: 12, weight: id == node ? .semibold : .regular))
+                            .font(.system(size: DiskMapType.scaled(12), weight: id == node ? .semibold : .regular))
                             .foregroundStyle(id == node ? DiskMapTheme.ink : DiskMapTheme.info)
                     }
                     .buttonStyle(.plain)
@@ -197,7 +197,7 @@ struct ExploreShellView: View {
                     Slider(value: $model.depthLevel, in: 1...12, step: 1)
                         .frame(width: 110)
                     Text("\(Int(model.depthLevel))")
-                        .font(.system(size: 12, weight: .bold).monospacedDigit())
+                        .font(.system(size: DiskMapType.scaled(12), weight: .bold).monospacedDigit())
                         .foregroundStyle(DiskMapTheme.ink)
                         .frame(width: 22, alignment: .trailing)
                 }
@@ -262,7 +262,7 @@ struct ExploreSidebar: View {
             SectionLabel(title: "Recent")
             if model.recentRoots.isEmpty {
                 Text("No recent scans")
-                    .font(.caption)
+                    .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
                 ForEach(model.recentRoots.prefix(6), id: \.path) { url in
@@ -293,7 +293,7 @@ struct ExploreSidebar: View {
                                 .stroke(DiskMapTheme.ink, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
                             Text(String(format: "%.0f%%", volume.usedFraction * 100))
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.system(size: DiskMapType.scaled(11), weight: .bold))
                         }
                         .frame(width: 56, height: 56)
                         VStack(alignment: .leading, spacing: 2) {
@@ -330,7 +330,7 @@ struct ExploreSidebar: View {
                     }
                     if let secs = model.lastScanSeconds {
                         Text(String(format: "Last scan %.1fs", secs))
-                            .font(.caption)
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
@@ -344,7 +344,7 @@ struct ExploreSidebar: View {
             let hits = model.cachedQuickWins
             if hits.isEmpty {
                 Text("Scan to see regenerable folders")
-                    .font(.caption)
+                    .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
                 ForEach(hits.prefix(8), id: \.id) { hit in
@@ -366,7 +366,7 @@ struct ExploreSidebar: View {
                                     .font(DiskMapType.caption.monospacedDigit())
                             }
                             Image(systemName: "chevron.right")
-                                .font(.caption2)
+                                .font(DiskMapType.micro)
                                 .foregroundStyle(DiskMapTheme.mutedLabel)
                         }
                     }
@@ -382,7 +382,7 @@ struct ExploreSidebar: View {
             let rows = model.cachedFileTypes
             if rows.isEmpty {
                 Text("Scan to classify files")
-                    .font(.caption)
+                    .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             } else {
                 let total = max(1, rows.reduce(Int64(0)) { $0 + $1.bytes })
@@ -482,14 +482,14 @@ struct ExploreInspector: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: tree.isDirectory[idx] ? "folder.fill" : "doc")
-                        .font(.title2)
+                        .font(DiskMapType.title)
                         .foregroundStyle(DiskMapTheme.ink)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(tree.name(of: id))
-                            .font(.headline)
+                            .font(DiskMapType.headline)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(tree.isDirectory[idx] ? "Folder" : "File")
-                            .font(.caption)
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                         Text(tree.path(of: id, root: root).path)
                             .font(DiskMapType.micro)
@@ -500,10 +500,10 @@ struct ExploreInspector: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(byte(active))
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(.system(size: DiskMapType.scaled(28), weight: .bold, design: .rounded))
                         .foregroundStyle(DiskMapTheme.ink)
                     Text(id == 0 ? String(format: "%.1f%% of scan", ofScan * 100) : String(format: "%.1f%% of parent", ofParent * 100))
-                        .font(.caption)
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                 }
 
@@ -596,7 +596,7 @@ struct ExploreInspector: View {
                                 .buttonStyle(.plain)
                             }
                             if children.isEmpty {
-                                Text("No children").font(.caption).foregroundStyle(DiskMapTheme.mutedLabel)
+                                Text("No children").font(DiskMapType.caption).foregroundStyle(DiskMapTheme.mutedLabel)
                             }
                         }
                     }
@@ -697,6 +697,12 @@ struct ExploreCanvas: View {
         return max(0.001, 0.002 + t * 0.04)
     }
 
+    /// Space in a chart (TASK-085).
+    private func quickLook(_ id: Int32) {
+        guard id >= 0, Int(id) < tree.count else { return }
+        DiskMapQuickLook.shared.show(tree.path(of: id, root: rootURL))
+    }
+
     /// Clicks in any chart go through `select`, which reads ⌘ and ⇧.
     private var chartSelection: Binding<Int32> {
         Binding(get: { model.selectedNode }, set: { model.select($0) })
@@ -713,20 +719,22 @@ struct ExploreCanvas: View {
                     selectedNode: chartSelection,
                     colorMode: model.colorMode,
                     categories: model.fileTypeCategories,
-                    showInlineChrome: !hideTreemapChrome
+                    showInlineChrome: !hideTreemapChrome,
+                    onQuickLook: quickLook,
+                    onAddToSelection: { model.select($0, modifiers: .command) }
                 )
                 .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             case .sunburst:
-                LayoutChartView(kind: .sunburst, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
+                LayoutChartView(kind: .sunburst, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories, onQuickLook: quickLook, onAddToSelection: { model.select($0, modifiers: .command) })
                     .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             case .flame:
-                LayoutChartView(kind: .flame, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
+                LayoutChartView(kind: .flame, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories, onQuickLook: quickLook, onAddToSelection: { model.select($0, modifiers: .command) })
                     .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             case .bubbles:
-                LayoutChartView(kind: .bubbles, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
+                LayoutChartView(kind: .bubbles, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories, onQuickLook: quickLook, onAddToSelection: { model.select($0, modifiers: .command) })
                     .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             case .mindMap:
-                LayoutChartView(kind: .mindMap, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories)
+                LayoutChartView(kind: .mindMap, tree: tree, totals: totals, currentNode: $model.currentNode, selectedNode: chartSelection, otherFraction: otherFraction, colorMode: model.colorMode, categories: model.fileTypeCategories, onQuickLook: quickLook, onAddToSelection: { model.select($0, modifiers: .command) })
                     .onChange(of: model.currentNode) { _, v in model.selectedNode = v }
             case .topSizes:
                 TopSizesView(tree: tree, totals: totals, rootURL: rootURL, selectedNode: chartSelection)
@@ -752,6 +760,8 @@ struct ExploreTreemapView: View {
     var categories: [FileTypeCategory]
     /// When false, breadcrumbs/size chrome are provided by VisualizeView.
     var showInlineChrome: Bool = true
+    var onQuickLook: (Int32) -> Void = { _ in }
+    var onAddToSelection: (Int32) -> Void = { _ in }
 
     @Environment(\.multiSelection) private var multi
     @State private var layoutRects: [TreemapRect] = []
@@ -840,6 +850,26 @@ struct ExploreTreemapView: View {
                     currentNode = id
                     cacheLayout()
                 }
+            )
+            .chartKeyboard(
+                move: { direction in
+                    let tiles = layoutRects.map { (id: $0.id, rect: $0.rect) }
+                    let from: Int32? = tiles.contains { $0.id == selectedNode } ? selectedNode : nil
+                    let next = ChartNavigation.neighbor(of: from, toward: direction, in: tiles)
+                    if let next { selectedNode = next }
+                },
+                open: {
+                    guard layoutRects.contains(where: { $0.id == selectedNode }), tree.isDirectory[Int(selectedNode)] else { return }
+                    currentNode = selectedNode
+                    cacheLayout()
+                },
+                enclosing: {
+                    guard currentNode > 0 else { return }
+                    currentNode = tree.parent[Int(currentNode)]
+                    cacheLayout()
+                },
+                quickLook: { onQuickLook(selectedNode) },
+                addToSelection: { onAddToSelection(selectedNode) }
             )
         }
         .onChange(of: currentNode) { _, _ in cacheLayout() }

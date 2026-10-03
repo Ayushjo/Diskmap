@@ -276,7 +276,7 @@ struct FindView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 28, weight: .light))
+                .font(.system(size: DiskMapType.scaled(28), weight: .light))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text("Nothing matches")
                 .font(DiskMapType.section)
@@ -334,7 +334,7 @@ struct FindView: View {
                 if isChecked { checked.remove(row.id) } else { checked.insert(row.id) }
             } label: {
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 15))
+                    .font(.system(size: DiskMapType.scaled(15)))
                     .foregroundStyle(isChecked ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
                     .frame(width: 24)
             }
@@ -379,9 +379,9 @@ struct FindView: View {
             })
             .accessibilityLabel("\(row.name), \(ByteFormat.string(row.bytes)), \(Self.relativeModified(row.modifiedDay))")
             .accessibilityAddTraits(selectedID == row.id ? .isSelected : [])
-            .accessibilityAction(named: "Reveal in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: row.absolutePath)])
-            }
+            .rowActions(path: row.absolutePath, stage: {
+                model.stageRow(path: row.absolutePath, size: row.bytes, reason: "Find: \(trimmedQuery)")
+            })
         }
         .padding(.horizontal, 10)
         .background(

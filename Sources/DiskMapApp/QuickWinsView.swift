@@ -32,7 +32,7 @@ struct QuickWinsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(tree.path(of: hit.id, root: rootURL).path).lineLimit(1)
                             Text(diskByteString(size(of: hit.id)))
-                                .font(.caption)
+                                .font(DiskMapType.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }

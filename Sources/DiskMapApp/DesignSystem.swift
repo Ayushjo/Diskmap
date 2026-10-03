@@ -216,7 +216,8 @@ enum DiskMapRadius {
 
 enum DiskMapMetric {
     static let topBarHeight: CGFloat = 50
-    static let sidebarWidth: CGFloat = 200
+    /// Widens with the text size (TASK-085) so "Developer Storage" stays one line.
+    static var sidebarWidth: CGFloat { (200 * max(1, DiskMapType.scale)).rounded() }
     static let controlHeight: CGFloat = 30
     static let searchHeight: CGFloat = 32
     static let tableHeaderHeight: CGFloat = 30
@@ -229,38 +230,77 @@ enum DiskMapMetric {
 /// future text-size preference changes one number instead of ~600 call
 /// sites — before this, 86% of `.font` calls hand-set a point size and
 /// bypassed the scale. Icon glyph sizes are not text and stay local.
+/// Text size (TASK-085): one factor for every token, chosen in View ▸ Text
+/// Size and stored in preferences. macOS has no Dynamic Type for arbitrary
+/// apps, so this is DiskMap's own.
+enum TextSize: String, CaseIterable, Identifiable {
+    case smaller, standard, larger, largest
+    var id: String { rawValue }
+    static let storageKey = "TextSize"
+
+    var scale: CGFloat {
+        switch self {
+        case .smaller: return 0.9
+        case .standard: return 1.0
+        case .larger: return 1.15
+        case .largest: return 1.3
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .smaller: return "Smaller"
+        case .standard: return "Default"
+        case .larger: return "Larger"
+        case .largest: return "Largest"
+        }
+    }
+
+    static var stored: TextSize {
+        UserDefaults.standard.string(forKey: storageKey).flatMap(TextSize.init(rawValue:)) ?? .standard
+    }
+
+    var bigger: TextSize { Self.allCases.first { $0.scale > scale } ?? self }
+    var smaller: TextSize { Self.allCases.last { $0.scale < scale } ?? self }
+}
+
 enum DiskMapType {
-    static let scale: CGFloat = 1
+    /// Set from `TextSize` at launch and whenever it changes; the root view
+    /// is rebuilt (`.id`) so every token is read again.
+    nonisolated(unsafe) static var scale: CGFloat = TextSize.stored.scale
+
+    /// A hand-set point size, scaled like the tokens.
+    static func scaled(_ size: CGFloat) -> CGFloat { size * scale }
 
     private static func text(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size * scale, weight: weight)
     }
 
-    static let micro = text(10)
-    static let microStrong = text(10, .semibold)
-    static let microMedium = text(10, .medium)
-    static let caption = text(11)
-    static let captionMedium = text(11, .medium)
-    static let captionStrong = text(11, .semibold)
+    static var micro: Font { text(10) }
+    static var microStrong: Font { text(10, .semibold) }
+    static var microMedium: Font { text(10, .medium) }
+    static var caption: Font { text(11) }
+    static var captionMedium: Font { text(11, .medium) }
+    static var captionStrong: Font { text(11, .semibold) }
     /// 12 pt had no token, which is why it was the most hand-rolled size.
-    static let small = text(12)
-    static let smallMedium = text(12, .medium)
-    static let smallStrong = text(12, .semibold)
-    static let body = text(13)
-    static let bodyMedium = text(13, .medium)
-    static let bodyStrong = text(13, .semibold)
-    static let callout = text(14, .semibold)
-    static let section = text(15, .semibold)
-    static let headline = text(16, .semibold)
-    static let title = text(22, .semibold)
-    static let heroNumber = text(28, .semibold).monospacedDigit()
+    static var small: Font { text(12) }
+    static var smallMedium: Font { text(12, .medium) }
+    static var smallStrong: Font { text(12, .semibold) }
+    static var body: Font { text(13) }
+    static var bodyMedium: Font { text(13, .medium) }
+    static var bodyStrong: Font { text(13, .semibold) }
+    static var callout: Font { text(14, .semibold) }
+    static var section: Font { text(15, .semibold) }
+    static var headline: Font { text(16, .semibold) }
+    static var title: Font { text(22, .semibold) }
+    static var heroNumber: Font { text(28, .semibold).monospacedDigit() }
 }
 
 struct SectionLabel: View {
     let title: String
     var body: some View {
         Text(title.uppercased())
-            .font(.system(size: 10, weight: .semibold))
+            .font(.system(size: DiskMapType.scaled(10), weight: .semibold))
             .tracking(1.2)
             .foregroundStyle(DiskMapTheme.mutedLabel)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -298,7 +338,7 @@ struct StatRow: View {
                 .foregroundStyle(emphasize ? DiskMapTheme.safe : DiskMapTheme.ink)
                 .multilineTextAlignment(.trailing)
         }
-        .font(.system(size: 12))
+        .font(.system(size: DiskMapType.scaled(12)))
     }
 }
 
@@ -343,7 +383,7 @@ struct InkButtonStyle: ButtonStyle {
     var fullWidth: Bool = false
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: DiskMapType.scaled(13), weight: .semibold))
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.horizontal, 14)
             .frame(height: DiskMapMetric.controlHeight)
@@ -359,7 +399,7 @@ struct PrimaryCTAStyle: ButtonStyle {
     var fullWidth: Bool = false
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: DiskMapType.scaled(13), weight: .semibold))
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.horizontal, 16)
             .frame(height: DiskMapMetric.controlHeight)

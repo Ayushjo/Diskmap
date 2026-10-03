@@ -193,7 +193,7 @@ struct CleanReviewView: View {
     private func metricChip(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label.uppercased())
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: DiskMapType.scaled(9), weight: .semibold))
                 .tracking(0.6)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(value)

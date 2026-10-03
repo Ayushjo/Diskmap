@@ -58,7 +58,10 @@ struct AppearanceMenuButton: View {
             }
             .pickerStyle(.inline)
         } label: {
-            Image(systemName: choice.symbol)
+            // A label, not a bare image: VoiceOver read the symbol's name
+            // ("circle.lefthalf.filled") as the button's title (TASK-078).
+            Label("Appearance", systemImage: choice.symbol)
+                .labelStyle(.iconOnly)
                 .font(DiskMapType.smallMedium)
                 .frame(width: 30, height: 28)
         }
@@ -74,6 +77,16 @@ struct AppearanceMenuButton: View {
 /// View ▸ Appearance.
 struct AppearanceCommands: Commands {
     @AppStorage(AppAppearance.storageKey) private var raw = AppAppearance.system.rawValue
+    @AppStorage(TextSize.storageKey) private var textSize = TextSize.standard.rawValue
+
+    private var current: TextSize { TextSize(rawValue: textSize) ?? .standard }
+
+    /// The scale first, then the stored value — whose change rebuilds the
+    /// window (`.id`), so every token is read at the new size.
+    private func setTextSize(_ size: TextSize) {
+        DiskMapType.scale = size.scale
+        textSize = size.rawValue
+    }
 
     var body: some Commands {
         CommandGroup(after: .toolbar) {
@@ -83,6 +96,21 @@ struct AppearanceCommands: Commands {
                 }
             }
             .onChange(of: raw) { _, value in (AppAppearance(rawValue: value) ?? .system).apply() }
+            // TASK-085: DiskMap's own text size.
+            Menu("Text Size") {
+                Button("Bigger") { setTextSize(current.bigger) }
+                    .keyboardShortcut("+", modifiers: .command)
+                    .disabled(current == .largest)
+                Button("Smaller") { setTextSize(current.smaller) }
+                    .keyboardShortcut("-", modifiers: .command)
+                    .disabled(current == .smaller)
+                Button("Default Size") { setTextSize(.standard) }
+                    .keyboardShortcut("0", modifiers: .command)
+                Divider()
+                ForEach(TextSize.allCases) { size in
+                    Button((size == current ? "✓ " : "") + size.title) { setTextSize(size) }
+                }
+            }
         }
     }
 }

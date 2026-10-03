@@ -21,6 +21,8 @@ struct LayoutChartView: View {
     var otherFraction: Double = ChartLayout.otherFraction
     var colorMode: ExploreColorMode = .folder
     var categories: [FileTypeCategory] = []
+    var onQuickLook: (Int32) -> Void = { _ in }
+    var onAddToSelection: (Int32) -> Void = { _ in }
     @State private var preparedSlices: [ChartSlice] = []
     @State private var isPreparing = true
 
@@ -39,6 +41,20 @@ struct LayoutChartView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     chart(preparedSlices, in: proxy.size)
+                        .chartKeyboard(
+                            move: { direction in
+                                if let next = ChartNavigation.step(from: selectedNode, toward: direction, in: preparedSlices) {
+                                    select(next)
+                                }
+                            },
+                            open: { drill(selectedNode) },
+                            enclosing: {
+                                guard currentNode > 0, Int(currentNode) < tree.count else { return }
+                                currentNode = tree.parent[Int(currentNode)]
+                            },
+                            quickLook: { onQuickLook(selectedNode) },
+                            addToSelection: { onAddToSelection(selectedNode) }
+                        )
                 }
             }
             .background(DiskMapTheme.cream)
@@ -153,7 +169,7 @@ private struct SunburstChart: View {
                     let capacity = min(18, max(3, Int(min(sweep * radius, wedge.outer - wedge.inner) / 6)))
                     let short = wedge.label.count > capacity ? String(wedge.label.prefix(capacity - 1)) + "…" : wedge.label
                     context.draw(
-                        Text(short).font(.caption2.weight(.semibold)).foregroundStyle(DiskMapTheme.tileLabel),
+                        Text(short).font(DiskMapType.micro.weight(.semibold)).foregroundStyle(DiskMapTheme.tileLabel),
                         at: polarPoint(center: wedge.center, angle: mid, radius: radius)
                     )
                 }
@@ -199,7 +215,7 @@ private struct FlameChart: View {
                     let capacity = max(3, Int((bar.rect.width - 14) / 6))
                     let short = bar.label.count > capacity ? String(bar.label.prefix(capacity - 1)) + "…" : bar.label
                     context.draw(
-                        Text(short).font(.caption2.weight(.semibold)).foregroundStyle(DiskMapTheme.tileLabel),
+                        Text(short).font(DiskMapType.micro.weight(.semibold)).foregroundStyle(DiskMapTheme.tileLabel),
                         at: CGPoint(x: bar.rect.minX + 6, y: bar.rect.midY),
                         anchor: .leading
                     )
@@ -419,7 +435,7 @@ private struct MindMapChart: View {
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(Self.smallerItems(slice.collapsedCount))
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: DiskMapType.scaled(13), weight: .medium))
                     Text("\(ByteFormat.string(slice.size)) · \(percent(slice.size, of: centerTotal)) · each under 0.5%")
                         .font(DiskMapType.caption).monospacedDigit()
                         .foregroundStyle(DiskMapTheme.mutedLabel)
@@ -472,7 +488,7 @@ private struct MindMapChart: View {
                     Image(systemName: isGroup ? "square.stack.3d.down.right" : slice.drillable ? "folder.fill" : "doc.fill")
                         .foregroundStyle(isGroup ? DiskMapTheme.mutedLabel : color(slice.nodeID))
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(title).font(.system(size: primary ? 13 : 12, weight: .medium))
+                        Text(title).font(.system(size: DiskMapType.scaled(primary ? 13 : 12), weight: .medium))
                             .lineLimit(1).truncationMode(.middle)
                         Text("\(ByteFormat.string(slice.size)) · \(percent(slice.size, of: parentSize))")
                             .font(DiskMapType.caption).monospacedDigit()

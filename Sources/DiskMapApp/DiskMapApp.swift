@@ -5,10 +5,13 @@ import AppKit
 struct DiskMapApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @AppStorage("ShowMenuBarExtra") private var showMenuBarExtra = true
+    @AppStorage(TextSize.storageKey) private var textSize = TextSize.standard.rawValue
 
     var body: some Scene {
         WindowGroup(id: "main") {
+            // A new text size rebuilds the window so every token is re-read.
             ContentView()
+                .id(textSize)
         }
         .commands {
             ExportScanCommands(model: ScanModel.shared)
@@ -18,6 +21,7 @@ struct DiskMapApp: App {
         }
         Settings {
             SettingsView()
+                .id(textSize)
         }
         MenuBarExtra(isInserted: $showMenuBarExtra) {
             MenuBarStatusView(model: ScanModel.shared)

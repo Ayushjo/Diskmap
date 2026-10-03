@@ -230,7 +230,7 @@ struct BiggestFilesView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "doc")
-                .font(.system(size: 28, weight: .light))
+                .font(.system(size: DiskMapType.scaled(28), weight: .light))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(allFileIDs.isEmpty ? "No unusually large files" : "No files match this filter")
                 .font(DiskMapType.section)
@@ -300,7 +300,7 @@ struct BiggestFilesView: View {
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                 }
-                .font(.system(size: 12, weight: .bold).monospacedDigit())
+                .font(.system(size: DiskMapType.scaled(12), weight: .bold).monospacedDigit())
                 .frame(width: 28, alignment: .center)
                 FileIdentityIcon(url: URL(fileURLWithPath: abs), kind: kind, size: 34)
                 VStack(alignment: .leading, spacing: 3) {
@@ -335,6 +335,7 @@ struct BiggestFilesView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(name), \(kind.title), \(ByteFormat.string(size))")
+        .rowActions(path: abs, stage: { model.stageRow(path: abs, size: size, reason: "Biggest file: " + name) })
     }
 
     private func kindPill(_ kind: FileKind) -> some View {
@@ -366,7 +367,7 @@ struct BiggestFilesView: View {
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "doc")
-                        .font(.system(size: 28, weight: .light))
+                        .font(.system(size: DiskMapType.scaled(28), weight: .light))
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     Text("Select a file")
                         .font(DiskMapType.body)
@@ -426,7 +427,7 @@ private struct FileInspectorPanel: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                         Text(ByteFormat.string(size))
-                            .font(.system(size: 26, weight: .semibold).monospacedDigit())
+                            .font(.system(size: DiskMapType.scaled(26), weight: .semibold).monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(kind.title + " · " + String(format: "%.1f%% of used storage", min(100, pct * 100)))
                             .font(DiskMapType.caption)

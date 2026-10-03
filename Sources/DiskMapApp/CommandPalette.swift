@@ -156,7 +156,7 @@ struct CommandPalette: View {
                     .accessibilityHidden(true)
                 TextField("Type a command, a file name, or a query like ext:mp4 size>1GB", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 15))
+                    .font(.system(size: DiskMapType.scaled(15)))
                     .accessibilityLabel("Command palette search")
                 Button("Esc") { isPresented = false }
                     .buttonStyle(.plain)

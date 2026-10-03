@@ -222,7 +222,7 @@ struct AppsView: View {
             filter = f
         } label: {
             Text("\(f.title) (\(count))")
-                .font(.system(size: 11, weight: filter == f ? .semibold : .regular))
+                .font(.system(size: DiskMapType.scaled(11), weight: filter == f ? .semibold : .regular))
                 .foregroundStyle(filter == f ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -328,7 +328,7 @@ struct AppsView: View {
                 }
             } label: {
                 Image(systemName: checked.contains(app.id) ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16))
+                    .font(.system(size: DiskMapType.scaled(16)))
                     .foregroundStyle(checked.contains(app.id) ? DiskMapTheme.info : DiskMapTheme.mutedLabel)
             }
             .buttonStyle(.plain)
@@ -508,7 +508,7 @@ struct AppsView: View {
                                 .font(DiskMapType.headline)
                                 .foregroundStyle(DiskMapTheme.ink)
                             Text(app.sizePending ? "Measuring…" : ByteFormat.string(app.totalBytes))
-                                .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                                .font(.system(size: DiskMapType.scaled(20), weight: .semibold).monospacedDigit())
                             if let publisher = app.publisher {
                                 Text(publisher)
                                     .font(DiskMapType.caption)
@@ -532,7 +532,7 @@ struct AppsView: View {
                                 inspectorTab = tab
                             } label: {
                                 Text(tab.title)
-                                    .font(.system(size: 11, weight: inspectorTab == tab ? .semibold : .regular))
+                                    .font(.system(size: DiskMapType.scaled(11), weight: inspectorTab == tab ? .semibold : .regular))
                                     .foregroundStyle(inspectorTab == tab ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 8)

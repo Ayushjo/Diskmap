@@ -109,7 +109,7 @@ struct LargeMediaView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "film.stack")
-                .font(.system(size: 28))
+                .font(.system(size: DiskMapType.scaled(28)))
                 .foregroundStyle(DiskMapTheme.info)
                 .frame(width: 48, height: 48)
                 .background(DiskMapTheme.info.opacity(0.12), in: Circle())
@@ -337,7 +337,7 @@ struct LargeMediaView: View {
             } label: {
                 let allOn = !visible.isEmpty && visible.allSatisfy { checked.contains($0.nodeID) }
                 Image(systemName: allOn ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16))
+                    .font(.system(size: DiskMapType.scaled(16)))
                     .foregroundStyle(allOn ? DiskMapTheme.info : DiskMapTheme.mutedLabel)
             }
             .buttonStyle(.plain)
@@ -385,7 +385,7 @@ struct LargeMediaView: View {
                 }
             } label: {
                 Image(systemName: checked.contains(item.nodeID) ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16))
+                    .font(.system(size: DiskMapType.scaled(16)))
                     .foregroundStyle(checked.contains(item.nodeID) ? DiskMapTheme.info : DiskMapTheme.mutedLabel)
             }
             .buttonStyle(.plain)
@@ -441,7 +441,7 @@ struct LargeMediaView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(item.name), \(ByteFormat.string(item.bytes)), \(item.kind.shortTitle)")
             .accessibilityAddTraits(selected ? .isSelected : [])
-            .accessibilityAction(named: "Reveal in Finder") { reveal(item) }
+            .rowActions(path: item.absolutePath, stage: { Task { await stage([item]) } })
 
             Menu {
                 Button("Reveal in Finder") { reveal(item) }

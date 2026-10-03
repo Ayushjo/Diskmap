@@ -86,7 +86,7 @@ struct SafeToReviewView: View {
                 .font(DiskMapType.captionStrong)
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(ByteFormat.string(summary.totalBytes))
-                .font(.system(size: 28, weight: .semibold).monospacedDigit())
+                .font(.system(size: DiskMapType.scaled(28), weight: .semibold).monospacedDigit())
                 .foregroundStyle(DiskMapTheme.ink)
             Text("\(summary.targetCount.formatted()) items · \(summary.cacheAppCount.formatted()) cache apps")
                 .font(DiskMapType.small)
@@ -175,7 +175,7 @@ struct SafeToReviewView: View {
                     .font(DiskMapType.bodyStrong)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text(ByteFormat.string(bytes))
-                    .font(.system(size: 18, weight: .semibold).monospacedDigit())
+                    .font(.system(size: DiskMapType.scaled(18), weight: .semibold).monospacedDigit())
                     .foregroundStyle(tint)
                 Text(subtitle)
                     .font(DiskMapType.micro)
@@ -271,7 +271,7 @@ struct SafeToReviewView: View {
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: t.symbolName)
-                        .font(.system(size: 14))
+                        .font(.system(size: DiskMapType.scaled(14)))
                         .foregroundStyle(DiskMapTheme.ink)
                         .frame(width: 28, height: 28)
                         .background(RoundedRectangle(cornerRadius: 7).fill(DiskMapTheme.navSelected))
@@ -325,7 +325,7 @@ struct SafeToReviewView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "leaf")
-                .font(.system(size: 28, weight: .light))
+                .font(.system(size: DiskMapType.scaled(28), weight: .light))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text("Nothing to clean up")
                 .font(DiskMapType.section)

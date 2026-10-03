@@ -187,7 +187,7 @@ struct AgeMapView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "clock.badge.checkmark")
-                .font(.system(size: 28, weight: .light))
+                .font(.system(size: DiskMapType.scaled(28), weight: .light))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             if untouched.isEmpty {
                 Text("No forgotten files in this scan")
@@ -306,7 +306,7 @@ struct AgeMapView: View {
                     let bytes = bucketSizes[bucket] ?? 0
                     context.draw(
                         Text("\(bucket.shortTitle)\n\(diskByteString(bytes))")
-                            .font(.caption)
+                            .font(DiskMapType.caption)
                             .foregroundStyle(.white),
                         at: CGPoint(x: rect.rect.midX, y: rect.rect.midY)
                     )

@@ -230,7 +230,7 @@ struct AppShellView: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(DiskMapTheme.ink)
                     .frame(width: 28, height: 28)
-                    .overlay(Text("D").font(.system(size: 13, weight: .bold)).foregroundStyle(DiskMapTheme.onInk))
+                    .overlay(Text("D").font(.system(size: DiskMapType.scaled(13), weight: .bold)).foregroundStyle(DiskMapTheme.onInk))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("DiskMap")
                         .font(DiskMapType.callout)
@@ -292,7 +292,7 @@ struct AppShellView: View {
                     .font(DiskMapType.small)
                     .frame(width: 18)
                 Text(dest.label)
-                    .font(.system(size: 13, weight: model.destination == dest ? .semibold : .regular))
+                    .font(.system(size: DiskMapType.scaled(13), weight: model.destination == dest ? .semibold : .regular))
                 Spacer()
             }
             .foregroundStyle(locked ? DiskMapTheme.disabledLabel.opacity(0.62) : DiskMapTheme.ink)

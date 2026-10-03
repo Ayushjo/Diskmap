@@ -252,12 +252,12 @@ struct FileBrowserView: View {
                 ForEach(Array(crumbs.enumerated()), id: \.element) { i, id in
                     if i > 0 {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: DiskMapType.scaled(9), weight: .semibold))
                             .foregroundStyle(DiskMapTheme.mutedLabel)
                     }
                     Button { jumpTo(id, recordHistory: true) } label: {
                         Text(crumbLabel(id))
-                            .font(.system(size: 12, weight: id == currentID ? .semibold : .medium))
+                            .font(.system(size: DiskMapType.scaled(12), weight: id == currentID ? .semibold : .medium))
                             .foregroundStyle(id == currentID ? DiskMapTheme.ink : DiskMapTheme.info)
                             .lineLimit(1)
                     }
@@ -289,7 +289,7 @@ struct FileBrowserView: View {
                     )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(folderName)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: DiskMapType.scaled(18), weight: .semibold))
                         .foregroundStyle(DiskMapTheme.ink)
                         .lineLimit(1)
                     Text("\(ByteFormat.string(folderBytes)) · \(formatCount(itemCount)) items")
@@ -390,7 +390,7 @@ struct FileBrowserView: View {
                     Text("Sort: \(sortMode.title)")
                         .font(DiskMapType.smallStrong)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: DiskMapType.scaled(9), weight: .bold))
                 }
                 .foregroundStyle(DiskMapTheme.ink)
                 .padding(.horizontal, 10)
@@ -498,7 +498,7 @@ struct FileBrowserView: View {
                 if on { checked.remove(row.id) } else { checked.insert(row.id) }
             } label: {
                 Image(systemName: on ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 14))
+                    .font(.system(size: DiskMapType.scaled(14)))
                     .foregroundStyle(on ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
             }
             .buttonStyle(.plain)
@@ -552,7 +552,8 @@ struct FileBrowserView: View {
             .simultaneousGesture(TapGesture(count: 2).onEnded { openItem(row.id) })
             .accessibilityLabel("\(name), \(kind), \(ByteFormat.string(row.size)), modified \(modified)")
             .accessibilityAddTraits(selected ? .isSelected : [])
-            .accessibilityAction(named: isDir ? "Open" : "Reveal in Finder") { openItem(row.id) }
+            .accessibilityActions { if isDir { Button("Open") { openItem(row.id) } } }
+            .rowActions(path: absPath, stage: { model.stageRow(path: absPath, size: row.size, reason: "File Browser") })
         }
         .padding(.horizontal, Col.hPad)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -613,7 +614,7 @@ struct FileBrowserView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "folder")
-                .font(.system(size: 28, weight: .light))
+                .font(.system(size: DiskMapType.scaled(28), weight: .light))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(rawChildren.isEmpty ? "This folder is empty" : "No items match this filter")
                 .font(DiskMapType.section)
@@ -963,7 +964,7 @@ private struct FolderBrowserInspector: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "folder.fill")
-                        .font(.system(size: 22, weight: .medium))
+                        .font(.system(size: DiskMapType.scaled(22), weight: .medium))
                         .foregroundStyle(DiskMapTheme.folderTint)
                         .frame(width: 52, height: 52)
                         .background(
@@ -975,7 +976,7 @@ private struct FolderBrowserInspector: View {
                             .font(DiskMapType.callout)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(ByteFormat.string(bytes))
-                            .font(.system(size: 24, weight: .semibold).monospacedDigit())
+                            .font(.system(size: DiskMapType.scaled(24), weight: .semibold).monospacedDigit())
                         Text(String(format: "%.1f%% of used storage", min(100, Double(bytes) / Double(usedDenominator) * 100)))
                             .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)
@@ -1204,7 +1205,7 @@ private struct FileBrowserInspector: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: kind.symbolName)
-                        .font(.system(size: 22, weight: .medium))
+                        .font(.system(size: DiskMapType.scaled(22), weight: .medium))
                         .foregroundStyle(DiskMapTheme.ink)
                         .frame(width: 52, height: 52)
                         .background(RoundedRectangle(cornerRadius: 12).fill(DiskMapTheme.ink.opacity(0.08)))
@@ -1215,7 +1216,7 @@ private struct FileBrowserInspector: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                         Text(ByteFormat.string(size))
-                            .font(.system(size: 24, weight: .semibold).monospacedDigit())
+                            .font(.system(size: DiskMapType.scaled(24), weight: .semibold).monospacedDigit())
                         Text(kind.title)
                             .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)

@@ -165,7 +165,7 @@ struct DuplicatesView: View {
             DuplicateEmptyIllustration()
             VStack(spacing: 7) {
                 Text(model.duplicateDidRun ? "No duplicate groups found" : "Find files with identical contents")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: DiskMapType.scaled(18), weight: .semibold))
                     .foregroundStyle(DiskMapTheme.ink)
                 Text(model.duplicateDidRun
                      ? "DiskMap didn’t find independently stored duplicate groups in this scan."
@@ -201,7 +201,7 @@ struct DuplicatesView: View {
         Section {
             if group.sharesStorage {
                 Text("Shares storage. Deleting one copy does not free \(diskByteString(onDisk(group))). That space is freed only if every copy in this group is removed.")
-                    .font(.callout)
+                    .font(DiskMapType.callout)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             ForEach(group.fileIDs, id: \.self) { id in
@@ -334,7 +334,7 @@ private struct DuplicateEmptyIllustration: View {
             fileCard(offset: CGSize(width: 14, height: -8), tint: DiskMapTheme.developer.opacity(0.22))
             fileCard(offset: CGSize(width: -14, height: 8), tint: DiskMapTheme.info.opacity(0.18))
             Image(systemName: "equal.circle.fill")
-                .font(.system(size: 26, weight: .semibold))
+                .font(.system(size: DiskMapType.scaled(26), weight: .semibold))
                 .foregroundStyle(DiskMapTheme.ink)
                 .background(Circle().fill(DiskMapTheme.cardFill).frame(width: 34, height: 34))
         }

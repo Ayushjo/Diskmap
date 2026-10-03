@@ -56,7 +56,7 @@ struct SnapshotCompareView: View {
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(SnapshotCompareText.signed(root.delta))
-                    .font(.system(size: 30, weight: .semibold).monospacedDigit())
+                    .font(.system(size: DiskMapType.scaled(30), weight: .semibold).monospacedDigit())
                     .foregroundStyle(SnapshotCompareText.color(for: root.delta))
                 Text("in \(CanonicalPath.displayPath(absolutePath: comparison.after.rootPath)) over \(SnapshotCompareText.span(from: beforeRecord.header.capturedAt, to: afterRecord.header.capturedAt))")
                     .font(DiskMapType.body)
@@ -175,7 +175,7 @@ struct SnapshotCompareView: View {
                     let count = filter == .all ? children.count : children.filter(filter.matches).count
                     Button { levelFilter = filter } label: {
                         Text("\(filter.title) \(count)")
-                            .font(.system(size: 11, weight: levelFilter == filter ? .semibold : .regular))
+                            .font(.system(size: DiskMapType.scaled(11), weight: levelFilter == filter ? .semibold : .regular))
                             .foregroundStyle(levelFilter == filter ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
                             .padding(.horizontal, 9)
                             .padding(.vertical, 5)

@@ -615,7 +615,7 @@ struct OverviewView: View {
                     .font(DiskMapType.caption)
                     .foregroundStyle(DiskMapTheme.mutedLabel)
                 Text("~" + ByteFormat.string(snap.reviewableBytes))
-                    .font(.system(size: 18, weight: .semibold).monospacedDigit())
+                    .font(.system(size: DiskMapType.scaled(18), weight: .semibold).monospacedDigit())
                     .foregroundStyle(DiskMapTheme.safe)
                 Text("Estimated — review before deleting.")
                     .font(DiskMapType.micro)

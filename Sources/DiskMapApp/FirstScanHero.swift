@@ -64,7 +64,7 @@ struct FirstScanHero: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "lock.fill")
-                    .font(.system(size: 9))
+                    .font(.system(size: DiskMapType.scaled(9)))
                 Text("Nothing is uploaded. Your scan stays on this Mac.")
                     .font(DiskMapType.caption)
             }
@@ -90,7 +90,7 @@ struct FirstScanHero: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(scanHeadline)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: DiskMapType.scaled(20), weight: .semibold))
                         .foregroundStyle(DiskMapTheme.ink)
                     Text(scanSubhead)
                         .font(DiskMapType.body)
@@ -154,7 +154,7 @@ struct FirstScanHero: View {
     private func liveStat(value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(.system(size: 18, weight: .semibold).monospacedDigit())
+                .font(.system(size: DiskMapType.scaled(18), weight: .semibold).monospacedDigit())
                 .foregroundStyle(DiskMapTheme.ink)
                 .contentTransition(.numericText())
             Text(label)

@@ -61,10 +61,30 @@
 - Not done here: a live VoiceOver walk-through (needs a person at the
   machine); the tree dumps stand in for it.
 
+## Done on `feat/a11y-text-keys` (TASK-085, 2026-10-03)
+
+- **Text size.** View ▸ Text Size (⌘+ / ⌘− / ⌘0) and Settings: Smaller 0.9 ·
+  Default · Larger 1.15 · Largest 1.3. Every `DiskMapType` token is computed
+  from one scale, the 87 hand-set point sizes and 27 system text styles that
+  bypassed the tokens now go through it, the sidebar widens with it, and the
+  window is rebuilt on change. Checked by rendering all 17 destinations at
+  Largest (1440×900): text grows, columns stay aligned, nothing overlaps;
+  long labels wrap or truncate.
+- **Chart keyboard.** Treemap, Sunburst, Flame, Bubbles and Mind Map take
+  focus when shown (and on click). Treemap: arrows go to the nearest tile in
+  that direction. The others: ←/→ siblings by size, ↑ parent, ↓ largest
+  child. Return opens a folder, ⌘↑ goes up, Space is Quick Look, ⌘Space adds
+  to the selection. Verified with key events through the harness (treemap:
+  → → selects Dune, then The Holdovers; sunburst: → → ↓ ends on the largest
+  child of the second-largest folder), repeated runs identical.
+- **VoiceOver row actions.** File Browser, Find, Search, Biggest Files,
+  Biggest Folders, Large Media and Old Downloads rows offer Add to Cleanup
+  (the queue, never the Trash), Reveal in Finder and Quick Look (checked in
+  the `--dump-ax` tree). The Appearance button now reads "Appearance, Match
+  System" instead of its symbol's name.
+
 ## Still open
 
-- Full keyboard grid navigation inside Treemap/Sunburst canvases.
-- A user-facing text-size setting wired to `DiskMapType.scale` (macOS has no
-  system Dynamic Type for arbitrary apps).
-- VoiceOver custom actions for "Add to Cleanup" and "Quick Look" on every
-  row (reveal/open are done; TASK-085).
+- Row actions on the remaining lists (Safe to Review, Caches, Duplicates,
+  Developer Storage, Applications).
+- A live VoiceOver walk-through by a person; the tree dumps stand in for it.

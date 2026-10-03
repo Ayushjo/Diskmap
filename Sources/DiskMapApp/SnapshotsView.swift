@@ -228,7 +228,7 @@ struct SnapshotsView: View {
                         listFilter = f
                     } label: {
                         Text("\(f.title) \(count)")
-                            .font(.system(size: 11, weight: listFilter == f ? .semibold : .regular))
+                            .font(.system(size: DiskMapType.scaled(11), weight: listFilter == f ? .semibold : .regular))
                             .foregroundStyle(listFilter == f ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
@@ -268,7 +268,7 @@ struct SnapshotsView: View {
         } label: {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "externaldrive.fill")
-                    .font(.system(size: 16))
+                    .font(.system(size: DiskMapType.scaled(16)))
                     .foregroundStyle(DiskMapTheme.info)
                     .frame(width: 28, height: 28)
                     .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -280,7 +280,7 @@ struct SnapshotsView: View {
                             .lineLimit(1)
                         if rec.isCurrent {
                             Text("Current")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.system(size: DiskMapType.scaled(9), weight: .semibold))
                                 .foregroundStyle(DiskMapTheme.info)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -489,7 +489,7 @@ struct SnapshotsView: View {
                 if let kind = entry.kind { KindBadge(kind: kind) }
             }
             Text(SnapshotCompareText.signed(entry.delta))
-                .font(.system(size: 26, weight: .semibold).monospacedDigit())
+                .font(.system(size: DiskMapType.scaled(26), weight: .semibold).monospacedDigit())
                 .foregroundStyle(SnapshotCompareText.color(for: entry.delta))
             Text(CanonicalPath.displayPath(absolutePath: path))
                 .font(DiskMapType.caption)

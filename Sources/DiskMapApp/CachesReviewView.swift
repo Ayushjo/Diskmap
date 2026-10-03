@@ -117,7 +117,7 @@ struct CachesReviewView: View {
 
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "internaldrive")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: DiskMapType.scaled(18), weight: .semibold))
                     .foregroundStyle(Color(red: 0.45, green: 0.35, blue: 0.85))
                     .frame(width: 36, height: 36)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color(red: 0.45, green: 0.35, blue: 0.85).opacity(0.12)))
@@ -450,7 +450,7 @@ struct ReviewableInspector: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: target.symbolName)
-                        .font(.system(size: 24, weight: .medium))
+                        .font(.system(size: DiskMapType.scaled(24), weight: .medium))
                         .foregroundStyle(DiskMapTheme.ink)
                         .frame(width: 56, height: 56)
                         .background(RoundedRectangle(cornerRadius: 14).fill(DiskMapTheme.ink.opacity(0.08)))
@@ -459,7 +459,7 @@ struct ReviewableInspector: View {
                             .font(DiskMapType.callout)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(ByteFormat.string(target.bytes))
-                            .font(.system(size: 26, weight: .semibold).monospacedDigit())
+                            .font(.system(size: DiskMapType.scaled(26), weight: .semibold).monospacedDigit())
                         Text(target.detail)
                             .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.mutedLabel)

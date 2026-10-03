@@ -29,7 +29,7 @@ struct BreadcrumbBar: View {
                 ForEach(Array(chain.enumerated()), id: \.element) { index, id in
                     if index > 0 {
                         Image(systemName: "chevron.right")
-                            .font(.caption2)
+                            .font(DiskMapType.micro)
                             .foregroundStyle(DiskMapTheme.mutedLabel.opacity(0.7))
                     }
                     Button(tree.name(of: id)) { jump(id) }

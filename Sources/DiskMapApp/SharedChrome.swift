@@ -72,7 +72,7 @@ struct DiskMapMenu<Option: Hashable>: View {
                     .lineLimit(1)
                 Spacer(minLength: 2)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: DiskMapType.scaled(9), weight: .semibold))
                     .foregroundStyle(DiskMapTheme.mutedLabel)
             }
             .font(DiskMapType.smallMedium)
@@ -165,7 +165,7 @@ struct DiskMapEmptyState: View {
     var body: some View {
         VStack(spacing: DiskMapSpace.sm) {
             Image(systemName: symbol)
-                .font(.system(size: 28, weight: .light))
+                .font(.system(size: DiskMapType.scaled(28), weight: .light))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
                 .accessibilityHidden(true)
             Text(title)
@@ -510,7 +510,7 @@ struct DiskMapPageHeader: View {
         HStack(alignment: .top, spacing: DiskMapSpace.sm) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: DiskMapType.scaled(18), weight: .semibold))
                     .foregroundStyle(symbolTint)
                     .frame(width: 36, height: 36)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(symbolTint.opacity(0.10)))
@@ -633,7 +633,7 @@ struct MediaThumbnailView: View {
             }
             if showPlayBadge {
                 Image(systemName: "play.circle.fill")
-                    .font(.system(size: 22))
+                    .font(.system(size: DiskMapType.scaled(22)))
                     .foregroundStyle(.white.opacity(0.95))
                     .shadow(radius: 2)
             }

@@ -33,3 +33,58 @@ extension View {
             }
     }
 }
+
+/// Arrow keys, Return, Space and ⌘Space for a chart (TASK-085). The chart
+/// takes keyboard focus when clicked.
+struct ChartKeyboard: ViewModifier {
+    let move: (ChartNavigation.Direction) -> Void
+    let open: () -> Void
+    let enclosing: () -> Void
+    let quickLook: () -> Void
+    let addToSelection: () -> Void
+    @FocusState private var focused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .focusable()
+            .focused($focused)
+            .focusEffectDisabled()
+            .simultaneousGesture(TapGesture().onEnded { focused = true })
+            // Visualize has nothing else to type into: the chart takes the
+            // keys as soon as it is shown, not only after a click.
+            .onAppear { focused = true }
+            .onKeyPress(phases: .down) { press in
+                let command = press.modifiers.contains(.command)
+                switch press.key {
+                case .leftArrow: move(.left)
+                case .rightArrow: move(.right)
+                case .upArrow: if command { enclosing() } else { move(.up) }
+                case .downArrow: if command { open() } else { move(.down) }
+                case .return: open()
+                case .space: if command { addToSelection() } else { quickLook() }
+                default: return .ignored
+                }
+                return .handled
+            }
+    }
+}
+
+extension View {
+    func chartKeyboard(move: @escaping (ChartNavigation.Direction) -> Void, open: @escaping () -> Void,
+                       enclosing: @escaping () -> Void, quickLook: @escaping () -> Void,
+                       addToSelection: @escaping () -> Void) -> some View {
+        modifier(ChartKeyboard(move: move, open: open, enclosing: enclosing, quickLook: quickLook, addToSelection: addToSelection))
+    }
+}
+
+extension View {
+    /// VoiceOver actions every list row shares (TASK-085): Add to Cleanup
+    /// (the queue — never the Trash), Reveal in Finder, Quick Look.
+    func rowActions(path: String, stage: (() -> Void)?) -> some View {
+        accessibilityActions {
+            if let stage { Button("Add to Cleanup", action: stage) }
+            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+            Button("Quick Look") { DiskMapQuickLook.shared.show(URL(fileURLWithPath: path)) }
+        }
+    }
+}

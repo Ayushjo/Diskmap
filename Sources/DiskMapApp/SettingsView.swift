@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage("ShowMenuBarExtra") private var showMenuBarExtra = true
     @AppStorage(CloneAccounting.key) private var cloneMode = CloneAccounting.defaultMode.rawValue
     @AppStorage(ScanModel.keepHistoryKey) private var keepHistory = true
+    @AppStorage(TextSize.storageKey) private var textSize = TextSize.standard.rawValue
 
     var body: some View {
         Form {
@@ -33,6 +34,12 @@ struct SettingsView: View {
                 Text("History")
             }
             Section {
+                Picker("Text size", selection: Binding(
+                    get: { TextSize(rawValue: textSize) ?? .standard },
+                    set: { DiskMapType.scale = $0.scale; textSize = $0.rawValue }
+                )) {
+                    ForEach(TextSize.allCases) { Text($0.title).tag($0) }
+                }
                 Toggle("Show in Menu Bar", isOn: $showMenuBarExtra)
             } header: {
                 Text("General")

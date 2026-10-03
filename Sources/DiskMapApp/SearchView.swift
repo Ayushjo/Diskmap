@@ -159,7 +159,7 @@ struct SearchView: View {
             Text(total > shown
                  ? "Showing \(shown) biggest of \(total.formatted()) matches across \(result.matchedNames.formatted()) names"
                  : "\(total.formatted()) matches")
-                .font(.caption)
+                .font(DiskMapType.caption)
                 .foregroundStyle(.secondary)
             Spacer()
         }
@@ -184,13 +184,13 @@ struct SearchView: View {
                     Text(tree.name(of: id))
                         .lineLimit(1)
                     Text(tree.path(of: id, root: rootURL).path)
-                        .font(.caption)
+                        .font(DiskMapType.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer()
                     Text(ByteCountFormatter.string(fromByteCount: totals[index], countStyle: .file))
-                        .font(.caption.monospacedDigit())
+                        .font(DiskMapType.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
@@ -200,7 +200,9 @@ struct SearchView: View {
             .simultaneousGesture(TapGesture(count: 2).onEnded { revealDownloadedFile(id, tree: tree, root: rootURL) })
             .accessibilityLabel("\(tree.name(of: id)), \(ByteCountFormatter.string(fromByteCount: totals[index], countStyle: .file))")
             .accessibilityAddTraits(selectedID == id ? .isSelected : [])
-            .accessibilityAction(named: "Reveal in Finder") { revealDownloadedFile(id, tree: tree, root: rootURL) }
+            .rowActions(path: tree.path(of: id, root: rootURL).path, stage: {
+                model.stageRow(path: tree.path(of: id, root: rootURL).path, size: totals[index], reason: "Search: \(query)")
+            })
             Button("Show") {
                 currentNode = isDirectory ? id : tree.parent[index]
                 openInMap()

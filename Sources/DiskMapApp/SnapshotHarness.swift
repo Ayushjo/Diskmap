@@ -42,7 +42,7 @@ enum SnapshotHarness {
         let appearanceName = value(after: "--appearance") ?? "light"
         // Optional mid-scan frame: `--snapshot-at 3` captures 3 s after launch.
         if let at = value(after: "--snapshot-at").flatMap(Double.init),
-           let window = NSApp.windows.first(where: { $0.contentView != nil }) {
+           let window = mainWindow() {
             window.setContentSize(NSSize(width: 1280, height: 820))
             try? await Task.sleep(nanoseconds: UInt64(at * 1_000_000_000))
             write(window: window, to: dir.appendingPathComponent("scanning-\(appearanceName).png"))
@@ -52,8 +52,11 @@ enum SnapshotHarness {
             if model.tree != nil && !model.isScanning { break }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
-        guard let window = NSApp.windows.first(where: { $0.contentView != nil && $0.isVisible })
-            ?? NSApp.windows.first else {
+        // A quick rescan can finish before SwiftUI has made the window.
+        for _ in 0..<100 where mainWindow() == nil {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard let window = mainWindow() else {
             NSApp.terminate(nil)
             return
         }
@@ -175,6 +178,7 @@ enum SnapshotHarness {
         let table: [String: (String, UInt16)] = [
             "j": ("j", 38), "k": ("k", 40), "down": ("\u{F701}", 125), "up": ("\u{F700}", 126),
             "return": ("\r", 36), "space": (" ", 49),
+            "left": ("\u{F702}", 123), "right": ("\u{F703}", 124),
         ]
         for name in keys.split(separator: ",").map(String.init) {
             guard let (characters, code) = table[name] else { continue }
@@ -200,6 +204,15 @@ enum SnapshotHarness {
         case .cleanMedia: return .largeMedia
         default: return nil
         }
+    }
+
+    /// The app's window — not the menu bar extra's status-item window, which
+    /// `NSApp.windows` sometimes lists first (a 69×68 render, 2026-10-03).
+    private static func mainWindow() -> NSWindow? {
+        let candidates = NSApp.windows.filter { $0.contentView != nil && $0.canBecomeMain }
+        let visible = candidates.filter(\.isVisible)
+        return (visible.isEmpty ? candidates : visible)
+            .max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
     }
 
     private static func snapshotSize() -> NSSize {

@@ -59,3 +59,63 @@ public enum ChartAccessibility {
         return "\(Int((fraction * 100).rounded())) percent"
     }
 }
+
+/// Moving the selection inside a chart with the arrow keys (TASK-085).
+public enum ChartNavigation {
+    public enum Direction: Sendable { case left, right, up, down }
+
+    /// Treemap: the tile whose centre lies `direction` of the current one,
+    /// preferring the closest along that axis and penalising sideways drift.
+    /// No current tile → the largest (first) one.
+    public static func neighbor(of id: Int32?, toward direction: Direction,
+                                in tiles: [(id: Int32, rect: CGRect)]) -> Int32? {
+        guard let id, let current = tiles.first(where: { $0.id == id }) else { return tiles.first?.id }
+        let origin = CGPoint(x: current.rect.midX, y: current.rect.midY)
+        var best: (id: Int32, score: CGFloat)?
+        for tile in tiles where tile.id != id {
+            let dx = tile.rect.midX - origin.x
+            let dy = tile.rect.midY - origin.y
+            let along: CGFloat, across: CGFloat
+            switch direction {
+            case .right: along = dx; across = abs(dy)
+            case .left: along = -dx; across = abs(dy)
+            case .down: along = dy; across = abs(dx)
+            case .up: along = -dy; across = abs(dx)
+            }
+            guard along > 0.5 else { continue }
+            let score = along + 2 * across
+            if let current = best, current.score <= score { continue }
+            best = (tile.id, score)
+        }
+        return best?.id ?? id
+    }
+
+    /// Sunburst, flame, bubbles: left/right step between siblings (largest
+    /// first), up goes to the parent, down to the largest child. Only real
+    /// nodes — an "Other" slice cannot be selected.
+    public static func step(from id: Int32?, toward direction: Direction, in slices: [ChartSlice]) -> Int32? {
+        func real(_ list: [ChartSlice]) -> [ChartSlice] {
+            list.filter { $0.nodeID != nil }.sorted { $0.size != $1.size ? $0.size > $1.size : ($0.nodeID ?? 0) < ($1.nodeID ?? 0) }
+        }
+        // Find the current slice, its siblings and its parent.
+        func locate(_ list: [ChartSlice], parent: ChartSlice?) -> (siblings: [ChartSlice], slice: ChartSlice, parent: ChartSlice?)? {
+            for slice in list {
+                if slice.nodeID == id { return (list, slice, parent) }
+                if let found = locate(slice.children, parent: slice) { return found }
+            }
+            return nil
+        }
+        guard id != nil, let found = locate(slices, parent: nil) else { return real(slices).first?.nodeID }
+        switch direction {
+        case .left, .right:
+            let siblings = real(found.siblings)
+            guard let index = siblings.firstIndex(where: { $0.nodeID == id }) else { return id }
+            let next = direction == .right ? min(index + 1, siblings.count - 1) : max(index - 1, 0)
+            return siblings[next].nodeID
+        case .up:
+            return found.parent?.nodeID ?? id
+        case .down:
+            return real(found.slice.children).first?.nodeID ?? id
+        }
+    }
+}

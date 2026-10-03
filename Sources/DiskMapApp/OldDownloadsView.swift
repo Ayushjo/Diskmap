@@ -109,7 +109,7 @@ struct OldDownloadsView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "arrow.down.circle.fill")
-                .font(.system(size: 28))
+                .font(.system(size: DiskMapType.scaled(28)))
                 .foregroundStyle(DiskMapTheme.info)
                 .frame(width: 48, height: 48)
                 .background(DiskMapTheme.info.opacity(0.12), in: Circle())
@@ -284,7 +284,7 @@ struct OldDownloadsView: View {
             } label: {
                 let allOn = !visible.isEmpty && visible.allSatisfy { checked.contains($0.nodeID) }
                 Image(systemName: allOn ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16))
+                    .font(.system(size: DiskMapType.scaled(16)))
                     .foregroundStyle(allOn ? DiskMapTheme.info : DiskMapTheme.mutedLabel)
             }
             .buttonStyle(.plain)
@@ -323,7 +323,7 @@ struct OldDownloadsView: View {
                 }
             } label: {
                 Image(systemName: checked.contains(item.nodeID) ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16))
+                    .font(.system(size: DiskMapType.scaled(16)))
                     .foregroundStyle(checked.contains(item.nodeID) ? DiskMapTheme.info : DiskMapTheme.mutedLabel)
             }
             .buttonStyle(.plain)
@@ -334,7 +334,7 @@ struct OldDownloadsView: View {
                 HStack(spacing: 8) {
                     HStack(spacing: 10) {
                         Image(systemName: item.kind.symbolName)
-                            .font(.system(size: 14))
+                            .font(.system(size: DiskMapType.scaled(14)))
                             .foregroundStyle(DiskMapTheme.info)
                             .frame(width: 28, height: 28)
                             .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -375,7 +375,7 @@ struct OldDownloadsView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(item.name), \(ByteFormat.string(item.bytes)), \(OldDownloadsCatalog.ageLabel(item.ageDays))")
             .accessibilityAddTraits(selected ? .isSelected : [])
-            .accessibilityAction(named: "Reveal in Finder") { reveal(item) }
+            .rowActions(path: item.absolutePath, stage: { Task { await stage([item]) } })
 
             Menu {
                 Button("Reveal in Finder") { reveal(item) }
@@ -478,7 +478,7 @@ struct OldDownloadsView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(spacing: 12) {
                             Image(systemName: item.kind.symbolName)
-                                .font(.system(size: 28))
+                                .font(.system(size: DiskMapType.scaled(28)))
                                 .foregroundStyle(DiskMapTheme.info)
                                 .frame(width: 64, height: 64)
                                 .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -487,7 +487,7 @@ struct OldDownloadsView: View {
                                     .font(DiskMapType.section)
                                     .foregroundStyle(DiskMapTheme.ink)
                                 Text(ByteFormat.string(item.bytes))
-                                    .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                                    .font(.system(size: DiskMapType.scaled(20), weight: .semibold).monospacedDigit())
                                 Text("\(item.kind.title)")
                                     .font(DiskMapType.caption)
                                     .foregroundStyle(DiskMapTheme.mutedLabel)

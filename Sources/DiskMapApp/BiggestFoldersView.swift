@@ -194,7 +194,7 @@ struct BiggestFoldersView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "folder")
-                .font(.system(size: 28, weight: .light))
+                .font(.system(size: DiskMapType.scaled(28), weight: .light))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             Text(rawRows.isEmpty ? "Nothing with a size in this folder" : "No folders match this filter")
                 .font(DiskMapType.section)
@@ -316,6 +316,9 @@ struct BiggestFoldersView: View {
                 }
             )
             .accessibilityLabel("\(name), \(ByteFormat.string(row.size))")
+            .rowActions(path: abs, stage: safety.level == .protected ? nil : {
+                model.stageRow(path: abs, size: row.size, reason: "Biggest folder: " + name)
+            })
 
             if isDir {
                 Button {
@@ -362,7 +365,7 @@ struct BiggestFoldersView: View {
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "folder")
-                        .font(.system(size: 28, weight: .light))
+                        .font(.system(size: DiskMapType.scaled(28), weight: .light))
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     Text("Select a folder")
                         .font(DiskMapType.body)
@@ -389,7 +392,7 @@ private struct FolderInspectorPanel: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "folder.fill")
-                        .font(.system(size: 26, weight: .medium))
+                        .font(.system(size: DiskMapType.scaled(26), weight: .medium))
                         .foregroundStyle(DiskMapTheme.ink)
                         .frame(width: 56, height: 56)
                         .background(
@@ -405,7 +408,7 @@ private struct FolderInspectorPanel: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                         Text(ByteFormat.string(insight.bytes))
-                            .font(.system(size: 26, weight: .semibold).monospacedDigit())
+                            .font(.system(size: DiskMapType.scaled(26), weight: .semibold).monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(String(format: "%.1f%% of used storage", min(100, pct * 100)))
                             .font(DiskMapType.caption)

@@ -124,7 +124,7 @@ struct SavedSearchSection: View {
                     .font(DiskMapType.small)
                     .frame(width: 18)
                 Text(search.name)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                    .font(.system(size: DiskMapType.scaled(13), weight: selected ? .semibold : .regular))
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if let total {

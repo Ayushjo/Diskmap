@@ -49,7 +49,7 @@ struct CleanupQueueView: View {
             if model.stagedItems.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "tray")
-                        .font(.system(size: 28, weight: .light))
+                        .font(.system(size: DiskMapType.scaled(28), weight: .light))
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     Text("Nothing staged")
                         .font(DiskMapType.callout)
@@ -80,14 +80,14 @@ struct CleanupQueueView: View {
                                             .lineLimit(1)
                                             .truncationMode(.middle)
                                         Text(rowCaption(for: item))
-                                            .font(.caption.monospacedDigit())
+                                            .font(DiskMapType.caption.monospacedDigit())
                                             .foregroundStyle(DiskMapTheme.mutedLabel)
                                         // Staged from any screen (Biggest Files
                                         // can surface Docker.raw): warn where
                                         // the Trash would damage a tool's state.
                                         if let recipe = CleanupRecipes.recipe(forPath: item.url.path), recipe.trashIsUnsafe {
                                             Text("Moving this to the Trash damages \(recipe.id == "docker" ? "Docker" : "the tool")’s data. Use `\(recipe.command)` instead.")
-                                                .font(.caption)
+                                                .font(DiskMapType.caption)
                                                 .foregroundStyle(DiskMapTheme.danger)
                                                 .fixedSize(horizontal: false, vertical: true)
                                         }
@@ -139,7 +139,7 @@ struct CleanupQueueView: View {
                 // the receipt can't push the staged list out of the window.
                 ScrollView {
                     Text(model.lastCommitLines.joined(separator: "\n"))
-                        .font(.caption)
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                         .textSelection(.enabled)
                         .padding(12)

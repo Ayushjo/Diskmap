@@ -1465,3 +1465,15 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   added on their own. Harness `--saved-searches '<json>'` (memory only).
   Verified: render with two saved searches — "Big videos 42.42 GB", equal
   to Find's total for the same query. 5 tests. 299 tests green.
+- [x] **TASK-085: Text size, chart keyboard, VoiceOver row actions**
+  `TextSize` (0.9 / 1.0 / 1.15 / 1.3) drives every `DiskMapType` token,
+  87 literal point sizes and 27 system text styles, and the sidebar width;
+  View ▸ Text Size with ⌘+ ⌘− ⌘0 and a Settings picker; the window rebuilds
+  on change. All destinations rendered at Largest. Charts are focusable:
+  treemap arrows by geometry, radial/stacked charts by sibling/parent/child
+  (`ChartNavigation`, core, tested), Return / ⌘↑ / Space / ⌘Space. Shared
+  `.rowActions` gives seven lists Add to Cleanup / Reveal / Quick Look for
+  VoiceOver. Harness: picks the real window (it rendered the menu bar
+  status item once) and waits for it; arrow keys; note that `-Key value`
+  defaults must come before valueless flags, or the value is taken as a
+  document to open and SwiftUI opens no window. 303 tests green.

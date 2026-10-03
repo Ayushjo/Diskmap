@@ -350,7 +350,7 @@ struct DeveloperStorageView: View {
                         tableTab = tab
                     } label: {
                         Text("\(tab.title) (\(count))")
-                            .font(.system(size: 12, weight: tableTab == tab ? .semibold : .regular))
+                            .font(.system(size: DiskMapType.scaled(12), weight: tableTab == tab ? .semibold : .regular))
                             .foregroundStyle(tableTab == tab ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
                             .padding(.bottom, 8)
                             .overlay(alignment: .bottom) {
@@ -652,7 +652,7 @@ private struct DeveloperInspector: View {
                             .font(DiskMapType.headline)
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(ByteFormat.string(item.bytes))
-                            .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                            .font(.system(size: DiskMapType.scaled(20), weight: .semibold).monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(item.safety.level.title)
                             .font(DiskMapType.captionStrong)

@@ -260,7 +260,7 @@ struct ForgottenFilesView: View {
                             HStack(spacing: 5) {
                                 Circle().fill(ageTint(bucket)).frame(width: 7, height: 7)
                                 Text("\(bucket.shortTitle) · \(ByteFormat.string(bytes))")
-                                    .font(.system(size: 10, weight: ageFilter == bucket ? .bold : .medium))
+                                    .font(.system(size: DiskMapType.scaled(10), weight: ageFilter == bucket ? .bold : .medium))
                                     .foregroundStyle(DiskMapTheme.ink)
                             }
                         }
@@ -393,7 +393,7 @@ struct ForgottenFilesView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 28, weight: .light))
+                .font(.system(size: DiskMapType.scaled(28), weight: .light))
                 .foregroundStyle(DiskMapTheme.mutedLabel)
             if summary.excludedCount > 0 && summary.reviewableCount == 0 && filterTab != .excluded {
                 Text("Nothing worth reviewing yet")
@@ -464,7 +464,7 @@ struct ForgottenFilesView: View {
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "clock")
-                        .font(.system(size: 28, weight: .light))
+                        .font(.system(size: DiskMapType.scaled(28), weight: .light))
                         .foregroundStyle(DiskMapTheme.mutedLabel)
                     Text("Select a file")
                         .font(DiskMapType.body)
@@ -527,7 +527,7 @@ private struct ForgottenRow: View {
         HStack(spacing: 8) {
             Button(action: onToggleCheck) {
                 Image(systemName: checked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 15))
+                    .font(.system(size: DiskMapType.scaled(15)))
                     .foregroundStyle(checked ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
             }
             .buttonStyle(.plain)
@@ -627,7 +627,7 @@ private struct ForgottenInspectorPanel: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: candidate.kind.symbolName)
-                        .font(.system(size: 26, weight: .medium))
+                        .font(.system(size: DiskMapType.scaled(26), weight: .medium))
                         .foregroundStyle(DiskMapTheme.ink)
                         .frame(width: 56, height: 56)
                         .background(
@@ -641,7 +641,7 @@ private struct ForgottenInspectorPanel: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                         Text(ByteFormat.string(candidate.bytes))
-                            .font(.system(size: 26, weight: .semibold).monospacedDigit())
+                            .font(.system(size: DiskMapType.scaled(26), weight: .semibold).monospacedDigit())
                             .foregroundStyle(DiskMapTheme.ink)
                         Text(candidate.kind.title + " · " + ForgottenAgeFormat.string(candidate.ageDays))
                             .font(DiskMapType.caption)
