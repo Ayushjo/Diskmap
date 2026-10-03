@@ -257,6 +257,10 @@ struct AppShellView: View {
                                 navRow(dest)
                             }
                         }
+                        // TASK-081: saved Find queries, outside the numbered list.
+                        if section == .find {
+                            SavedSearchSection(model: model, enabled: hasCompletedScan)
+                        }
                     }
                 }
                 .padding(.bottom, 12)

@@ -103,6 +103,15 @@ struct CommandPalette: View {
                 }
             },
         ]
+        // TASK-081: saved searches are commands too.
+        for search in model.savedSearches {
+            let total = model.savedSearchTotals[search.id]
+            list.append(Command(title: search.name,
+                                subtitle: "Saved search · " + (total.map { "\($0.count.formatted()) · \(ByteFormat.string($0.bytes))" } ?? search.query),
+                                symbol: "magnifyingglass.circle") {
+                model.openSavedSearch(search)
+            })
+        }
         if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             for hit in searchHits {
                 list.append(Command(

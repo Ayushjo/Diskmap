@@ -81,10 +81,18 @@ final class ScanModel: ObservableObject {
         if recordsLastScan, let record = CleanupRecord.load(from: CleanupRecord.defaultURL()), !record.items.isEmpty {
             lastCleanup = record
         }
+        if recordsLastScan {
+            savedSearches = SavedSearches.decode(UserDefaults.standard.string(forKey: Self.savedSearchesKey))
+        }
     }
 
     /// What the last Move to Trash moved, and where to, for Put Back (TASK-080).
     @Published var lastCleanup: CleanupRecord?
+
+    /// Find queries kept in the sidebar, and their live totals (TASK-081).
+    @Published var savedSearches: [SavedSearch] = []
+    @Published var savedSearchTotals: [UUID: SavedSearches.Total] = [:]
+    var savedSearchTotalsTask: Task<Void, Never>?
 
     private func persistLastCleanup() {
         guard recordsLastScan else { return }
@@ -392,6 +400,7 @@ final class ScanModel: ObservableObject {
             recordHistory(root: url, tree: scannedTree, allocated: prepared.allocated,
                           deniedCount: result.deniedDirectoryIDs.count)
         }
+        refreshSavedSearchTotals()
         if recordsLastScan, let volume = VolumeStats.forPath(url.path) {
             LastScanRecord(rootPath: url.path, scannedAt: Date(), freeBytes: volume.freeBytes,
                            scannedBytes: prepared.allocated.first ?? 0).save()

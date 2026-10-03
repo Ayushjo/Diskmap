@@ -49,6 +49,7 @@ struct FindView: View {
     }
 
     @State private var rows: [Row] = []
+    @State private var savingSearch = false
     @State private var matchCount = 0
     @State private var matchedBytes: Int64 = 0
     @State private var notes: [String] = []
@@ -91,6 +92,10 @@ struct FindView: View {
         }
         .background(DiskMapTheme.cream)
         .task(id: runKey) { await run() }
+        .sheet(isPresented: $savingSearch) {
+            SaveSearchSheet(model: model, isPresented: $savingSearch,
+                            suggestedName: SavedSearches.defaultName(for: model.findQuery, home: home, root: rootURL.path))
+        }
     }
 
     private var checkedRows: [Row] { rows.filter { checked.contains($0.id) } }
@@ -135,6 +140,11 @@ struct FindView: View {
                     .accessibilityLabel("Find query")
                 DiskMapMenu(label: "Sort", options: FileQuery.Sort.allCases, selection: $model.findSort, title: Self.sortTitle)
                     .frame(width: 150)
+                // TASK-081: keep this query in the sidebar (⌘S).
+                Button("Save…") { savingSearch = true }
+                    .keyboardShortcut("s", modifiers: .command)
+                    .disabled(trimmedQuery.isEmpty)
+                    .help("Keep this search in the sidebar, with its size kept up to date")
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -229,6 +239,23 @@ struct FindView: View {
                             .background(RoundedRectangle(cornerRadius: 6).fill(DiskMapTheme.navSelected))
                     }
                     .buttonStyle(.plain)
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Or keep one in the sidebar")
+                    .font(DiskMapType.smallStrong)
+                    .foregroundStyle(DiskMapTheme.ink)
+                HStack(spacing: 8) {
+                    ForEach(SavedSearches.starters, id: \.query) { starter in
+                        let saved = model.savedSearches.contains { $0.query == starter.query }
+                        Button {
+                            model.saveSearch(name: starter.name, query: starter.query, sort: .largest)
+                        } label: {
+                            Label(starter.name, systemImage: saved ? "checkmark" : "plus")
+                        }
+                        .disabled(saved)
+                        .help(starter.query)
+                    }
                 }
             }
             Text("""

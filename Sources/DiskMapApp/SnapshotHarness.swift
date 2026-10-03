@@ -1,4 +1,5 @@
 import AppKit
+import DiskMapCore
 import SwiftUI
 
 /// Developer tool: renders the app's own window to PNG files so UI changes can
@@ -59,6 +60,13 @@ enum SnapshotHarness {
         window.setContentSize(snapshotSize())
         // `--find-query "ext:mp4 size>100MB"` renders Find with that query.
         if let findQuery = value(after: "--find-query") { model.findQuery = findQuery }
+        // `--saved-searches '<json>'`: sidebar saved searches for this run
+        // only (TASK-081) — set in memory, never written to preferences.
+        if let json = value(after: "--saved-searches") {
+            model.savedSearches = SavedSearches.decode(json)
+            model.refreshSavedSearchTotals()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
         // `--start-mode "Mind Map"`: the Visualize mode to open with.
         if let mode = value(after: "--start-mode").flatMap(ExploreViewMode.init(rawValue:)) { model.exploreMode = mode }
 

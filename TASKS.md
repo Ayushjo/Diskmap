@@ -1452,3 +1452,16 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   folder brings its queued child, missing parent recreated, failures not
   recorded, record round trip. No `removeItem` in app or core code; the
   only new file operation is `moveItem` out of the Trash. 294 tests green.
+- [x] **TASK-081: Saved searches in the sidebar**
+  `SavedSearch` (id, name, query, sort) kept as JSON in preferences
+  (`SavedSearches`, max 20; only the app's own model writes). Find has
+  Save… (⌘S) with a name from the query's meaning; the sidebar shows a
+  "Saved" section under Find — outside the numbered list, so ⌘1–⌘9 do not
+  move — with each search's live size (one count-only `FileQuery` pass per
+  search after every scan and on change, off the main thread), selected
+  while Find shows that query; Rename / Move Up / Move Down / Remove from
+  Sidebar (removes the search, never files). ⌘K lists them. Find's empty
+  state offers three starters (Old installers, Big videos, Logs), never
+  added on their own. Harness `--saved-searches '<json>'` (memory only).
+  Verified: render with two saved searches — "Big videos 42.42 GB", equal
+  to Find's total for the same query. 5 tests. 299 tests green.
