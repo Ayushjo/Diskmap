@@ -91,10 +91,6 @@ struct DiskMapMenu<Option: Hashable>: View {
     }
 }
 
-struct DiskMapColumnSpacer: View {
-    var width: CGFloat = DiskMapMetric.checkboxColumnWidth
-    var body: some View { Color.clear.frame(width: width, height: 1) }
-}
 
 // MARK: - Classification badge (color + text — never color alone)
 

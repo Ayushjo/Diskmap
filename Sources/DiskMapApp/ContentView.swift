@@ -910,9 +910,7 @@ enum ExploreViewMode: String, CaseIterable, Identifiable {
     case flame = "Flame"
     case bubbles = "Bubbles"
     case mindMap = "Mind Map"
-    case topSizes = "Top Sizes"
     case ageMap = "Age Map"
-    case folders = "Folders"
     var id: String { rawValue }
 
     var symbol: String {
@@ -922,9 +920,7 @@ enum ExploreViewMode: String, CaseIterable, Identifiable {
         case .flame: return "chart.bar.xaxis"
         case .bubbles: return "circle.grid.2x2"
         case .mindMap: return "point.3.connected.trianglepath.dotted"
-        case .topSizes: return "list.number"
         case .ageMap: return "calendar"
-        case .folders: return "folder"
         }
     }
 
@@ -934,9 +930,7 @@ enum ExploreViewMode: String, CaseIterable, Identifiable {
         case .sunburst: return "See nested folder hierarchy"
         case .flame: return "Find deep storage-heavy paths"
         case .bubbles: return "Large items as proportional bubbles"
-        case .folders: return "Browse folder by folder"
         case .ageMap: return "See storage by age"
-        case .topSizes: return "The biggest items, ranked"
         case .mindMap: return "Explore folder relationships"
         }
     }

@@ -455,67 +455,6 @@ struct AppShellView: View {
         }
     }
 
-    private var forgottenBlurb: String {
-        "Files not modified in over a year. Dates are last-modified — macOS often lacks a reliable last-opened stamp."
-    }
-
-    @ViewBuilder
-    private var forgottenTrailing: some View {
-        if model.tree != nil {
-            if model.analysis.forgottenBytes > 0 {
-                Text(ByteFormat.string(model.analysis.forgottenBytes) + " forgotten")
-                    .font(DiskMapType.bodyStrong.monospacedDigit())
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        Capsule().fill(DiskMapTheme.navSelected)
-                    )
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func findWrapper<Content: View>(
-        title: String,
-        blurb: String,
-        @ViewBuilder content: (FileTree, URL) -> Content
-    ) -> some View {
-        findWrapper(title: title, blurb: blurb, trailing: { EmptyView() }, content: content)
-    }
-
-    @ViewBuilder
-    private func findWrapper<Content: View, Trailing: View>(
-        title: String,
-        blurb: String,
-        @ViewBuilder trailing: () -> Trailing,
-        @ViewBuilder content: (FileTree, URL) -> Content
-    ) -> some View {
-        if let tree = model.tree, let root = model.rootURL, model.selectedTotals.count == tree.count {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(title)
-                            .font(DiskMapType.title)
-                            .foregroundStyle(DiskMapTheme.ink)
-                        Text(blurb)
-                            .font(DiskMapType.body)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                    }
-                    Spacer(minLength: 8)
-                    trailing()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                Divider().overlay(DiskMapTheme.cardStroke)
-                content(tree, root)
-            }
-            .background(DiskMapTheme.cream)
-        } else {
-            needsScan
-        }
-    }
-
     private var needsScan: some View {
         FirstScanHero(
             model: model,
