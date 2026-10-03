@@ -161,7 +161,9 @@ private struct SunburstChart: View {
                 let path = wedgePath(wedge)
                 let isSel = wedge.nodeID == selected || wedge.nodeID.map(multi.contains) == true
                 context.fill(path, with: .color(color(wedge.nodeID)))
-                context.stroke(path, with: .color(isSel ? DiskMapTheme.tileLabel : .black.opacity(0.25)), lineWidth: isSel ? 2 : 1)
+                // Canvas-coloured seams instead of dark outlines; accent for selection.
+                context.stroke(path, with: .color(DiskMapTheme.canvas), lineWidth: 1.5)
+                if isSel { context.stroke(path, with: .color(DiskMapTheme.accent), lineWidth: 2) }
                 let sweep = wedge.end - wedge.start
                 if sweep > 0.14, wedge.outer - wedge.inner > 22 {
                     let mid = (wedge.start + wedge.end) / 2
@@ -169,7 +171,7 @@ private struct SunburstChart: View {
                     let capacity = min(18, max(3, Int(min(sweep * radius, wedge.outer - wedge.inner) / 6)))
                     let short = wedge.label.count > capacity ? String(wedge.label.prefix(capacity - 1)) + "…" : wedge.label
                     context.draw(
-                        Text(short).font(DiskMapType.micro.weight(.semibold)).foregroundStyle(DiskMapTheme.tileLabel),
+                        Text(short).font(.system(size: DiskMapType.scaled(11), weight: .medium)).foregroundStyle(DiskMapTheme.tileLabel.opacity(0.85)),
                         at: polarPoint(center: wedge.center, angle: mid, radius: radius)
                     )
                 }
@@ -207,15 +209,16 @@ private struct FlameChart: View {
         let bars = flameBars(slices, in: size)
         Canvas { context, _ in
             for bar in bars {
-                let path = Path(bar.rect.insetBy(dx: 0.5, dy: 0.5))
+                let inset = bar.rect.insetBy(dx: 1.5, dy: 1.5)
+                let path = Path(roundedRect: inset, cornerRadius: min(4, min(inset.width, inset.height) / 3), style: .continuous)
                 let isSel = bar.nodeID == selected || bar.nodeID.map(multi.contains) == true
                 context.fill(path, with: .color(color(bar.nodeID)))
-                context.stroke(path, with: .color(isSel ? DiskMapTheme.tileLabel : .black.opacity(0.25)), lineWidth: isSel ? 2 : 1)
+                if isSel { context.stroke(path, with: .color(DiskMapTheme.accent), lineWidth: 2) }
                 if bar.rect.width > 56 && bar.rect.height > 18 {
                     let capacity = max(3, Int((bar.rect.width - 14) / 6))
                     let short = bar.label.count > capacity ? String(bar.label.prefix(capacity - 1)) + "…" : bar.label
                     context.draw(
-                        Text(short).font(DiskMapType.micro.weight(.semibold)).foregroundStyle(DiskMapTheme.tileLabel),
+                        Text(short).font(.system(size: DiskMapType.scaled(11), weight: .medium)).foregroundStyle(DiskMapTheme.tileLabel.opacity(0.85)),
                         at: CGPoint(x: bar.rect.minX + 6, y: bar.rect.midY),
                         anchor: .leading
                     )
@@ -268,8 +271,8 @@ private struct BubbleChart: View {
                 context.fill(path, with: .color(fill))
                 context.stroke(
                     path,
-                    with: .color(isSel ? DiskMapTheme.tileLabel : DiskMapTheme.tileLabel.opacity(0.18)),
-                    lineWidth: isSel ? 2.5 : 1
+                    with: .color(isSel ? DiskMapTheme.accent : DiskMapTheme.tileLabel.opacity(0.08)),
+                    lineWidth: isSel ? 2 : 1
                 )
                 if circle.radius > (circle.isContainer ? 60 : 28) {
                     let maxChars = max(4, Int(circle.radius / 4.5))
@@ -279,7 +282,7 @@ private struct BubbleChart: View {
                     let fontSize: CGFloat = circle.radius > 48 ? 11 : 9
                     context.draw(
                         Text(short)
-                            .font(.system(size: fontSize, weight: .semibold))
+                            .font(.system(size: fontSize, weight: .medium))
                             .foregroundStyle(DiskMapTheme.tileLabel.opacity(0.9)),
                         at: CGPoint(x: circle.center.x, y: circle.center.y - (circle.isContainer ? circle.radius * 0.72 : 0))
                     )

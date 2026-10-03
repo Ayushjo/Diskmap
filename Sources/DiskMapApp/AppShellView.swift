@@ -399,7 +399,7 @@ struct AppShellView: View {
                 FileBrowserView(model: model, tree: tree, rootURL: root)
             } else { needsScan }
         case .visualize:
-            VisualizeView(model: model, pickFolder: pickFolder, onOpenCleanup: { model.isCleanupQueuePresented = true })
+            VisualizeView(model: model, pickFolder: pickFolder)
         case .biggestFiles:
             if let tree = model.tree, let root = model.rootURL {
                 BiggestFilesView(model: model, tree: tree, rootURL: root, onOpenCleanup: { model.isCleanupQueuePresented = true })

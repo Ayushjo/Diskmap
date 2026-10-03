@@ -1,13 +1,14 @@
+import AppKit
 import DiskMapCore
 import SwiftUI
 
+/// Visualize → Age Map: the scan by last-modified age, and the largest
+/// files untouched for over a year.
 struct AgeMapView: View {
     @ObservedObject var model: ScanModel
     let tree: FileTree
     let totals: [Int64]
     let rootURL: URL
-    /// When true (Find → Forgotten), emphasize the candidate list and total bytes.
-    var findWorkflow: Bool = false
 
     @State private var checked: Set<Int32> = []
     @State private var filterBucket: AgeBucket? = nil
@@ -19,55 +20,59 @@ struct AgeMapView: View {
 
     private var filteredUntouched: [Int32] {
         guard let filterBucket else { return untouched }
-        return untouched.filter { id in
-            AgeMap.bucket(modifiedDay: tree.modifiedDay[Int(id)], today: today) == filterBucket
-        }
+        return untouched.filter { AgeMap.bucket(modifiedDay: tree.modifiedDay[Int($0)], today: today) == filterBucket }
     }
 
     private var forgottenBytes: Int64 {
-        if model.analysis.forgottenBytes > 0 {
-            return model.analysis.forgottenBytes
-        }
-        return untouched.reduce(Int64(0)) { partial, id in
-            let i = Int(id)
-            return partial + (i < totals.count ? totals[i] : 0)
-        }
+        if model.analysis.forgottenBytes > 0 { return model.analysis.forgottenBytes }
+        return untouched.reduce(Int64(0)) { $0 + (Int($1) < totals.count ? totals[Int($1)] : 0) }
     }
 
+    private var forgottenBuckets: [AgeBucket] {
+        [.oneToTwoYears, .overTwoYears].filter { (bucketSizes[$0] ?? 0) > 0 }
+    }
+
+    private func size(_ id: Int32) -> Int64 { totals.indices.contains(Int(id)) ? totals[Int(id)] : 0 }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             if isPreparing {
                 DiskMapLoadingState(title: "Preparing Age Map", detail: "Grouping modification dates off the main thread.")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 heatmap
-                    .frame(minHeight: findWorkflow ? 140 : 180, maxHeight: findWorkflow ? 200 : 260)
-                    .padding(8)
-
-                summaryBar
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-
-                bucketChips
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-
-                Divider().overlay(DiskMapTheme.cardStroke)
-
+                    .frame(minHeight: 160, maxHeight: 240)
+                SectionHeader(label: "Untouched for over a year",
+                              detail: "\(ByteFormat.string(forgottenBytes)) · \(countLabel(filteredUntouched.count, "file"))") {
+                    HStack(spacing: 2) {
+                        Chip(title: "All", isOn: filterBucket == nil) { filterBucket = nil }
+                        ForEach(forgottenBuckets, id: \.self) { bucket in
+                            Chip(title: bucket.shortTitle, isOn: filterBucket == bucket) { filterBucket = bucket }
+                        }
+                    }
+                }
                 if filteredUntouched.isEmpty {
-                    emptyState
+                    DiskMapEmptyState(symbol: "clock",
+                                      title: untouched.isEmpty ? "Nothing untouched for a year" : "Nothing in this age",
+                                      message: untouched.isEmpty ? "Every file in this scan was modified in the last year."
+                                          : "Pick another age.")
                 } else {
-                    listHeader
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
                     candidateList
+                    ReviewFooter(
+                        checkedCount: checked.count,
+                        checkedBytes: checked.reduce(0) { $0 + size($1) },
+                        hint: "Tick files to clean, or",
+                        quickSelectTitle: "Select all shown",
+                        onQuickSelect: { checked = Set(filteredUntouched) },
+                        onStage: { Task { await stageSelected() } },
+                        onClear: { checked.removeAll() },
+                        onReveal: { NSWorkspace.shared.activateFileViewerSelecting(checked.map { tree.path(of: $0, root: rootURL) }) },
+                        paths: checked.map { tree.path(of: $0, root: rootURL).path }
+                    )
                 }
             }
         }
-        .background(DiskMapTheme.cream)
-        .task(id: totals.count) {
-            await prepareAgeMap()
-        }
+        .task(id: totals.count) { await prepareAgeMap() }
     }
 
     @MainActor
@@ -94,294 +99,120 @@ struct AgeMapView: View {
         isPreparing = false
     }
 
-    private var summaryBar: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Forgotten files")
-                    .font(DiskMapType.callout)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("Not modified in over a year · based on modification date")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(ByteFormat.string(forgottenBytes))
-                    .font(DiskMapType.headline.monospacedDigit())
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("\(filteredUntouched.count) candidates")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+    private var candidateList: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(filteredUntouched, id: \.self) { id in
+                    candidateRow(id)
+                    RowSeparator(indent: 10 + 18 + 10 + 24 + 12)
+                }
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(DiskMapTheme.cardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                )
+        .listKeyboard(
+            ids: filteredUntouched,
+            selection: Binding(get: { filteredUntouched.contains(model.selectedNode) ? model.selectedNode : nil },
+                               set: { if let id = $0 { model.selectedNode = id } }),
+            path: { tree.path(of: $0, root: rootURL).path },
+            stage: { id in stageOne(id) },
+            selectAll: { checked = Set(filteredUntouched) },
+            clearSelection: { checked.removeAll() }
         )
     }
 
-    private var bucketChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                chip(title: "All forgotten", bucket: nil, bytes: forgottenBytes)
-                ForEach(forgottenBuckets, id: \.self) { bucket in
-                    chip(title: bucket.shortTitle, bucket: bucket, bytes: bucketSizes[bucket] ?? 0)
-                }
-            }
-        }
-    }
-
-    private var forgottenBuckets: [AgeBucket] {
-        [.oneToTwoYears, .overTwoYears].filter { (bucketSizes[$0] ?? 0) > 0 }
-    }
-
-    private func chip(title: String, bucket: AgeBucket?, bytes: Int64) -> some View {
-        let selected = filterBucket == bucket
-        return Button {
-            filterBucket = bucket
-        } label: {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(DiskMapType.captionStrong)
-                if bytes > 0 {
-                    Text(ByteFormat.string(bytes))
-                        .font(DiskMapType.microMedium.monospacedDigit())
-                        .opacity(0.85)
-                }
-            }
-            .foregroundStyle(selected ? DiskMapTheme.onInk : DiskMapTheme.ink)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                Capsule().fill(selected ? DiskMapTheme.ink : DiskMapTheme.cardFill)
-                    .overlay(Capsule().stroke(DiskMapTheme.cardStroke, lineWidth: selected ? 0 : 1))
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var listHeader: some View {
-        HStack {
-            Text("Largest forgotten files")
-                .font(DiskMapType.bodyStrong)
-                .foregroundStyle(DiskMapTheme.ink)
-            Spacer()
-            Button("Add selected to review") { Task { await stageSelected() } }
-                .buttonStyle(InkButtonStyle(filled: false))
-                .disabled(checked.isEmpty)
-            if findWorkflow {
-                Button("Open Age Map in Explore") {
-                    model.exploreMode = .ageMap
-                    model.destination = .visualize
-                }
-                .buttonStyle(InkButtonStyle())
-            }
-        }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "clock.badge.checkmark")
-                .font(.system(size: DiskMapType.scaled(28), weight: .light))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            if untouched.isEmpty {
-                Text("No forgotten files in this scan")
-                    .font(DiskMapType.callout)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("Nothing larger than zero bytes was unmodified for over a year. Try another folder, or check Age Map after a broader scan.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 420)
-            } else {
-                Text("No files in this age bucket")
-                    .font(DiskMapType.callout)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("Clear the filter or pick another age chip.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
-    }
-
-    private var candidateList: some View {
-        List(filteredUntouched, id: \.self) { id in
-            candidateRow(id)
-                .listRowBackground(id == model.selectedNode ? DiskMapTheme.ink.opacity(0.08) : Color.clear)
-                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(DiskMapTheme.cream)
-    }
-
     private func candidateRow(_ id: Int32) -> some View {
-        let size = totals.indices.contains(Int(id)) ? totals[Int(id)] : 0
-        let day = tree.modifiedDay[Int(id)]
-        let bucket = AgeMap.bucket(modifiedDay: day, today: today)
-        return HStack(alignment: .center, spacing: 10) {
-            Toggle(isOn: binding(id)) { EmptyView() }
+        let abs = tree.path(of: id, root: rootURL).path
+        let isOn = checked.contains(id)
+        let cloudOnly = tree.flags[Int(id)] & NodeFlags.notDownloaded != 0
+        return HStack(spacing: 0) {
+            Toggle(isOn: Binding(get: { isOn }, set: { on in
+                if on { checked.insert(id) } else { checked.remove(id) }
+            })) { EmptyView() }
                 .labelsHidden()
                 .toggleStyle(.checkbox)
-
-            Button {
-                selectForInspect(id)
-            } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Text(tree.name(of: id))
-                            .font(DiskMapType.bodyStrong)
-                            .foregroundStyle(DiskMapTheme.ink)
-                            .lineLimit(1)
-                        if tree.flags[Int(id)] & NodeFlags.notDownloaded != 0 {
-                            Image(systemName: "icloud")
-                                .font(DiskMapType.micro)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .help("Not downloaded — revealing may trigger an iCloud download")
-                        }
+                .padding(.leading, 10)
+                .accessibilityLabel(isOn ? "Unmark \(tree.name(of: id))" : "Mark \(tree.name(of: id))")
+            Button { model.selectedNode = id } label: {
+                KitRow(title: tree.name(of: id), subtitle: relativeParent(of: abs, root: rootURL),
+                       selected: model.selectedNode == id, path: abs, onStage: { stageOne(id) }) {
+                    FileIdentityIcon(url: URL(fileURLWithPath: abs), size: 24)
+                } trailing: {
+                    if cloudOnly {
+                        Image(systemName: "icloud")
+                            .font(.system(size: DiskMapType.scaled(11)))
+                            .foregroundStyle(DiskMapTheme.ink3)
+                            .help("Not downloaded — revealing may trigger an iCloud download")
                     }
-                    Text(tree.path(of: id, root: rootURL).path)
-                        .font(DiskMapType.caption.monospaced())
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    HStack(spacing: 8) {
-                        Text(bucket.shortTitle)
-                            .font(DiskMapType.microStrong)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(heatColor(bucket).opacity(0.18)))
-                            .foregroundStyle(DiskMapTheme.ink)
-                        Text(relativeAge(day))
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                    }
+                    MonoColumn(text: RelativeAge.short(day: tree.modifiedDay[Int(id)]), width: 64)
+                    MonoColumn(text: ByteFormat.string(size(id)), width: 74, emphasis: true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-
-            Text(ByteFormat.string(size))
-                .font(DiskMapType.smallStrong.monospacedDigit())
-                .foregroundStyle(DiskMapTheme.ink)
-
-            Menu {
-                Button("Inspect") { selectForInspect(id) }
-                Button("Show in Explore") { openInExplore(id) }
-                Button("Reveal in Finder") { revealDownloadedFile(id, tree: tree, root: rootURL) }
-                Button("Add to review") { Task { await stageOne(id) } }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+            .simultaneousGesture(TapGesture(count: 2).onEnded { showInTreemap(id) })
+            .accessibilityLabel("\(tree.name(of: id)), \(ByteFormat.string(size(id))), modified \(RelativeAge.long(day: tree.modifiedDay[Int(id)]))")
+            .accessibilityAction(named: "Show in Treemap") { showInTreemap(id) }
+            .rowActions(path: abs, stage: { stageOne(id) })
+            .contextMenu {
+                Button("Show in Treemap") { showInTreemap(id) }
+                Button("Show in File Browser") {
+                    model.currentNode = max(0, tree.parent[Int(id)])
+                    model.selectedNode = id
+                    model.destination = .fileBrowser
+                }
             }
-            .menuStyle(.borderlessButton)
-            .frame(width: 24)
         }
-        .padding(.vertical, 4)
-        .simultaneousGesture(TapGesture(count: 2).onEnded { openInExplore(id) })
-        .accessibilityAction(named: "Show in Explore") { openInExplore(id) }
     }
 
+    /// Age treemap: one tile per age bucket, same tile style as the main treemap.
     private var heatmap: some View {
         Canvas { context, size in
             let items = AgeBucket.allCases.enumerated().compactMap { index, bucket -> (id: Int32, size: Int64)? in
                 let bytes = bucketSizes[bucket] ?? 0
-                guard bytes > 0 else { return nil }
-                return (Int32(index), bytes)
+                return bytes > 0 ? (Int32(index), bytes) : nil
             }
             let rects = SquarifiedTreemap.layout(items: items, in: CGRect(origin: .zero, size: size))
             for rect in rects {
                 let bucket = AgeBucket.allCases[Int(rect.id)]
-                let path = Path(rect.rect.insetBy(dx: 1, dy: 1))
-                context.fill(path, with: .color(heatColor(bucket)))
-                if rect.rect.width > 56 && rect.rect.height > 24 {
-                    let bytes = bucketSizes[bucket] ?? 0
+                let inset = rect.rect.insetBy(dx: 1.5, dy: 1.5)
+                let path = Path(roundedRect: inset, cornerRadius: min(6, min(inset.width, inset.height) / 3), style: .continuous)
+                context.fill(path, with: .color(DiskMapTheme.ageColor(bucket).opacity(filterBucket == nil || filterBucket == bucket ? 1 : 0.4)))
+                if inset.width > 64 && inset.height > 40 {
                     context.draw(
-                        Text("\(bucket.shortTitle)\n\(diskByteString(bytes))")
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(.white),
-                        at: CGPoint(x: rect.rect.midX, y: rect.rect.midY)
-                    )
+                        Text(bucket.shortTitle).font(.system(size: DiskMapType.scaled(12), weight: .medium))
+                            .foregroundStyle(DiskMapTheme.tileLabel.opacity(0.85)),
+                        at: CGPoint(x: inset.minX + 8, y: inset.minY + 7), anchor: .topLeading)
+                    context.draw(
+                        Text(diskByteString(bucketSizes[bucket] ?? 0)).font(DiskMapType.figureSmall)
+                            .foregroundStyle(DiskMapTheme.tileLabel.opacity(0.6)),
+                        at: CGPoint(x: inset.minX + 8, y: inset.minY + 25), anchor: .topLeading)
                 }
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(DiskMapTheme.cardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                )
-        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Storage by age: " + AgeBucket.allCases.compactMap { bucket in
+            (bucketSizes[bucket] ?? 0) > 0 ? "\(bucket.shortTitle) \(ByteFormat.string(bucketSizes[bucket] ?? 0))" : nil
+        }.joined(separator: ", "))
     }
 
-    private func heatColor(_ bucket: AgeBucket) -> Color { DiskMapTheme.ageColor(bucket) }
-
-    private func relativeAge(_ day: Int32) -> String {
-        guard day > 0 else { return "No modification date" }
-        let ageDays = today - day
-        if ageDays >= 730 {
-            let years = ageDays / 365
-            return "~\(years)y ago"
-        }
-        if ageDays >= 365 {
-            return "1–2y ago"
-        }
-        return "\(ageDays)d ago"
-    }
-
-    private func binding(_ id: Int32) -> Binding<Bool> {
-        Binding(
-            get: { checked.contains(id) },
-            set: { isOn in
-                if isOn { checked.insert(id) } else { checked.remove(id) }
-            }
-        )
-    }
-
-    private func selectForInspect(_ id: Int32) {
+    /// Opens the file's folder in the treemap with the file selected
+    /// (it used to switch to Age Map, where it already was).
+    private func showInTreemap(_ id: Int32) {
+        model.currentNode = max(0, tree.parent[Int(id)])
         model.selectedNode = id
-        let parent = tree.parent[Int(id)]
-        if parent >= 0 {
-            model.currentNode = parent
-        }
+        model.exploreMode = .treemap
     }
 
-    private func openInExplore(_ id: Int32) {
-        selectForInspect(id)
-        model.exploreMode = .ageMap
-        model.destination = .visualize
-    }
-
-    private func stageOne(_ id: Int32) async {
+    private func stageOne(_ id: Int32) {
         guard id >= 0, Int(id) < totals.count else { return }
-        let url = tree.path(of: id, root: rootURL)
-        if model.isStaged(url) {
-            model.showToast("Already in cleanup list")
-            return
-        }
-        _ = await model.cleanupQueue.stage(url, size: totals[Int(id)], reason: "big & untouched")
-        await model.refreshQueue()
-        model.showToast("Added to Cleanup")
+        model.stageRow(path: tree.path(of: id, root: rootURL).path, size: totals[Int(id)], reason: "Untouched for over a year")
     }
 
     private func stageSelected() async {
-        for id in checked {
-            guard id >= 0, Int(id) < totals.count else { continue }
-            let url = tree.path(of: id, root: rootURL)
-            if model.isStaged(url) { continue }
-            _ = await model.cleanupQueue.stage(url, size: totals[Int(id)], reason: "big & untouched")
-        }
-        checked.removeAll()
-        await model.refreshQueue()
-        model.showToast("Added to Cleanup")
+        let summary = await model.stageForCleanup(checked.compactMap { id in
+            guard id >= 0, Int(id) < totals.count else { return nil }
+            return CleanupStageRequest(url: tree.path(of: id, root: rootURL), size: totals[Int(id)], reason: "Untouched for over a year")
+        })
+        model.showToast(summary.added > 0 ? "Added \(countLabel(summary.added, "file")) to Cleanup — ⇧⌘⌫ to review"
+                        : summary.alreadyPresent > 0 ? "Already in Cleanup" : "Nothing could be added")
+        if summary.added > 0 { checked.removeAll() }
     }
 }

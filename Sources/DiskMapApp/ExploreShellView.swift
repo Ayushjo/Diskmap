@@ -768,6 +768,7 @@ struct ExploreTreemapView: View {
     @State private var canvasSize: CGSize = .zero
     @State private var layoutTask: Task<Void, Never>?
     @State private var isPreparingLayout = false
+    @State private var hoveredID: Int32?
 
 
     var body: some View {
@@ -788,25 +789,43 @@ struct ExploreTreemapView: View {
 
             Canvas { context, size in
                 for r in layoutRects {
-                    let inset = r.rect.insetBy(dx: 1, dy: 1)
-                    let path = Path(roundedRect: inset, cornerRadius: 5)
+                    // 3 pt gutters, soft rounded tiles, a light top-to-bottom wash.
+                    let inset = r.rect.insetBy(dx: 1.5, dy: 1.5)
+                    guard inset.width > 0.5, inset.height > 0.5 else { continue }
+                    let path = Path(roundedRect: inset, cornerRadius: min(6, min(inset.width, inset.height) / 3), style: .continuous)
                     let selected = r.id == selectedNode || multi.contains(r.id)
+                    let hovered = r.id == hoveredID
                     context.fill(path, with: .color(colorFor(id: r.id)))
-                    context.stroke(path, with: .color(selected ? DiskMapTheme.tileLabel : .black.opacity(0.25)), lineWidth: selected ? 2 : 1)
-                    if inset.width > 52 && inset.height > 20 {
+                    context.fill(path, with: .linearGradient(
+                        Gradient(colors: [.white.opacity(hovered ? 0.28 : 0.14), .white.opacity(hovered ? 0.12 : 0)]),
+                        startPoint: CGPoint(x: inset.midX, y: inset.minY),
+                        endPoint: CGPoint(x: inset.midX, y: inset.maxY)))
+                    if selected {
+                        context.stroke(path, with: .color(DiskMapTheme.accent), lineWidth: 2)
+                    }
+                    if inset.width > 52 && inset.height > 22 {
                         context.draw(
-                            Text(String(tree.name(of: r.id).prefix(max(4, Int(inset.width / 7) - 3)))).font(DiskMapType.smallStrong).foregroundStyle(DiskMapTheme.tileLabel),
-                            at: CGPoint(x: inset.minX + 4, y: inset.minY + 4),
+                            Text(String(tree.name(of: r.id).prefix(max(4, Int(inset.width / 7) - 3))))
+                                .font(.system(size: DiskMapType.scaled(12), weight: .medium))
+                                .foregroundStyle(DiskMapTheme.tileLabel.opacity(0.85)),
+                            at: CGPoint(x: inset.minX + 8, y: inset.minY + 7),
                             anchor: .topLeading
                         )
                     }
-                    if inset.width > 90 && inset.height > 48 {
+                    if inset.width > 80 && inset.height > 46 {
                         context.draw(Text(ByteFormat.string(totals[Int(r.id)]))
-                            .font(DiskMapType.caption.monospacedDigit()).foregroundStyle(DiskMapTheme.tileLabel.opacity(0.75)),
-                            at: CGPoint(x: inset.minX + 4, y: inset.minY + 23), anchor: .topLeading)
+                            .font(DiskMapType.figureSmall).foregroundStyle(DiskMapTheme.tileLabel.opacity(0.6)),
+                            at: CGPoint(x: inset.minX + 8, y: inset.minY + 25), anchor: .topLeading)
                     }
                 }
             }
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let point): hoveredID = SquarifiedTreemap.hitTest(layoutRects, at: point)
+                case .ended: hoveredID = nil
+                }
+            }
+            .help(hoveredID.map { "\(tree.name(of: $0)) — \(ByteFormat.string(totals[Int($0)]))" } ?? "")
             .overlay {
                 if isPreparingLayout && layoutRects.isEmpty {
                     ProgressView("Preparing map…")
