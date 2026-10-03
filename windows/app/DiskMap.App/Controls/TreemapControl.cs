@@ -12,83 +12,124 @@ namespace DiskMap.App.Controls;
 /// port), so geometry matches the macOS build exactly; only the drawing
 /// calls are platform-native.
 ///
+/// Two retained visuals: the map (cells + labels) is laid out and drawn
+/// only when the data, zoom or size changes; hover redraws a single
+/// highlight rect on its own layer. Re-laying out and redrawing every cell
+/// on each mouse move is what made the map crawl.
+///
 /// Interactions: left-click a directory to drill in; hover shows name +
 /// size; right-click offers Reveal in Explorer / Stage for cleanup.
 /// </summary>
 public sealed class TreemapControl : FrameworkElement
 {
+    private readonly DrawingVisual _map = new();
+    private readonly DrawingVisual _hover = new();
     private List<TreemapRect> _rects = [];
+    private (FileTree? Tree, long[]? Totals, int Zoom, Size Size) _drawn;
     private int _hoverId = -1;
-    private ToolTip? _tooltip;
+    private readonly ToolTip _tooltip = new() { Placement = System.Windows.Controls.Primitives.PlacementMode.Mouse };
 
     public TreemapControl()
     {
-        ScanModel.Shared.StateChanged += (_, _) => Dispatcher.InvokeAsync(InvalidateVisual);
+        AddVisualChild(_map);
+        AddVisualChild(_hover);
+        ModelEvents.WhileLoaded(this, Redraw);
+        SizeChanged += (_, _) => Redraw();
         MouseLeftButtonDown += OnClick;
         MouseMove += OnMove;
-        MouseLeave += (_, _) => { _hoverId = -1; InvalidateVisual(); };
+        MouseLeave += (_, _) => SetHover(null);
         MouseRightButtonDown += OnRightClick;
+        ToolTip = _tooltip;
+        ToolTipService.SetIsEnabled(this, false); // opened by hand, per hovered cell
     }
 
-    protected override void OnRender(DrawingContext dc)
+    protected override int VisualChildrenCount => 2;
+    protected override Visual GetVisualChild(int index) => index == 0 ? _map : _hover;
+
+    private void Redraw()
     {
         var model = ScanModel.Shared;
         var tree = model.Tree;
-        if (tree is null || model.Totals.Length == 0 || ActualWidth <= 0 || ActualHeight <= 0)
+        var totals = model.Totals;
+        var size = new Size(ActualWidth, ActualHeight);
+        if (_drawn == (tree, totals, model.ZoomedNode, size)) return;
+        _drawn = (tree, totals, model.ZoomedNode, size);
+        SetHover(null);
+
+        using var dc = _map.RenderOpen();
+        // Paint the whole area so the gaps between cells still take the mouse.
+        dc.DrawRectangle(Brushes.Transparent, null, new Rect(size));
+        if (tree is null || totals.Length != tree.Count || size.Width <= 0 || size.Height <= 0)
+        {
+            _rects = [];
             return;
+        }
 
-        var items = tree.ChildrenOf(model.ZoomedNode, model.Totals);
-        var bounds = new DmRect(0, 0, ActualWidth, ActualHeight);
-        _rects = SquarifiedTreemap.Layout(items, bounds);
-
+        _rects = SquarifiedTreemap.Layout(
+            tree.ChildrenOf(model.ZoomedNode, totals), new DmRect(0, 0, size.Width, size.Height));
         var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         foreach (var r in _rects)
         {
-            var rect = new Rect(r.Rect.X + 1, r.Rect.Y + 1,
-                Math.Max(0, r.Rect.Width - 2), Math.Max(0, r.Rect.Height - 2));
+            var rect = Inset(r.Rect);
             if (rect.Width <= 0 || rect.Height <= 0) continue;
-            var fill = NodeColors.BrushFor(r.Id);
-            dc.DrawRectangle(fill, new Pen(NodeColors.Stroke, 1), rect);
-            if (r.Id == _hoverId)
-                dc.DrawRectangle(NodeColors.DirectoryOverlay, null, rect);
+            dc.DrawRectangle(NodeColors.BrushFor(r.Id), NodeColors.StrokePen, rect);
 
             // Label when the cell is big enough to hold a name + size.
             if (rect.Width > 48 && rect.Height > 30)
             {
-                string name = tree.NameOf(r.Id);
-                long size = model.Totals[r.Id];
-                var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
                 var nameText = new FormattedText(
-                    name, System.Globalization.CultureInfo.CurrentUICulture,
-                    FlowDirection.LeftToRight, typeface, 12,
-                    Brushes.White, dpi);
-                var sizeText = new FormattedText(
-                    ByteFormat.Format(size), System.Globalization.CultureInfo.CurrentUICulture,
-                    FlowDirection.LeftToRight, typeface, 10,
-                    Brushes.White, dpi);
-                double tx = rect.X + 5, ty = rect.Y + 4;
-                if (nameText.Width > rect.Width - 8)
+                    tree.NameOf(r.Id), System.Globalization.CultureInfo.CurrentUICulture,
+                    FlowDirection.LeftToRight, typeface, 12, Brushes.White, dpi)
                 {
-                    nameText.MaxTextWidth = Math.Max(10, rect.Width - 8);
-                    nameText.Trimming = TextTrimming.CharacterEllipsis;
-                }
-                dc.DrawText(nameText, new Point(tx, ty));
-                dc.DrawText(sizeText, new Point(tx, ty + 15));
+                    MaxTextWidth = Math.Max(10, rect.Width - 8),
+                    MaxLineCount = 1,
+                    Trimming = TextTrimming.CharacterEllipsis,
+                };
+                var sizeText = new FormattedText(
+                    ByteFormat.Format(totals[r.Id]), System.Globalization.CultureInfo.CurrentUICulture,
+                    FlowDirection.LeftToRight, typeface, 10, Brushes.White, dpi);
+                dc.DrawText(nameText, new Point(rect.X + 5, rect.Y + 4));
+                dc.DrawText(sizeText, new Point(rect.X + 5, rect.Y + 19));
             }
+        }
+    }
+
+    private static Rect Inset(DmRect r) =>
+        new(r.X + 1, r.Y + 1, Math.Max(0, r.Width - 2), Math.Max(0, r.Height - 2));
+
+    private void SetHover(TreemapRect? hit)
+    {
+        int id = hit?.Id ?? -1;
+        if (id == _hoverId) return;
+        _hoverId = id;
+        using (var dc = _hover.RenderOpen())
+        {
+            if (hit is { } r) dc.DrawRectangle(NodeColors.DirectoryOverlay, null, Inset(r.Rect));
+        }
+        var model = ScanModel.Shared;
+        if (hit is { } h && model.Tree is { } tree && h.Id < model.Totals.Length)
+        {
+            _tooltip.Content = $"{tree.NameOf(h.Id)} — {ByteFormat.Format(model.Totals[h.Id])}";
+            _tooltip.IsOpen = false; // reopen so it follows the mouse to the new cell
+            _tooltip.IsOpen = true;
+        }
+        else
+        {
+            _tooltip.IsOpen = false;
         }
     }
 
     private void OnClick(object sender, MouseButtonEventArgs e)
     {
-        var hit = HitAt(e.GetPosition(this));
-        if (hit is { } id && ScanModel.Shared.Tree?.IsDirectory[id] == true)
-            ScanModel.Shared.DrillTo(id);
+        if (HitAt(e.GetPosition(this)) is { } hit && ScanModel.Shared.Tree?.IsDirectory[hit.Id] == true)
+            ScanModel.Shared.DrillTo(hit.Id);
     }
 
     private void OnRightClick(object sender, MouseButtonEventArgs e)
     {
-        var hit = HitAt(e.GetPosition(this));
-        if (hit is not { } id) return;
+        if (HitAt(e.GetPosition(this)) is not { } hit) return;
+        int id = hit.Id;
         var model = ScanModel.Shared;
         var menu = new ContextMenu();
         var reveal = new MenuItem { Header = "Reveal in Explorer" };
@@ -100,29 +141,12 @@ public sealed class TreemapControl : FrameworkElement
         menu.IsOpen = true;
     }
 
-    private void OnMove(object sender, MouseEventArgs e)
-    {
-        var hit = HitAt(e.GetPosition(this));
-        if (hit != (_hoverId >= 0 ? _hoverId : (int?)null))
-        {
-            _hoverId = hit ?? -1;
-            InvalidateVisual();
-        }
-        var model = ScanModel.Shared;
-        if (hit is { } id && model.Tree is { } tree)
-        {
-            string tip = $"{tree.NameOf(id)} — {ByteFormat.Format(model.Totals[id])}";
-            if (_tooltip is null) _tooltip = new ToolTip();
-            if (!Equals(_tooltip.Content, tip)) { _tooltip.Content = tip; }
-            ToolTip = _tooltip;
-            _tooltip.IsOpen = true;
-        }
-        else if (_tooltip is not null)
-        {
-            _tooltip.IsOpen = false;
-        }
-    }
+    private void OnMove(object sender, MouseEventArgs e) => SetHover(HitAt(e.GetPosition(this)));
 
-    private int? HitAt(Point p) =>
-        SquarifiedTreemap.HitTest(_rects, new DmPoint(p.X, p.Y));
+    private TreemapRect? HitAt(Point p)
+    {
+        for (int i = _rects.Count - 1; i >= 0; i--)
+            if (_rects[i].Rect.Contains(new DmPoint(p.X, p.Y))) return _rects[i];
+        return null;
+    }
 }

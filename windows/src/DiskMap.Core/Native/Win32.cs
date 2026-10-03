@@ -133,40 +133,6 @@ internal static partial class Win32
     //   struct { i64 NextVcn; i64 Lcn } Extents[] } — variable length,
     // parsed manually out of a raw buffer.
 
-    [StructLayout(LayoutKind.Sequential)]
-    public struct FILE_ID_DESCRIPTOR
-    {
-        public uint dwSize;
-        public int Type;        // 0 = FileIdType (use FileId)
-        public long FileId;
-    }
-
-    [LibraryImport("kernel32.dll", EntryPoint = "OpenFileById", SetLastError = true)]
-    public static partial SafeFileHandle OpenFileById(
-        SafeFileHandle hVolumeHint,
-        ref FILE_ID_DESCRIPTOR lpFileId,
-        uint dwDesiredAccess,
-        uint dwShareMode,
-        IntPtr lpSecurityAttributes,
-        uint dwFlagsAndAttributes);
-
-    [LibraryImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static unsafe partial bool ReadFile(
-        SafeFileHandle hFile,
-        void* lpBuffer,
-        int nNumberOfBytesToRead,
-        out int lpNumberOfBytesRead,
-        IntPtr lpOverlapped);
-
-    [LibraryImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool SetFilePointerEx(
-        SafeFileHandle hFile,
-        long liDistanceToMove,
-        out long lpNewFilePointer,
-        uint dwMoveMethod);
-
     [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetVolumeInformationByHandleW(
@@ -290,8 +256,8 @@ internal static partial class Win32
 
     // ---- Token privileges ----
     //
-    // OpenFileById(FILE_FLAG_BACKUP_SEMANTICS) and raw volume reads need
-    // SeBackupPrivilege/SeRestorePrivilege *enabled* in the process token —
+    // Raw volume reads need SeBackupPrivilege/SeRestorePrivilege
+    // *enabled* in the process token —
     // elevated tokens carry them present-but-disabled, so AdjustTokenPrivileges
     // is mandatory before touching $MFT. Without it the MFT path silently
     // fails and every scan falls back to FindFirstFileExW.

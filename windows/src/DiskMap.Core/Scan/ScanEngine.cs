@@ -24,6 +24,8 @@ public sealed class ScanEngine
         public int NotDownloadedCount { get; init; }
         /// <summary>"mft" or "win32" — which backend produced this scan.</summary>
         public required string Backend { get; init; }
+        /// <summary>Why the walk ran instead of the MFT ("needs administrator", …); null when that was by design.</summary>
+        public string? FallbackReason { get; init; }
     }
 
     /// <summary>
@@ -53,24 +55,65 @@ public sealed class ScanEngine
             ResidentBytesAfterWalk = afterRelease?.ResidentBytes,
             NotDownloadedCount = walked.NotDownloadedCount,
             Backend = walked.Backend,
+            FallbackReason = walked.FallbackReason,
         };
         LogSummary(result);
         return result;
     }
 
+    /// <summary>
+    /// The MFT always reads the whole $MFT (~6 s for a full 1 TB NVMe
+    /// volume) however small the folder, while the walk costs per item. So
+    /// a drive root goes straight to the MFT (WizTree-style), and a folder
+    /// gets a short walk first — most finish well inside it — falling
+    /// through to the MFT only when the subtree turns out big.
+    /// </summary>
+    private static readonly TimeSpan WalkHeadStart = TimeSpan.FromSeconds(2);
+
     private static WalkResult Walk(string root, IProgress<int>? progress)
     {
-        // MFT pays off when the subtree is a large fraction of the volume:
-        // it always reads the whole $MFT, so it wins for drive roots and
-        // near-root scans (C:\, C:\Users\me — the "scan my drive/profile"
-        // cases). Deep subtrees get the proportional FindFirstFileExW walk
-        // instead of parsing millions of unrelated records.
-        if (DepthFromVolumeRoot(root) <= 2)
+        string? whyNot = null;
+        int depth = DepthFromVolumeRoot(root);
+        if (depth == 0)
         {
-            var mft = MftScanner.Walk(root, progress);
-            if (mft is not null) return mft;
+            if (TryMft(root, progress, out whyNot) is { } mft) return mft;
         }
-        return Win32Scanner.Walk(root, progress);
+        else if (depth != int.MaxValue && (whyNot = MftUnavailable(root)) is null)
+        {
+            if (Win32Scanner.Walk(root, progress, WalkHeadStart) is { } quick) return quick;
+            if (TryMft(root, progress, out whyNot) is { } mft) return mft;
+        }
+        var walked = Win32Scanner.Walk(root, progress)!;
+        walked.FallbackReason = whyNot;
+        return walked;
+    }
+
+    private static WalkResult? TryMft(string root, IProgress<int>? progress, out string? whyNot)
+    {
+        try
+        {
+            return MftScanner.Walk(root, progress, out whyNot);
+        }
+        catch (Exception ex)
+        {
+            // Hostile on-disk state degrades to the slow path, never a crash.
+            whyNot = ex.Message;
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Why the MFT can't run here (null when it can) — checked first so a
+    /// head-start walk is never thrown away for nothing.
+    /// </summary>
+    private static string? MftUnavailable(string root)
+    {
+        if (!Win32.EnableBackupPrivileges()) return "needs administrator";
+        try
+        {
+            return new DriveInfo(Path.GetPathRoot(Path.GetFullPath(root))!).DriveFormat == "NTFS" ? null : "not NTFS";
+        }
+        catch (IOException) { return "volume unreadable"; }
     }
 
     /// <summary>
@@ -144,7 +187,7 @@ public sealed class ScanEngine
         Console.WriteLine(
             $"DiskMap scan: backend={result.Backend} items={result.ItemCount} " +
             $"elapsed={result.ElapsedSeconds:0.000}s rss_during_walk_peak={result.PeakResidentBytesDuringWalk} " +
-            $"rss_after_walk={after} not_downloaded={result.NotDownloadedCount}");
+            $"rss_after_walk={after} not_downloaded={result.NotDownloadedCount} mft_skipped={result.FallbackReason ?? "-"}");
         Console.Out.Flush();
     }
 }
@@ -157,4 +200,5 @@ internal sealed class WalkResult
     public int NotDownloadedCount { get; init; }
     public ulong PeakResidentBytesDuringWalk { get; init; }
     public required string Backend { get; init; }
+    public string? FallbackReason { get; set; }
 }

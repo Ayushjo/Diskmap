@@ -27,12 +27,13 @@ public static class NodeColors
     /// <summary>Collapsed "Other" slices — gray at 55% like the macOS build.</summary>
     public static readonly Brush OtherBrush = Freeze(new SolidColorBrush(Color.FromArgb(140, 128, 128, 128)));
 
-    public static Brush BrushFor(int nodeId)
-    {
-        var brush = new SolidColorBrush(ColorFor(nodeId));
-        brush.Freeze();
-        return brush;
-    }
+    // Hues are whole degrees, so 360 frozen brushes cover every node — the
+    // charts used to allocate a brush per cell per render.
+    private static readonly Brush[] HueBrushes = Enumerable.Range(0, 360)
+        .Select(h => (Brush)Freeze(new SolidColorBrush(Hsv(h, 0.55, 0.82)))).ToArray();
+
+    public static Brush BrushFor(int nodeId) =>
+        HueBrushes[unchecked((uint)((ulong)nodeId * 2654435761UL) % 360)];
 
     private static Color Hsv(double h, double s, double v)
     {
@@ -54,6 +55,8 @@ public static class NodeColors
 
     public static readonly Brush DirectoryOverlay = Freeze(new SolidColorBrush(Color.FromArgb(0x20, 0, 0, 0)));
     public static readonly Brush Stroke = Freeze(new SolidColorBrush(Color.FromArgb(0x59, 0, 0, 0)));
+    public static readonly Pen StrokePen = Freeze(new Pen(Stroke, 1));
+    public static readonly Pen ConnectorPen = Freeze(new Pen(Stroke, 1.5));
 
     /// <summary>Age-map bucket colors — ported from macOS AgeMapView.</summary>
     public static Brush AgeBucket(AgeBucket bucket) => Freeze(new SolidColorBrush(bucket switch
@@ -67,6 +70,38 @@ public static class NodeColors
     }));
 
     private static T Freeze<T>(T freezable) where T : Freezable { freezable.Freeze(); return freezable; }
+}
+
+/// <summary>
+/// How every page and chart listens to <see cref="ScanModel"/>: only while
+/// on screen (they used to subscribe forever, so every page ever opened
+/// kept re-rendering in the background), refreshed each time it appears,
+/// and coalesced into one callback queued below input priority so a burst
+/// of changes can't starve clicks.
+/// </summary>
+public static class ModelEvents
+{
+    public static void WhileLoaded(FrameworkElement element, Action onChange)
+    {
+        bool queued = false;
+        void Queue()
+        {
+            if (queued) return;
+            queued = true;
+            element.Dispatcher.InvokeAsync(() =>
+            {
+                queued = false;
+                onChange();
+            }, System.Windows.Threading.DispatcherPriority.Background);
+        }
+        EventHandler handler = (_, _) => Queue();
+        element.Loaded += (_, _) =>
+        {
+            ScanModel.Shared.StateChanged += handler;
+            Queue();
+        };
+        element.Unloaded += (_, _) => ScanModel.Shared.StateChanged -= handler;
+    }
 }
 
 public static class ByteFormat
@@ -101,11 +136,5 @@ public static class Explorer
                 Process.Start("explorer.exe", $"\"{Path.GetDirectoryName(path) ?? path}\"");
         }
         catch { /* explorer missing is not fatal */ }
-    }
-
-    public static void Open(string path)
-    {
-        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
-        catch { }
     }
 }

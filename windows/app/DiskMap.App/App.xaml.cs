@@ -13,6 +13,12 @@ public partial class App : Application
         ThemeMode = ThemeMode.System;
 #pragma warning restore WPF0001
         Theme.Apply(); // our own palette brushes on top of Fluent
+        // A failing click reports instead of taking the app (and the scan) down.
+        DispatcherUnhandledException += (_, args) =>
+        {
+            MessageBox.Show(args.Exception.Message, "DiskMap", MessageBoxButton.OK, MessageBoxImage.Warning);
+            args.Handled = true;
+        };
         base.OnStartup(e);
     }
 }

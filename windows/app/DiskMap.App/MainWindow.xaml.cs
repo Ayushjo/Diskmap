@@ -1,6 +1,7 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using DiskMap.App.Pages;
 using DiskMap.Core;
 
@@ -10,6 +11,11 @@ public partial class MainWindow : Window
 {
     private readonly ScanModel _model = ScanModel.Shared;
     private readonly Dictionary<string, Func<UserControl>> _pageFactories;
+    // One instance per page for the session: a page keeps its state
+    // (filters, results) and isn't rebuilt on every sidebar click.
+    private readonly Dictionary<string, UserControl> _pages = new(StringComparer.Ordinal);
+    private bool _statusQueued;
+    private string? _scanError;
 
     public MainWindow()
     {
@@ -58,13 +64,12 @@ public partial class MainWindow : Window
         BasisToggle.SelectionChanged += (_, _) =>
             _model.SizeBasis = BasisToggle.SelectedIndex == 0 ? SizeBasis.Allocated : SizeBasis.Logical;
         ResetZoom.Click += (_, _) => _model.DrillToAncestor(0);
-        _model.StateChanged += (_, _) => Dispatcher.InvokeAsync(RefreshChrome);
+        ModelEvents.WhileLoaded(this, RefreshChrome);
         _model.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(ScanModel.ScanProgress) or nameof(ScanModel.IsScanning))
-                Dispatcher.InvokeAsync(RefreshChrome);
+                QueueStatus();
         };
-        Loaded += (_, _) => RefreshChrome();
     }
 
     private void OnNavChanged(object sender, SelectionChangedEventArgs e)
@@ -72,34 +77,69 @@ public partial class MainWindow : Window
         if (NavList.SelectedItem is ListBoxItem { Tag: string name }
             && _pageFactories.TryGetValue(name, out var factory))
         {
-            PageHost.Content = factory();
+            if (!_pages.TryGetValue(name, out var page)) _pages[name] = page = factory();
+            PageHost.Content = page;
         }
     }
 
     private async Task PickAndScan()
     {
+        if (_model.IsScanning) return;
         var hwnd = new WindowInteropHelper(this).Handle;
         var path = FolderPicker.Pick(hwnd);
         if (path is null) return;
+        _scanError = null;
         try
         {
-            ScanStatus.Text = $"Scanning {path}…";
             await _model.ScanAsync(path);
         }
         catch (Exception ex)
         {
-            ScanStatus.Text = $"Scan failed: {ex.Message}";
+            _scanError = $"Scan failed: {ex.Message}";
+            RefreshStatus();
         }
+    }
+
+    /// <summary>Progress ticks only touch the status line, coalesced like everything else.</summary>
+    private void QueueStatus()
+    {
+        if (_statusQueued) return;
+        _statusQueued = true;
+        Dispatcher.InvokeAsync(() =>
+        {
+            _statusQueued = false;
+            RefreshStatus();
+        }, DispatcherPriority.Background);
+    }
+
+    private void RefreshStatus()
+    {
+        ScanButton.IsEnabled = !_model.IsScanning;
+        if (_model.IsScanning)
+        {
+            ScanStatus.Text = $"Scanning… {_model.ScanProgress:N0} items";
+            return;
+        }
+        if (_scanError is not null || _model.Tree is null)
+        {
+            ScanStatus.Text = _scanError ?? "Pick a folder to scan.";
+            return;
+        }
+        string scanned = $"Scanned {_model.ItemCount:N0} items in {_model.Elapsed:0.0}s via {_model.Backend}";
+        // Only worth saying when the scan was slow enough to notice.
+        if (_model.FallbackReason is { } why && _model.Elapsed >= 2) scanned += $" (fast NTFS scan skipped: {why})";
+        if (_model.NotDownloaded > 0) scanned += $" · {_model.NotDownloaded} in cloud only";
+        ScanStatus.Text = scanned;
     }
 
     private void RefreshChrome()
     {
+        RefreshStatus();
         // Breadcrumb bar — each crumb clickable, mirrors the macOS path bar.
         Breadcrumbs.Children.Clear();
         var tree = _model.Tree;
         if (tree is null || _model.RootPath is null)
         {
-            ScanStatus.Text = _model.IsScanning ? $"Scanning… {_model.ScanProgress} items" : "Pick a folder to scan.";
             StatusBar.Text = "";
             return;
         }
@@ -133,9 +173,6 @@ public partial class MainWindow : Window
                 FontWeight = FontWeights.SemiBold,
             });
         }
-        string scanned = $"Scanned {_model.ItemCount:N0} items in {_model.Elapsed:0.0}s via {_model.Backend}";
-        if (_model.NotDownloaded > 0) scanned += $" · {_model.NotDownloaded} in cloud only";
-        ScanStatus.Text = scanned;
-        StatusBar.Text = $"{_model.RootPath} — {ByteFormat.Format(_model.Totals[0])} total";
+        StatusBar.Text = _model.Totals.Length > 0 ? $"{_model.RootPath} — {ByteFormat.Format(_model.Totals[0])} total" : _model.RootPath;
     }
 }

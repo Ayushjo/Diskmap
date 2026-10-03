@@ -28,15 +28,33 @@ public sealed class FileTree
 
     // MARK: Struct-of-arrays node storage, indexed by node id
 
-    private List<int> _nameIndex = [];
-    private List<int> _parent = [];        // -1 for root
-    private List<int> _firstChild = [];    // -1 if none
-    private List<int> _nextSibling = [];   // -1 if none
-    private List<long> _logicalSize = [];  // logical file size
-    private List<long> _allocatedSize = []; // size-on-disk (reflects compression/sparse)
-    private List<int> _modifiedDay = [];   // days since epoch, not a full DateTime (8 bytes -> 4)
-    private List<bool> _isDirectory = [];
-    private List<byte> _flags = [];        // see NodeFlags
+    private List<int> _nameIndex;
+    private List<int> _parent;        // -1 for root
+    private List<int> _firstChild;    // -1 if none
+    private List<int> _nextSibling;   // -1 if none
+    private List<long> _logicalSize;  // logical file size
+    private List<long> _allocatedSize; // size-on-disk (reflects compression/sparse)
+    private List<int> _modifiedDay;   // days since epoch, not a full DateTime (8 bytes -> 4)
+    private List<bool> _isDirectory;
+    private List<byte> _flags;        // see NodeFlags
+
+    /// <summary>
+    /// <paramref name="capacity"/>: expected node count when the caller
+    /// knows it (the MFT scan does) — skips ~20 doubling copies of every
+    /// packed list on a multi-million-node tree.
+    /// </summary>
+    public FileTree(int capacity = 0)
+    {
+        _nameIndex = new(capacity);
+        _parent = new(capacity);
+        _firstChild = new(capacity);
+        _nextSibling = new(capacity);
+        _logicalSize = new(capacity);
+        _allocatedSize = new(capacity);
+        _modifiedDay = new(capacity);
+        _isDirectory = new(capacity);
+        _flags = new(capacity);
+    }
 
     public int Count => _nameIndex.Count;
 

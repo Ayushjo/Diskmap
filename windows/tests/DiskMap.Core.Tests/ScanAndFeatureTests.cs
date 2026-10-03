@@ -104,6 +104,21 @@ public class ScanEngineFixtureTests
         return null;
     }
 
+    [Fact]
+    public void WalkGivesUpWhenItsHeadStartRunsOut()
+    {
+        var fixture = new ScanFixture();
+        try
+        {
+            Assert.Null(Win32Scanner.Walk(fixture.Root, null, TimeSpan.Zero));
+            Assert.NotNull(Win32Scanner.Walk(fixture.Root, null, TimeSpan.FromMinutes(1)));
+        }
+        finally
+        {
+            fixture.Dispose();
+        }
+    }
+
     private sealed class ScanFixture : IDisposable
     {
         public readonly string Root;
@@ -205,6 +220,20 @@ public class DuplicateFinderTests
 
         var found = DuplicateFinder.Candidates(tree, @"C:\tmp\diskmap-candidates");
         Assert.Equal([keep], found.Select(f => f.Id).ToList());
+    }
+
+    [Fact]
+    public void SizeCollidingCandidatesKeepOnlySharedSizes()
+    {
+        var tree = new FileTree();
+        int root = tree.AddNode("root", -1, true, 0, 0, 0);
+        int a = tree.AddNode("a.bin", root, false, 8, 8, 1);
+        int b = tree.AddNode("b.bin", root, false, 8, 8, 1);
+        tree.AddNode("unique.bin", root, false, 5, 5, 1);
+
+        var found = DuplicateFinder.SizeCollidingCandidates(tree, @"C:\tmp\diskmap-candidates");
+        Assert.Equal([a, b], found.Select(f => f.Id).Order().ToList());
+        Assert.Equal(3, DuplicateFinder.Candidates(tree, @"C:\tmp\diskmap-candidates").Count);
     }
 
     private sealed class DuplicateFixture : IDisposable

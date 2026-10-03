@@ -18,17 +18,26 @@ public sealed class DuplicatesPage : ListPage
     {
         Root.Children.Clear();
         Root.Children.Add(Title("Duplicates"));
-        if (Model.Tree is null)
+        if (Model.Tree is not { } tree || Model.RootPath is not { } rootPath)
         {
             Root.Children.Add(new TextBlock { Text = "Scan a folder first." });
             return;
         }
         var run = SmallButton(_running ? "Scanning…" : "Find duplicates", async () =>
         {
-            _running = true; Refresh();
-            var candidates = DuplicateFinder.Candidates(Model.Tree, Model.RootPath!);
-            Model.Duplicates = await DuplicateFinder.FindDuplicatesAsync(candidates);
-            _running = false; Refresh();
+            _running = true;
+            Refresh();
+            try
+            {
+                // Paths only for files sharing a size, then hashing — all off the UI thread.
+                Model.Duplicates = await Task.Run(() =>
+                    DuplicateFinder.FindDuplicatesAsync(DuplicateFinder.SizeCollidingCandidates(tree, rootPath)));
+            }
+            finally
+            {
+                _running = false;
+                Refresh();
+            }
         });
         run.IsEnabled = !_running;
         Root.Children.Add(Row(run, new TextBlock { Text = $"{Model.Duplicates.Count} groups", VerticalAlignment = VerticalAlignment.Center }));
@@ -41,29 +50,24 @@ public sealed class DuplicatesPage : ListPage
             var panel = new StackPanel();
             string kind = group.SharesStorage ? "shared storage (clone/hardlink)" : "content duplicates";
             panel.Children.Add(new TextBlock { Text = $"{group.FileIDs.Count} copies · {ByteFormat.Format(group.SizeEach)} each · {kind}", FontWeight = FontWeights.SemiBold });
-            int? keeper = group.DefaultKeeperId(id => Model.Tree!.ModifiedDay[id]);
+            int? keeper = group.DefaultKeeperId(id => tree.ModifiedDay[id]);
+            var checks = new List<(int Id, CheckBox Check)>();
             foreach (var id in group.FileIDs)
             {
                 var row = new DockPanel();
                 var check = new CheckBox { IsChecked = id != keeper, VerticalAlignment = VerticalAlignment.Center };
-                int capturedId = id;
-                check.Checked += (_, _) => { };
                 var path = new TextBlock { Text = Model.PathOf(id), Margin = new Thickness(8, 0, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
                 if (id == keeper) path.Text += "  (keeps — oldest)";
                 DockPanel.SetDock(check, Dock.Left);
                 row.Children.Add(check); row.Children.Add(path);
-                row.Tag = (capturedId, check);
+                checks.Add((id, check));
                 panel.Children.Add(row);
             }
             var stageAll = SmallButton("Stage checked", () =>
             {
-                var rows = panel.Children.OfType<DockPanel>();
-                foreach (var r in rows)
-                {
-                    var (id, check) = ((int, CheckBox))r.Tag;
+                foreach (var (id, check) in checks)
                     if (check.IsChecked == true)
                         Model.Stage(id, "duplicate", group.Hash, group.FileIDs.Count);
-                }
             });
             panel.Children.Add(stageAll);
             border.Child = panel;
@@ -75,18 +79,37 @@ public sealed class DuplicatesPage : ListPage
 /// <summary>Regenerable directories matched against the bundled pattern list.</summary>
 public sealed class QuickWinsPage : ListPage
 {
+    private const int MaxRows = 400;
+
     protected override void Refresh()
     {
         Root.Children.Clear();
         Root.Children.Add(Title("Quick Wins"));
-        if (Model.Tree is null)
+        if (Model.Tree is not { } tree || Model.RootPath is not { } rootPath || Model.Totals.Length == 0)
         {
             Root.Children.Add(new TextBlock { Text = "Scan a folder first." });
             return;
         }
-        var hits = QuickWins.Find(Model.Tree, Model.RootPath!, QuickWins.BundledPatterns());
-        Model.QuickWinsHits = hits;
-        if (hits.Count == 0)
+        var totals = Model.Totals;
+        Root.Children.Add(Working("Looking for regenerable folders…"));
+        Compute(() =>
+        {
+            var hits = QuickWins.Find(tree, rootPath, QuickWins.BundledPatterns());
+            return hits
+                .GroupBy(h => h.Category)
+                .Select(g => (Category: g.Key,
+                              Size: g.Sum(h => totals[h.Id]),
+                              Hits: g.OrderByDescending(h => totals[h.Id]).Select(h => (h.Id, Path: tree.PathOf(h.Id, rootPath))).ToList()))
+                .OrderByDescending(g => g.Size)
+                .ToList();
+        }, groups => Show(totals, groups));
+    }
+
+    private void Show(long[] totals, List<(string Category, long Size, List<(int Id, string Path)> Hits)> groups)
+    {
+        Root.Children.RemoveAt(Root.Children.Count - 1);
+        int hitCount = groups.Sum(g => g.Hits.Count);
+        if (hitCount == 0)
         {
             Root.Children.Add(new TextBlock
             {
@@ -100,10 +123,9 @@ public sealed class QuickWinsPage : ListPage
         var checkedIds = new HashSet<int>();
         var summary = new TextBlock { Foreground = Subtle, VerticalAlignment = VerticalAlignment.Center };
         var stageBtn = new Button { Content = "Stage Selected", Padding = new Thickness(10, 4, 10, 4), IsEnabled = false };
-        long CheckedSize() => checkedIds.Sum(id => Model.Totals[id]);
         void UpdateSummary()
         {
-            summary.Text = $"{hits.Count} regenerable folders · {ByteFormat.Format(CheckedSize())} selected";
+            summary.Text = $"{hitCount:N0} regenerable folders · {ByteFormat.Format(checkedIds.Sum(id => totals[id]))} selected";
             stageBtn.IsEnabled = checkedIds.Count > 0;
         }
 
@@ -114,27 +136,35 @@ public sealed class QuickWinsPage : ListPage
         Root.Children.Add(header);
         UpdateSummary();
 
-        foreach (var group in hits.GroupBy(h => h.Category).OrderByDescending(g => g.Sum(h => Model.Totals[h.Id])))
+        int rows = 0;
+        foreach (var (category, size, hits) in groups)
         {
             Root.Children.Add(new TextBlock
             {
-                Text = $"{group.Key} · {ByteFormat.Format(group.Sum(h => Model.Totals[h.Id]))}",
+                Text = $"{category} · {ByteFormat.Format(size)}",
                 FontWeight = FontWeights.SemiBold, Foreground = Subtle, Margin = new Thickness(0, 10, 0, 2),
             });
-            foreach (var hit in group)
+            foreach (var (id, fullPath) in hits)
             {
+                // Thousands of rows in a non-virtualized panel is what made this page crawl.
+                if (rows++ == MaxRows)
+                {
+                    Root.Children.Add(new TextBlock { Text = $"… {hitCount - MaxRows:N0} smaller folders not shown", Foreground = Subtle });
+                    break;
+                }
                 var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
                 var check = new CheckBox { VerticalAlignment = VerticalAlignment.Center };
-                int captured = hit.Id;
+                int captured = id;
                 check.Checked += (_, _) => { checkedIds.Add(captured); UpdateSummary(); };
                 check.Unchecked += (_, _) => { checkedIds.Remove(captured); UpdateSummary(); };
-                var path = new TextBlock { Text = Model.PathOf(hit.Id), TextTrimming = TextTrimming.CharacterEllipsis };
-                var size = new TextBlock { Text = ByteFormat.Format(Model.Totals[hit.Id]), Width = 90, Foreground = Subtle };
+                var path = new TextBlock { Text = fullPath, TextTrimming = TextTrimming.CharacterEllipsis };
+                var sizeText = new TextBlock { Text = ByteFormat.Format(totals[id]), Width = 90, Foreground = Subtle };
                 DockPanel.SetDock(check, Dock.Left);
-                DockPanel.SetDock(size, Dock.Right);
-                row.Children.Add(check); row.Children.Add(size); row.Children.Add(path);
+                DockPanel.SetDock(sizeText, Dock.Right);
+                row.Children.Add(check); row.Children.Add(sizeText); row.Children.Add(path);
                 Root.Children.Add(row);
             }
+            if (rows > MaxRows) break;
         }
 
         stageBtn.Click += (_, _) =>
@@ -147,14 +177,13 @@ public sealed class QuickWinsPage : ListPage
 /// <summary>Installed apps (registry Uninstall hives) + heuristic leftovers.</summary>
 public sealed class AppsPage : ListPage
 {
-    private readonly List<InstalledApp> _apps = AppLeftoverFinder.InstalledApplications();
+    private List<InstalledApp>? _apps;
     private readonly TextBox _filter = new() { Width = 240, Margin = new Thickness(0, 0, 0, 10) };
     private readonly StackPanel _list = new();
 
     public AppsPage()
     {
         _filter.TextChanged += (_, _) => RenderList();
-        _filter.SetValue(System.Windows.Controls.Primitives.TextBoxBase.TagProperty, "Filter apps…");
         var hint = new TextBlock { Text = "Filter:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         var top = new DockPanel();
         DockPanel.SetDock(hint, Dock.Left);
@@ -162,17 +191,30 @@ public sealed class AppsPage : ListPage
         Root.Children.Add(Title("Apps"));
         Root.Children.Add(top);
         Root.Children.Add(_list);
-        RenderList();
+    }
+
+    /// <summary>The app list doesn't depend on the scan: read the registry once, off the UI thread.</summary>
+    protected override void Refresh()
+    {
+        if (_apps is not null) return;
+        _list.Children.Add(Working("Reading installed apps…"));
+        Compute(AppLeftoverFinder.InstalledApplications, apps =>
+        {
+            _apps = apps;
+            RenderList();
+        });
     }
 
     private void RenderList()
     {
+        if (_apps is null) return;
         _list.Children.Clear();
         string q = _filter.Text.Trim();
         foreach (var app in _apps.Where(a => q.Length == 0 || a.Name.Contains(q, StringComparison.OrdinalIgnoreCase)).Take(200))
         {
             var expander = new Expander { Header = app.Name, Margin = new Thickness(0, 2, 0, 2) };
             var details = new StackPanel { Margin = new Thickness(16, 4, 0, 4) };
+            expander.Content = details; // was never attached, so expanding showed nothing
             var captured = app;
             expander.Expanded += async (_, _) =>
             {
@@ -189,9 +231,10 @@ public sealed class AppsPage : ListPage
                 {
                     var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
                     var name = new TextBlock { Text = path, TextTrimming = TextTrimming.CharacterEllipsis };
-                    var stage = SmallButton("Stage", () =>
+                    var stage = SmallButton("Stage", async () =>
                     {
-                        if (Model.Cleanup.Stage(path, AppLeftoverFinder.AllocatedSize(path), $"leftover: {captured.Name}"))
+                        long size = await Task.Run(() => AppLeftoverFinder.AllocatedSize(path));
+                        if (Model.Cleanup.Stage(path, size, $"leftover: {captured.Name}"))
                             Model.RefreshStaged();
                     });
                     var reveal = SmallButton("Reveal", () => Explorer.Reveal(path));
@@ -207,8 +250,6 @@ public sealed class AppsPage : ListPage
             _list.Children.Add(expander);
         }
     }
-
-    protected override void Refresh() { /* list renders on expand/filter, not per scan */ }
 }
 
 /// <summary>Save snapshots of the current scan, list prior ones, diff two.</summary>
@@ -216,23 +257,19 @@ public sealed class SnapshotsPage : ListPage
 {
     private readonly ListBox _list = new() { MinHeight = 160, Margin = new Thickness(0, 8, 0, 8) };
     private readonly StackPanel _diff = new();
+    private readonly TextBlock _status = new() { Margin = new Thickness(0, 4, 0, 0) };
 
     public SnapshotsPage()
     {
         Root.Children.Add(Title("Snapshots"));
-        var save = SmallButton("Save snapshot of current scan", SaveSnapshot);
-        Root.Children.Add(save);
+        Root.Children.Add(SmallButton("Save snapshot of current scan", SaveSnapshot));
+        Root.Children.Add(_status);
         Root.Children.Add(_list);
-        var compare = SmallButton("Compare selected with current", CompareSelected);
-        Root.Children.Add(compare);
+        Root.Children.Add(SmallButton("Compare selected with current", CompareSelected));
         Root.Children.Add(_diff);
-        Model.StateChanged += (_, _) => Dispatcher.InvokeAsync(RefreshList);
-        Loaded += (_, _) => RefreshList();
     }
 
-    protected override void Refresh() => RefreshList();
-
-    private void RefreshList()
+    protected override void Refresh()
     {
         _list.Items.Clear();
         if (Model.RootPath is null) return;
@@ -242,25 +279,46 @@ public sealed class SnapshotsPage : ListPage
         }
     }
 
-    private void SaveSnapshot()
+    private async void SaveSnapshot()
     {
-        if (Model.Tree is null || Model.RootPath is null) return;
-        var snap = new DiskSnapshot(Model.RootPath, DateTimeOffset.Now, Model.Tree);
-        SnapshotStore.Save(snap, SnapshotStore.DefaultDirectory());
-        RefreshList();
+        if (Model.Tree is not { } tree || Model.RootPath is not { } rootPath) return;
+        _status.Text = "Saving…";
+        try
+        {
+            // Encoding a multi-million-node tree takes seconds: never on the UI thread.
+            await Task.Run(() => SnapshotStore.Save(new DiskSnapshot(rootPath, DateTimeOffset.Now, tree), SnapshotStore.DefaultDirectory()));
+            _status.Text = "Saved.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Save failed: {ex.Message}";
+        }
+        Refresh();
     }
 
-    private void CompareSelected()
+    private async void CompareSelected()
     {
         _diff.Children.Clear();
-        if (_list.SelectedItem is not ListBoxItem { Tag: string path } || Model.Tree is null || Model.RootPath is null)
+        if (_list.SelectedItem is not ListBoxItem { Tag: string path } || Model.Tree is not { } tree || Model.RootPath is not { } rootPath)
         {
             _diff.Children.Add(new TextBlock { Text = "Select a snapshot to compare." });
             return;
         }
-        var before = SnapshotStore.Load(path);
-        var after = new DiskSnapshot(Model.RootPath, DateTimeOffset.Now, Model.Tree);
-        var changes = SnapshotDiff.Changes(before, after, Model.SizeBasis);
+        var basis = Model.SizeBasis;
+        _diff.Children.Add(Working("Comparing…"));
+        List<SnapshotChange> changes;
+        try
+        {
+            changes = await Task.Run(() => SnapshotDiff.Changes(
+                SnapshotStore.Load(path), new DiskSnapshot(rootPath, DateTimeOffset.Now, tree), basis));
+        }
+        catch (Exception ex)
+        {
+            _diff.Children.Clear();
+            _diff.Children.Add(new TextBlock { Text = $"Compare failed: {ex.Message}" });
+            return;
+        }
+        _diff.Children.Clear();
         if (changes.Count == 0)
         {
             _diff.Children.Add(new TextBlock { Text = "No folder size changes." });
@@ -307,7 +365,11 @@ public sealed class CleanupQueuePage : ListPage
                 var row = new DockPanel { Margin = new Thickness(0, 3, 0, 3) };
                 var name = new TextBlock { Text = item.Path, TextTrimming = TextTrimming.CharacterEllipsis };
                 var meta = new TextBlock { Text = ByteFormat.Format(item.Size), Width = 90, Foreground = Subtle };
-                var unstage = SmallButton("Unstage", () => Model.Unstage(item.Id));
+                var unstage = SmallButton("Unstage", () =>
+                {
+                    Model.Unstage(item.Id);
+                    Refresh();
+                });
                 var reveal = SmallButton("Reveal", () => Explorer.Reveal(item.Path));
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
                 buttons.Children.Add(reveal);
@@ -331,9 +393,11 @@ public sealed class CleanupQueuePage : ListPage
                 $"Move {items.Count} staged items to the Recycle Bin?\n\nThis is recoverable — items stay in the Recycle Bin until emptied.",
                 "Confirm cleanup", MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (confirm != MessageBoxResult.Yes) return;
+            commit.IsEnabled = false;
             var results = await Task.Run(() => Model.Cleanup.Commit());
             int failed = results.Count(r => r.Error is not null);
             Model.RefreshStaged();
+            Refresh();
             MessageBox.Show(
                 failed == 0 ? $"Done. {results.Count} items moved to the Recycle Bin."
                             : $"{results.Count - failed} recycled, {failed} failed (left staged).",

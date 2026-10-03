@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Media;
 using DiskMap.Core;
 
@@ -8,7 +7,8 @@ namespace DiskMap.App.Pages;
 
 /// <summary>
 /// Shared helper for the list-style pages: a vertical stack with a header
-/// row, content area, and refresh on state changes.
+/// row, content area, and refresh on state changes (while on screen —
+/// see <see cref="ModelEvents"/>).
 /// </summary>
 public abstract class ListPage : UserControl
 {
@@ -19,14 +19,38 @@ public abstract class ListPage : UserControl
     protected static Brush Subtle =>
         (Brush)Application.Current.Resources["AppSubtle"];
 
+    private int _generation;
+
     protected ListPage()
     {
         Content = new ScrollViewer { Content = Root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        Model.StateChanged += (_, _) => Dispatcher.InvokeAsync(Refresh);
-        Loaded += (_, _) => Refresh();
+        ModelEvents.WhileLoaded(this, Refresh);
     }
 
     protected abstract void Refresh();
+
+    /// <summary>
+    /// Runs <paramref name="work"/> (anything proportional to the tree) on
+    /// a worker thread, then <paramref name="show"/> on the UI thread —
+    /// unless a newer refresh started meanwhile.
+    /// </summary>
+    protected async void Compute<T>(Func<T> work, Action<T> show)
+    {
+        int generation = ++_generation;
+        T result;
+        try
+        {
+            result = await Task.Run(work);
+        }
+        catch (Exception ex)
+        {
+            if (generation == _generation) Root.Children.Add(new TextBlock { Text = $"Failed: {ex.Message}", Foreground = Subtle });
+            return;
+        }
+        if (generation == _generation) show(result);
+    }
+
+    protected static TextBlock Working(string text) => new() { Text = text, Foreground = Subtle };
 
     protected TextBlock Title(string text) => new()
     {
@@ -61,25 +85,34 @@ public sealed class TopSizesPage : ListPage
     {
         Root.Children.Clear();
         Root.Children.Add(Title("Top Sizes"));
-        if (Model.Tree is not { } tree || Model.Totals.Length == 0)
+        if (Model.Tree is not { } tree || Model.RootPath is not { } rootPath || Model.Totals.Length == 0)
         {
             Root.Children.Add(new TextBlock { Text = "Scan a folder to see the largest items." });
             return;
         }
-        var ranked = TopSizes.Ranked(Model.Totals, 300);
+        var totals = Model.Totals;
+        Root.Children.Add(Working("Ranking…"));
+        Compute(
+            () => TopSizes.Ranked(totals, 300).Select(id => (Id: id, Path: tree.PathOf(id, rootPath))).ToList(),
+            ranked => Show(tree, totals, ranked));
+    }
+
+    private void Show(FileTree tree, long[] totals, List<(int Id, string Path)> ranked)
+    {
+        Root.Children.RemoveAt(Root.Children.Count - 1);
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
-        foreach (var (id, index) in ranked.Select((id, i) => (id, i)))
+        for (int row = 0; row < ranked.Count; row++)
         {
+            var (id, fullPath) = ranked[row];
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            int row = index;
-            var rank = new TextBlock { Text = $"{index + 1}", Foreground = Subtle, Margin = new Thickness(0, 1, 0, 1) };
-            var size = new TextBlock { Text = ByteFormat.Format(Model.Totals[id]), Margin = new Thickness(0, 1, 8, 1) };
-            var path = new TextBlock { Text = Model.PathOf(id), Margin = new Thickness(0, 1, 8, 1), TextTrimming = TextTrimming.CharacterEllipsis };
-            var reveal = SmallButton("Reveal", () => Explorer.Reveal(Model.PathOf(id)));
+            var rank = new TextBlock { Text = $"{row + 1}", Foreground = Subtle, Margin = new Thickness(0, 1, 0, 1) };
+            var size = new TextBlock { Text = ByteFormat.Format(totals[id]), Margin = new Thickness(0, 1, 8, 1) };
+            var path = new TextBlock { Text = fullPath, Margin = new Thickness(0, 1, 8, 1), TextTrimming = TextTrimming.CharacterEllipsis };
+            var reveal = SmallButton("Reveal", () => Explorer.Reveal(fullPath));
             if (tree.IsDirectory[id])
             {
                 path.Cursor = System.Windows.Input.Cursors.Hand;
@@ -121,7 +154,7 @@ public sealed class FoldersPage : ListPage
             return;
         }
         long max = children.Max(c => c.Size);
-        foreach (var (id, size) in children)
+        foreach (var (id, size) in children.Take(500))
         {
             var panel = new DockPanel { Margin = new Thickness(0, 3, 0, 3) };
             var name = new TextBlock { Text = tree.NameOf(id), Width = 220, TextTrimming = TextTrimming.CharacterEllipsis, Cursor = System.Windows.Input.Cursors.Hand };
@@ -143,6 +176,8 @@ public sealed class FoldersPage : ListPage
             panel.Children.Add(bar);
             Root.Children.Add(panel);
         }
+        if (children.Count > 500)
+            Root.Children.Add(new TextBlock { Text = $"… and {children.Count - 500:N0} smaller folders", Foreground = Subtle });
     }
 }
 
@@ -153,14 +188,26 @@ public sealed class AgeMapPage : ListPage
     {
         Root.Children.Clear();
         Root.Children.Add(Title("Age Map"));
-        if (Model.Tree is not { } tree || Model.Totals.Length == 0)
+        if (Model.Tree is not { } tree || Model.RootPath is not { } rootPath || Model.Totals.Length == 0)
         {
             Root.Children.Add(new TextBlock { Text = "Scan a folder to see file ages." });
             return;
         }
-        int today = AgeMap.Today();
-        var buckets = AgeMap.BucketSizes(tree, Model.Totals, today);
-        long max = buckets.Count > 0 ? buckets.Values.Max() : 1;
+        var totals = Model.Totals;
+        Root.Children.Add(Working("Bucketing file ages…"));
+        Compute(() =>
+        {
+            int today = AgeMap.Today();
+            var untouched = AgeMap.Untouched(tree, totals, today, limit: 50);
+            return (Buckets: AgeMap.BucketSizes(tree, totals, today),
+                    Untouched: untouched.Select(id => (Id: id, Path: tree.PathOf(id, rootPath))).ToList());
+        }, result => Show(tree, totals, result.Buckets, result.Untouched));
+    }
+
+    private void Show(FileTree tree, long[] totals, Dictionary<AgeBucket, long> buckets, List<(int Id, string Path)> untouched)
+    {
+        Root.Children.RemoveAt(Root.Children.Count - 1);
+        long max = buckets.Count > 0 ? Math.Max(1, buckets.Values.Max()) : 1;
         foreach (var bucket in Enum.GetValues<AgeBucket>())
         {
             if (!buckets.TryGetValue(bucket, out long size) || size <= 0) continue;
@@ -174,7 +221,6 @@ public sealed class AgeMapPage : ListPage
             Root.Children.Add(panel);
         }
 
-        var untouched = AgeMap.Untouched(tree, Model.Totals, today);
         if (untouched.Count > 0)
         {
             var header = new DockPanel { Margin = new Thickness(0, 18, 0, 8) };
@@ -185,19 +231,19 @@ public sealed class AgeMapPage : ListPage
             Root.Children.Add(header);
 
             var checkedIds = new HashSet<int>();
-            foreach (var id in untouched.Take(50))
+            foreach (var (id, fullPath) in untouched)
             {
                 var check = new CheckBox { VerticalAlignment = VerticalAlignment.Center };
                 int captured = id;
                 check.Checked += (_, _) => checkedIds.Add(captured);
                 check.Unchecked += (_, _) => checkedIds.Remove(captured);
                 var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
-                var path = new TextBlock { Text = Model.PathOf(id), TextTrimming = TextTrimming.CharacterEllipsis };
+                var path = new TextBlock { Text = fullPath, TextTrimming = TextTrimming.CharacterEllipsis };
                 path.MouseLeftButtonDown += (_, e) =>
                 {
                     if (e.ClickCount == 2 && tree.IsDirectory[captured]) Model.DrillTo(captured);
                 };
-                var size = new TextBlock { Text = ByteFormat.Format(Model.Totals[id]), Width = 90, Foreground = Subtle };
+                var size = new TextBlock { Text = ByteFormat.Format(totals[id]), Width = 90, Foreground = Subtle };
                 DockPanel.SetDock(check, Dock.Left);
                 DockPanel.SetDock(size, Dock.Right);
                 row.Children.Add(check); row.Children.Add(size); row.Children.Add(path);

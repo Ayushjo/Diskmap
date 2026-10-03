@@ -46,17 +46,24 @@ public static class SquarifiedTreemap
         return null;
     }
 
+    /// <summary>
+    /// The row is items[start..end). Linear per row: a running total
+    /// replaces re-summing the remainder, and the worst aspect ratio needs
+    /// only the row's largest and smallest items — a folder with tens of
+    /// thousands of children used to stall the UI thread for seconds.
+    /// </summary>
     private static void Squarify(List<(int Id, double Size)> items, DmRect rect, List<TreemapRect> result)
     {
-        while (items.Count > 0 && rect.Width > 0 && rect.Height > 0)
+        double total = 0;
+        foreach (var item in items) total += item.Size; // integer byte counts: sums stay exact
+        int start = 0;
+        while (start < items.Count && rect.Width > 0 && rect.Height > 0)
         {
-            if (items.Count == 1)
+            if (start == items.Count - 1)
             {
-                result.Add(new TreemapRect(items[0].Id, rect));
+                result.Add(new TreemapRect(items[start].Id, rect));
                 return;
             }
-
-            double total = items.Sum(i => i.Size);
             if (total <= 0) return;
 
             // The paper's width() is the shorter side of the *remaining*
@@ -64,24 +71,22 @@ public static class SquarifiedTreemap
             double shortSide = Math.Min(rect.Width, rect.Height);
             double rectArea = rect.Width * rect.Height;
 
-            var row = new List<(int Id, double Size)>();
+            int end = start;
             double rowSum = 0;
             double bestWorst = double.PositiveInfinity;
-            int index = 0;
-
-            while (index < items.Count)
+            while (end < items.Count)
             {
-                var candidate = items[index];
-                double proposedSum = rowSum + candidate.Size;
-                var candidateSizes = row.Select(r => r.Size).Append(candidate.Size).ToList();
-                double worst = WorstAspectRatio(candidateSizes, proposedSum, shortSide, rectArea, total);
+                double proposedSum = rowSum + items[end].Size;
+                // Sorted descending: the row's extremes are its first item
+                // and the candidate.
+                double worst = WorstAspectRatio(
+                    items[start].Size, items[end].Size, proposedSum, shortSide, rectArea, total);
 
-                if (row.Count == 0 || worst <= bestWorst)
+                if (end == start || worst <= bestWorst)
                 {
-                    row.Add(candidate);
                     rowSum = proposedSum;
                     bestWorst = worst;
-                    index++;
+                    end++;
                 }
                 else
                 {
@@ -89,18 +94,21 @@ public static class SquarifiedTreemap
                 }
             }
 
-            rect = Place(row, rowSum, total, rect, result);
-            items = items[index..];
+            rect = Place(items, start, end, rowSum, total, rect, result);
+            total -= rowSum;
+            start = end;
         }
     }
 
     /// <summary>
-    /// Lays <paramref name="row"/> along the shorter side. The last item in
-    /// the row absorbs rounding leftover so the strip is covered exactly.
+    /// Lays items[start..end) along the shorter side. The last item in the
+    /// row absorbs rounding leftover so the strip is covered exactly.
     /// Returns the unused remainder of <paramref name="rect"/>.
     /// </summary>
     private static DmRect Place(
-        List<(int Id, double Size)> row,
+        List<(int Id, double Size)> items,
+        int start,
+        int end,
         double sum,
         double total,
         DmRect rect,
@@ -111,12 +119,12 @@ public static class SquarifiedTreemap
         {
             double colWidth = rect.Width * (sum / total);
             double y = rect.MinY;
-            for (int i = 0; i < row.Count; i++)
+            for (int i = start; i < end; i++)
             {
-                double height = i == row.Count - 1
+                double height = i == end - 1
                     ? rect.MaxY - y
-                    : rect.Height * (row[i].Size / sum);
-                result.Add(new TreemapRect(row[i].Id, new DmRect(rect.MinX, y, colWidth, height)));
+                    : rect.Height * (items[i].Size / sum);
+                result.Add(new TreemapRect(items[i].Id, new DmRect(rect.MinX, y, colWidth, height)));
                 y += height;
             }
             double usedMaxX = rect.MinX + colWidth;
@@ -126,12 +134,12 @@ public static class SquarifiedTreemap
         {
             double rowHeight = rect.Height * (sum / total);
             double x = rect.MinX;
-            for (int i = 0; i < row.Count; i++)
+            for (int i = start; i < end; i++)
             {
-                double width = i == row.Count - 1
+                double width = i == end - 1
                     ? rect.MaxX - x
-                    : rect.Width * (row[i].Size / sum);
-                result.Add(new TreemapRect(row[i].Id, new DmRect(x, rect.MinY, width, rowHeight)));
+                    : rect.Width * (items[i].Size / sum);
+                result.Add(new TreemapRect(items[i].Id, new DmRect(x, rect.MinY, width, rowHeight)));
                 x += width;
             }
             double usedMaxY = rect.MinY + rowHeight;
@@ -143,10 +151,13 @@ public static class SquarifiedTreemap
     /// Highest aspect ratio in a candidate row. This is the paper's
     /// worst(R, w) = max(w²·r₊/s², s²/(w²·r₋)) after scaling sizes so they
     /// sum to the remaining rectangle's area — not to shortSide², which is
-    /// only correct when the rectangle is already square.
+    /// only correct when the rectangle is already square. A cell's aspect
+    /// ratio falls then rises with its size, so the row's largest and
+    /// smallest items bound it.
     /// </summary>
     private static double WorstAspectRatio(
-        List<double> sizes,
+        double largest,
+        double smallest,
         double sum,
         double shortSide,
         double rectArea,
@@ -155,16 +166,13 @@ public static class SquarifiedTreemap
         if (sum <= 0 || shortSide <= 0 || rectArea <= 0 || total <= 0)
             return double.PositiveInfinity;
         double thickness = sum / total * rectArea / shortSide;
-        if (thickness <= 0) return double.PositiveInfinity;
+        if (thickness <= 0 || smallest <= 0) return double.PositiveInfinity;
 
-        double worst = 0;
-        foreach (double size in sizes)
+        double Aspect(double size)
         {
-            if (size <= 0) return double.PositiveInfinity;
             double length = size / sum * shortSide;
-            double aspect = length >= thickness ? length / thickness : thickness / length;
-            if (aspect > worst) worst = aspect;
+            return length >= thickness ? length / thickness : thickness / length;
         }
-        return worst;
+        return Math.Max(Aspect(largest), Aspect(smallest));
     }
 }

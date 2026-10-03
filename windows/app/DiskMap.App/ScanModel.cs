@@ -7,6 +7,9 @@ namespace DiskMap.App;
 /// App-wide scan state — the Windows counterpart of the macOS app's
 /// shared ScanModel. One scan feeds every page; totals are rolled up once
 /// and reused. Views read Tree/Totals directly and subscribe to changes.
+///
+/// Anything proportional to the tree (the scan itself, rollups) runs off
+/// the UI thread; only the finished values are published here.
 /// </summary>
 public sealed class ScanModel : ViewModelBase
 {
@@ -32,7 +35,7 @@ public sealed class ScanModel : ViewModelBase
     public SizeBasis SizeBasis
     {
         get => _sizeBasis;
-        set { if (Set(ref _sizeBasis, value)) Reroll(); }
+        set { if (Set(ref _sizeBasis, value)) _ = RerollAsync(); }
     }
 
     private bool _isScanning;
@@ -53,11 +56,12 @@ public sealed class ScanModel : ViewModelBase
     private string _backend = "";
     public string Backend { get => _backend; private set => Set(ref _backend, value); }
 
+    /// <summary>Why the fast MFT path was skipped ("needs administrator", …); null when it ran or wasn't wanted.</summary>
+    private string? _fallbackReason;
+    public string? FallbackReason { get => _fallbackReason; private set => Set(ref _fallbackReason, value); }
+
     private List<DuplicateGroup> _duplicates = [];
     public List<DuplicateGroup> Duplicates { get => _duplicates; set { if (Set(ref _duplicates, value)) Changed(); } }
-
-    private List<QuickWins.Hit> _quickWins = [];
-    public List<QuickWins.Hit> QuickWinsHits { get => _quickWins; set { if (Set(ref _quickWins, value)) Changed(); } }
 
     public CleanupQueue Cleanup { get; } = new();
 
@@ -67,28 +71,47 @@ public sealed class ScanModel : ViewModelBase
     public event EventHandler? StateChanged;
     private void Changed() => StateChanged?.Invoke(this, EventArgs.Empty);
 
-    private void Reroll()
+    private async Task RerollAsync()
     {
-        if (_tree is not null)
-            Totals = _tree.RollUpSizes(_sizeBasis);
-        Changed();
+        if (_tree is not { } tree) return;
+        var basis = _sizeBasis;
+        var totals = await Task.Run(() => tree.RollUpSizes(basis));
+        // A newer toggle or scan may have landed while this one ran.
+        if (ReferenceEquals(tree, _tree) && basis == _sizeBasis) Totals = totals;
     }
 
     public async Task ScanAsync(string path)
     {
+        if (IsScanning) return;
         IsScanning = true;
         ScanProgress = 0;
-        var progress = new Progress<int>(i => ScanProgress = i);
-        var result = await _engine.ScanAsync(path, progress);
-        Tree = result.Tree;
-        RootPath = path;
-        ZoomedNode = 0;
-        ItemCount = result.ItemCount;
-        Elapsed = result.ElapsedSeconds;
-        NotDownloaded = result.NotDownloadedCount;
-        Backend = result.Backend;
-        Totals = result.Tree.RollUpSizes(_sizeBasis);
-        IsScanning = false;
+        try
+        {
+            var progress = new Progress<int>(i => ScanProgress = i);
+            var basis = _sizeBasis;
+            var (result, totals) = await Task.Run(async () =>
+            {
+                var scanned = await _engine.ScanAsync(path, progress);
+                return (scanned, scanned.Tree.RollUpSizes(basis));
+            });
+            ItemCount = result.ItemCount;
+            Elapsed = result.ElapsedSeconds;
+            NotDownloaded = result.NotDownloadedCount;
+            Backend = result.Backend;
+            FallbackReason = result.FallbackReason;
+            Duplicates = [];
+            // Totals before Tree: a view refreshed by the Tree change must
+            // never pair the new tree with the old totals.
+            _totals = totals;
+            _zoomedNode = 0;
+            RootPath = path;
+            Tree = result.Tree;
+            if (basis != _sizeBasis) await RerollAsync();
+        }
+        finally
+        {
+            IsScanning = false;
+        }
     }
 
     public void DrillTo(int nodeId)
@@ -125,10 +148,13 @@ public sealed class ScanModel : ViewModelBase
         RefreshStaged();
     }
 
+    /// <summary>
+    /// Staging touches only the queue, never the tree, so it doesn't raise
+    /// StateChanged — that used to rebuild every page on every Stage click.
+    /// </summary>
     public void RefreshStaged()
     {
         StagedItems.Clear();
         foreach (var item in Cleanup.AllItems()) StagedItems.Add(item);
-        Changed();
     }
 }

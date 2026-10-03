@@ -19,7 +19,7 @@ public sealed class SunburstControl : FrameworkElement
 
     public SunburstControl()
     {
-        ScanModel.Shared.StateChanged += (_, _) => Dispatcher.InvokeAsync(InvalidateVisual);
+        ModelEvents.WhileLoaded(this, InvalidateVisual);
         MouseLeftButtonDown += OnClick;
         MouseMove += OnMove;
         MouseLeave += (_, _) => { if (_tooltip is not null) _tooltip.IsOpen = false; };
@@ -40,7 +40,7 @@ public sealed class SunburstControl : FrameworkElement
 
         // Center = current node; click to zoom out.
         dc.DrawEllipse(NodeColors.BrushFor(model.ZoomedNode),
-            new Pen(NodeColors.Stroke, 1), new Point(cx, cy), centerRadius, centerRadius);
+            NodeColors.StrokePen, new Point(cx, cy), centerRadius, centerRadius);
 
         var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals);
         long total = Math.Max(1, model.Totals[model.ZoomedNode]);
@@ -57,7 +57,7 @@ public sealed class SunburstControl : FrameworkElement
             if (sweep < 0.002) { angle += sweep; continue; }
             var geom = Arc(cx, cy, r0, r1, angle, angle + sweep);
             var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id) : NodeColors.OtherBrush;
-            dc.DrawGeometry(fill, new Pen(NodeColors.Stroke, 1), geom);
+            dc.DrawGeometry(fill, NodeColors.StrokePen, geom);
             _hit.Add((slice.NodeID, geom));
             if (slice.Children.Count > 0)
                 DrawRing(dc, slice.Children, Math.Max(1, slice.Size), angle, r1, r1 + (r1 - r0), cx, cy, tree);

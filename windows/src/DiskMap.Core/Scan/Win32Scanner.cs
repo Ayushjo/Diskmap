@@ -16,16 +16,22 @@ internal static class Win32Scanner
 {
     private readonly record struct Job(string Path, int NodeId);
 
-    public static WalkResult Walk(string root, IProgress<int>? progress)
+    /// <summary>
+    /// Null only when <paramref name="budget"/> runs out first — the caller
+    /// has the MFT for trees too big to walk quickly.
+    /// </summary>
+    public static WalkResult? Walk(string root, IProgress<int>? progress, TimeSpan? budget = null)
     {
         var tree = new FileTree();
         int rootId = tree.AddNode(
             name: RootName(root), parentId: -1, isDirectory: true,
             logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0);
         long clusterSize = ClusterSize(root);
-        var state = new State(tree, progress);
+        var state = new State(tree, progress, budget);
         state.Enqueue(root, rootId);
 
+        // 8 vs 24 vs 48 workers measured the same warm (~70 s, 8M items):
+        // past 8 the shared tree lock and allocation churn bound the walk.
         int workers = Math.Max(1, Math.Min(8, Environment.ProcessorCount));
         var threads = new Task[workers];
         for (int i = 0; i < workers; i++)
@@ -140,14 +146,19 @@ internal static class Win32Scanner
         private int _notDownloadedCount;
         private int _lastReported;
         private ulong _peak;
+        private bool _overBudget;
+        private readonly long _deadline;
         private readonly IProgress<int>? _progress;
         public readonly FileTree Tree;
 
-        public State(FileTree tree, IProgress<int>? progress)
+        public State(FileTree tree, IProgress<int>? progress, TimeSpan? budget)
         {
             Tree = tree;
             _progress = progress;
             _peak = ProcessMemory.Current()?.ResidentBytes ?? 0;
+            _deadline = budget is { } b
+                ? System.Diagnostics.Stopwatch.GetTimestamp() + (long)(b.TotalSeconds * System.Diagnostics.Stopwatch.Frequency)
+                : long.MaxValue;
         }
 
         public void Enqueue(string path, int nodeId)
@@ -166,7 +177,12 @@ internal static class Win32Scanner
             {
                 while (_jobs.Count == 0 && !_finished)
                     Monitor.Wait(_gate);
-                if (_jobs.Count == 0) return null;
+                if (!_finished && System.Diagnostics.Stopwatch.GetTimestamp() > _deadline)
+                {
+                    _overBudget = _finished = true;
+                    Monitor.PulseAll(_gate);
+                }
+                if (_jobs.Count == 0 || _overBudget) return null;
                 _inflight++;
                 return _jobs.Dequeue();
             }
@@ -236,10 +252,11 @@ internal static class Win32Scanner
             }
         }
 
-        public WalkResult Finish()
+        public WalkResult? Finish()
         {
             lock (_gate)
             {
+                if (_overBudget) return null;
                 ulong now = ProcessMemory.Current()?.ResidentBytes ?? _peak;
                 return new WalkResult
                 {

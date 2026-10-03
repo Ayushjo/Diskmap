@@ -255,6 +255,27 @@ public class ChartLayoutTests
     }
 }
 
+public class TopSizesTests
+{
+    [Fact]
+    public void HeapRankingMatchesAFullSort()
+    {
+        var random = new Random(7);
+        var totals = Enumerable.Range(0, 20_000).Select(_ => (long)random.Next(-5, 5_000)).ToArray();
+
+        var ranked = TopSizes.Ranked(totals, 300);
+
+        var expected = Enumerable.Range(1, totals.Length - 1)
+            .Where(id => totals[id] > 0)
+            .Select(id => totals[id])
+            .OrderDescending()
+            .Take(300);
+        Assert.Equal(expected, ranked.Select(id => totals[id]));
+        Assert.Equal(ranked.Count, ranked.Distinct().Count());
+        Assert.DoesNotContain(0, ranked);
+    }
+}
+
 public class CirclePackTests
 {
     [Fact]

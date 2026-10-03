@@ -17,9 +17,12 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- Runs unelevated: folder scans don't need admin. The MFT fast
-             path and protected directories engage only when elevated. -->
-        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+        <!-- Always elevated (maintainer's call, 2026-10-03): the MFT fast
+             path and protected directories need admin, so Windows shows
+             the UAC prompt at every launch, like WizTree. Launching from a
+             non-elevated shell without ShellExecute (e.g. `dotnet run`)
+             fails with ERROR_ELEVATION_REQUIRED. -->
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

@@ -19,7 +19,7 @@ public sealed class BubblesControl : FrameworkElement
 
     public BubblesControl()
     {
-        ScanModel.Shared.StateChanged += (_, _) => Dispatcher.InvokeAsync(InvalidateVisual);
+        ModelEvents.WhileLoaded(this, InvalidateVisual);
         MouseLeftButtonDown += OnClick;
         MouseMove += OnMove;
         MouseLeave += (_, _) => { if (_tooltip is not null) _tooltip.IsOpen = false; };
@@ -50,7 +50,7 @@ public sealed class BubblesControl : FrameworkElement
             var center = new Point(cx + c.X * scale, cy + c.Y * scale);
             var slice = _slicesById.GetValueOrDefault(c.Id);
             var fill = slice?.NodeID is { } id ? NodeColors.BrushFor(id) : NodeColors.OtherBrush;
-            dc.DrawEllipse(fill, new Pen(NodeColors.Stroke, 1), center, r, r);
+            dc.DrawEllipse(fill, NodeColors.StrokePen, center, r, r);
             _circles.Add((slice?.NodeID, center.X, center.Y, r));
 
             if (slice?.NodeID is { } nid && r > 26)

@@ -24,7 +24,7 @@ public sealed class MindMapControl : FrameworkElement
 
     public MindMapControl()
     {
-        ScanModel.Shared.StateChanged += (_, _) => Dispatcher.InvokeAsync(InvalidateVisual);
+        ModelEvents.WhileLoaded(this, InvalidateVisual);
         MouseLeftButtonDown += OnClick;
         MouseMove += OnMove;
         MouseLeave += (_, _) => { if (_tooltip is not null) _tooltip.IsOpen = false; };
@@ -43,7 +43,7 @@ public sealed class MindMapControl : FrameworkElement
 
         double cy = ActualHeight / 2;
         var rootRect = new Rect(20, cy - NodeHeight / 2, ColumnWidth, NodeHeight);
-        dc.DrawRectangle(NodeColors.BrushFor(model.ZoomedNode), new Pen(NodeColors.Stroke, 1), rootRect);
+        dc.DrawRectangle(NodeColors.BrushFor(model.ZoomedNode), NodeColors.StrokePen, rootRect);
         DrawLabel(dc, rootRect, tree.NameOf(model.ZoomedNode), model.Totals[model.ZoomedNode]);
         _hit.Add((model.ZoomedNode, rootRect));
 
@@ -62,11 +62,11 @@ public sealed class MindMapControl : FrameworkElement
             double h = Math.Max(NodeHeight, usable * slice.Size / Math.Max(1, total) - VGap);
             var rect = new Rect(x, y, ColumnWidth, Math.Min(h, NodeHeight * 1.5));
             var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id) : NodeColors.OtherBrush;
-            dc.DrawRectangle(fill, new Pen(NodeColors.Stroke, 1), rect);
+            dc.DrawRectangle(fill, NodeColors.StrokePen, rect);
 
             // Elbow connector from parent's right edge to child's left.
             double childMidY = rect.Y + rect.Height / 2;
-            var pen = new Pen(NodeColors.Stroke, 1.5);
+            var pen = NodeColors.ConnectorPen;
             dc.DrawLine(pen, new Point(parentX, parentY), new Point(parentX + HGap / 2, parentY));
             dc.DrawLine(pen, new Point(parentX + HGap / 2, parentY), new Point(parentX + HGap / 2, childMidY));
             dc.DrawLine(pen, new Point(parentX + HGap / 2, childMidY), new Point(rect.X, childMidY));

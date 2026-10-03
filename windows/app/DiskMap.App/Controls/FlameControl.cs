@@ -21,7 +21,7 @@ public sealed class FlameControl : FrameworkElement
 
     public FlameControl()
     {
-        ScanModel.Shared.StateChanged += (_, _) => Dispatcher.InvokeAsync(InvalidateVisual);
+        ModelEvents.WhileLoaded(this, InvalidateVisual);
         MouseLeftButtonDown += OnClick;
         MouseMove += OnMove;
         MouseLeave += (_, _) => { if (_tooltip is not null) _tooltip.IsOpen = false; };
@@ -40,7 +40,7 @@ public sealed class FlameControl : FrameworkElement
 
         // Root bar.
         var rootRect = new Rect(0, 0, width, RowHeight);
-        dc.DrawRectangle(NodeColors.BrushFor(model.ZoomedNode), new Pen(NodeColors.Stroke, 1), rootRect);
+        dc.DrawRectangle(NodeColors.BrushFor(model.ZoomedNode), NodeColors.StrokePen, rootRect);
         DrawLabel(dc, rootRect, tree.NameOf(model.ZoomedNode), rootSize);
 
         var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals);
@@ -59,7 +59,7 @@ public sealed class FlameControl : FrameworkElement
             if (w < 1) { offset += w; continue; }
             var rect = new Rect(offset, y, w, RowHeight);
             var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id) : NodeColors.OtherBrush;
-            dc.DrawRectangle(fill, new Pen(NodeColors.Stroke, 1), rect);
+            dc.DrawRectangle(fill, NodeColors.StrokePen, rect);
             _hit.Add((slice.NodeID, rect));
             if (slice.NodeID is { } nid && w > 50)
                 DrawLabel(dc, rect, tree.NameOf(nid), slice.Size);
