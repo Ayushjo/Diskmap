@@ -123,13 +123,15 @@ enum SnapshotHarness {
             }
             // `--sheet cleanup`: also open the Cleanup sheet and capture it
             // (sheets are their own windows, outside the content view).
-            if value(after: "--sheet") == "cleanup" {
-                model.isCleanupQueuePresented = true
+            if let sheetName = value(after: "--sheet"), ["cleanup", "explain"].contains(sheetName) {
+                if sheetName == "cleanup" { model.isCleanupQueuePresented = true }
+                else { NotificationCenter.default.post(name: .diskMapOpenExplain, object: nil) }
                 try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
                 if let sheet = window.attachedSheet {
-                    write(window: sheet, to: dir.appendingPathComponent("cleanup-\(appearanceName).png"))
+                    write(window: sheet, to: dir.appendingPathComponent("\(sheetName)-\(appearanceName).png"))
                 }
                 model.isCleanupQueuePresented = false
+                NotificationCenter.default.post(name: .diskMapOpenExplain, object: false)
                 try? await Task.sleep(nanoseconds: 400_000_000)
             }
             // `--dump-ax`: the window's accessibility tree as text, read

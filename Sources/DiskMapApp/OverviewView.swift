@@ -223,13 +223,7 @@ struct OverviewView: View {
 
     private var reviewItems: [ReviewItem] {
         var items: [ReviewItem] = StorageNarrator.recommendations(from: snap).map { rec in
-            let dest: AppDestination = {
-                if rec.id == "rec-quickwins" { return .cleanSafe }
-                if rec.id == "rec-downloads" { return .cleanDownloads }
-                if rec.id == "rec-forgotten" { return .forgottenFiles }
-                if rec.id == "rec-caches" { return .cleanCaches }
-                return .cleanMedia
-            }()
+            let dest = rec.destination
             return ReviewItem(id: rec.id, title: rec.title, detail: rec.detail, bytes: rec.bytes,
                               level: rec.safety) { [model] in model.destination = dest }
         }
@@ -591,5 +585,18 @@ private struct LinkRow<Leading: View>: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .padding(.horizontal, -10)
+    }
+}
+
+extension StorageRecommendation {
+    /// The page that reviews this recommendation (Overview and Explain).
+    var destination: AppDestination {
+        switch id {
+        case "rec-quickwins": return .cleanSafe
+        case "rec-downloads": return .cleanDownloads
+        case "rec-forgotten": return .forgottenFiles
+        case "rec-caches": return .cleanCaches
+        default: return .cleanMedia
+        }
     }
 }

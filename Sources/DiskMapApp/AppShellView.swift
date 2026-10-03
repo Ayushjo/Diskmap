@@ -124,6 +124,10 @@ struct AppShellView: View {
         .onReceive(NotificationCenter.default.publisher(for: .diskMapOpenPalette)) { _ in
             if hasCompletedScan { showPalette = true }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .diskMapOpenExplain)) { note in
+            // `object: false` closes it (the harness, after capturing).
+            if hasCompletedScan { showExplain = (note.object as? Bool) ?? true }
+        }
     }
 
     private func topBar(compactSidebar: Bool) -> some View {
@@ -543,66 +547,117 @@ struct ExplainStorageSheet: View {
         let snap = model.analysis
         let stories = StorageNarrator.stories(from: snap)
         let recs = StorageNarrator.recommendations(from: snap)
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MonoLabel("From your last scan")
                     Text("Explain my storage")
                         .font(DiskMapType.title)
-                    Spacer()
-                    Button("Done") { dismiss() }
-                }
-                if let vol = snap.volume {
-                    Text("Your Mac has \(ByteFormat.string(Int64(vol.freeBytes))) free of \(ByteFormat.string(Int64(vol.totalBytes))) (\(snap.health.title.lowercased())).")
-                        .foregroundStyle(DiskMapTheme.ink)
-                } else {
-                    Text("This explanation covers \(ByteFormat.string(snap.scannedBytes)) from your last local scan.")
                         .foregroundStyle(DiskMapTheme.ink)
                 }
-                Text("What's going on")
-                    .font(DiskMapType.section)
-                ForEach(stories) { story in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(story.title)
-                            .font(DiskMapType.bodyStrong)
-                            .foregroundStyle(DiskMapTheme.ink)
-                        Text(story.detail)
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.vertical, 4)
-                }
-                Text("Suggested next steps")
-                    .font(DiskMapType.section)
-                    .padding(.top, 6)
-                ForEach(recs) { rec in
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(rec.title)
-                                .font(DiskMapType.bodyStrong)
-                                .foregroundStyle(DiskMapTheme.ink)
-                            Text(rec.detail)
-                                .font(DiskMapType.caption)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                        }
-                        Spacer()
-                        Text(ByteFormat.string(rec.bytes))
-                            .font(DiskMapType.smallStrong.monospacedDigit())
-                    }
-                }
-                Text("Every figure above comes from your last local scan — nothing was invented.")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .padding(.top, 8)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .keyboardShortcut(.cancelAction)
             }
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 18)
+            Hairline()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Group {
+                        if let vol = snap.volume {
+                            Text("Your Mac has \(ByteFormat.string(Int64(vol.freeBytes))) free of \(ByteFormat.string(Int64(vol.totalBytes))) — \(snap.health.title.lowercased()).")
+                        } else {
+                            Text("This covers \(ByteFormat.string(snap.scannedBytes)) from your last scan.")
+                        }
+                    }
+                    .font(DiskMapType.heading)
+                    .foregroundStyle(DiskMapTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionHeader(label: "What’s going on")
+                        ForEach(stories) { story in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(story.title)
+                                    .font(DiskMapType.bodyEmphasis)
+                                    .foregroundStyle(DiskMapTheme.ink)
+                                Text(story.detail)
+                                    .font(DiskMapType.secondary)
+                                    .foregroundStyle(DiskMapTheme.ink2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        SectionHeader(label: "Next steps")
+                        ForEach(recs) { rec in
+                            NextStepRow(rec: rec) {
+                                model.destination = rec.destination
+                                dismiss()
+                            }
+                        }
+                    }
+
+                    Text("Every figure here comes from your last local scan — nothing is estimated beyond it.")
+                        .font(DiskMapType.figureSmall)
+                        .foregroundStyle(DiskMapTheme.ink3)
+                }
+                .padding(24)
+            }
         }
-        .frame(minWidth: 480, minHeight: 420)
-        .background(DiskMapTheme.cream)
+        .frame(minWidth: 520, minHeight: 440)
+        .background(DiskMapTheme.canvas)
+    }
+}
+
+/// A next step that opens the page reviewing it.
+private struct NextStepRow: View {
+    let rec: StorageRecommendation
+    var open: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 12) {
+                Circle().fill(rec.safety == .safe ? DiskMapTheme.safe : DiskMapTheme.review).frame(width: 6, height: 6)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(rec.title)
+                        .font(DiskMapType.bodyEmphasis)
+                        .foregroundStyle(DiskMapTheme.ink)
+                    Text(rec.detail)
+                        .font(DiskMapType.secondary)
+                        .foregroundStyle(DiskMapTheme.ink3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(ByteFormat.string(rec.bytes))
+                    .font(DiskMapType.figure)
+                    .foregroundStyle(DiskMapTheme.ink)
+                Text("Review")
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.accent)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: DiskMapType.scaled(10), weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.accent)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(RowBackground(selected: false, hovering: hovering))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .padding(.horizontal, -10)
+        .accessibilityLabel("\(rec.title), \(ByteFormat.string(rec.bytes)). Review")
     }
 }
 
 extension Notification.Name {
     /// Opens the command palette (the harness's `--palette`).
     static let diskMapOpenPalette = Notification.Name("DiskMapOpenPalette")
+    /// Opens the Explain sheet (the harness's `--sheet explain`).
+    static let diskMapOpenExplain = Notification.Name("DiskMapOpenExplain")
 }
