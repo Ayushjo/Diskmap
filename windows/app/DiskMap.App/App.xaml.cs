@@ -6,11 +6,12 @@ public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
-        // Fluent theme (.NET 9+): modern rounded controls + real dark mode
-        // that follows the OS setting — the closest thing to the macOS
-        // build inheriting NSWindow appearance.
+        // Fluent theme (.NET 9+): modern rounded controls. The reference
+        // design is light, so the app stays light for now — the dark
+        // palette path remains in Theme.Apply for when dark mode lands
+        // properly (tracked in PARITY).
 #pragma warning disable WPF0001 // ThemeMode is experimental but stable in practice on .NET 10
-        ThemeMode = ThemeMode.System;
+        ThemeMode = ThemeMode.Light;
 #pragma warning restore WPF0001
         Theme.Apply(); // our own palette brushes on top of Fluent
         // A failing click reports instead of taking the app (and the scan) down.

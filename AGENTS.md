@@ -98,7 +98,9 @@ available and are flagged `UNVERIFIED` in comments. When you touch one:
 ## Windows port (`windows/`)
 
 A sibling C#/.NET 10 port lives under `windows/` (`src/DiskMap.Core`,
-`app/DiskMap.App` WPF, `tests/DiskMap.Core.Tests` xUnit). Same rules apply:
+`app/DiskMap.App` WPF, `tests/DiskMap.Core.Tests` xUnit). Its work
+breakdown and macOS-parity gap list is `windows/PARITY.md`. Same rules
+apply:
 no direct deletion (Recycle Bin via `SHFileOperation(FOF_ALLOWUNDO)` only,
 in `CleanupQueue`), no networking, `windows/src/DiskMap.Core/CleanupQueue.cs`
 holds the Windows excluded-paths list — changes to it get called out.

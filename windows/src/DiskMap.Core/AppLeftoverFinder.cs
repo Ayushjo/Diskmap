@@ -77,7 +77,14 @@ public static class AppLeftoverFinder
         }
     }
 
-    public static AppLeftovers FindLeftovers(InstalledApp app)
+    public static AppLeftovers FindLeftovers(InstalledApp app) =>
+        FindLeftovers(app, measureSizes: true);
+
+    /// <param name="measureSizes">
+    /// When false, returns just the matched leftover paths — no recursive
+    /// walks. Use for a fast listing pass; measure per-app later.
+    /// </param>
+    public static AppLeftovers FindLeftovers(InstalledApp app, bool measureSizes)
     {
         var matches = new List<string>();
         // Match tokens: display name and publisher are the closest thing
@@ -105,10 +112,14 @@ public static class AppLeftoverFinder
             }
         }
 
-        long installSize = !string.IsNullOrWhiteSpace(app.InstallLocation) && Directory.Exists(app.InstallLocation)
-            ? AllocatedSize(app.InstallLocation)
-            : 0;
-        long leftoverSize = matches.Sum(AllocatedSize);
+        long installSize = 0, leftoverSize = 0;
+        if (measureSizes)
+        {
+            installSize = !string.IsNullOrWhiteSpace(app.InstallLocation) && Directory.Exists(app.InstallLocation)
+                ? AllocatedSize(app.InstallLocation)
+                : 0;
+            leftoverSize = matches.Sum(AllocatedSize);
+        }
 
         return new AppLeftovers(
             AppId: app.RegistryKeyName,

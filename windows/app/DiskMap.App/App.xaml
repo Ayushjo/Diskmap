@@ -4,14 +4,33 @@
              StartupUri="MainWindow.xaml">
     <Application.Resources>
         <!-- Palette: colors are swapped in place by Theme.Apply(); controls
-             reference them via DynamicResource so the theme propagates. -->
+             reference them via DynamicResource (XAML) or Ui.Brush (code). -->
         <SolidColorBrush x:Key="AppBackground" Color="#FFFFFFFF" />
-        <SolidColorBrush x:Key="AppForeground" Color="#FF1B1B1B" />
-        <SolidColorBrush x:Key="AppPanel" Color="#FFFAFAFA" />
-        <SolidColorBrush x:Key="AppBorder" Color="#33000000" />
-        <SolidColorBrush x:Key="AppSubtle" Color="#FF6E6E6E" />
-        <SolidColorBrush x:Key="AppChrome" Color="#FFFCFCFC" />
-        <SolidColorBrush x:Key="AppHover" Color="#FFE5F1FB" />
+        <SolidColorBrush x:Key="AppSidebar" Color="#FFF5F6F7" />
+        <SolidColorBrush x:Key="AppCard" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="AppCardBorder" Color="#FFE7E7EA" />
+        <SolidColorBrush x:Key="AppField" Color="#FFF1F2F4" />
+        <SolidColorBrush x:Key="AppHover" Color="#FFF0F2F5" />
+        <SolidColorBrush x:Key="AppForeground" Color="#FF1D1D1F" />
+        <SolidColorBrush x:Key="AppSubtle" Color="#FF6E6E73" />
+        <SolidColorBrush x:Key="AppFaint" Color="#FF9CA3AF" />
+        <SolidColorBrush x:Key="AppAccent" Color="#FF2563EB" />
+        <SolidColorBrush x:Key="AppAccentSoft" Color="#FFEAF1FE" />
+        <SolidColorBrush x:Key="AppNavSelected" Color="#FFE8ECF3" />
+        <SolidColorBrush x:Key="AppRowSelected" Color="#FFEFF4FE" />
+        <SolidColorBrush x:Key="AppDanger" Color="#FFDC2626" />
+        <SolidColorBrush x:Key="AppDangerBg" Color="#FFFDECEC" />
+        <SolidColorBrush x:Key="AppSuccess" Color="#FF16A34A" />
+        <SolidColorBrush x:Key="AppSuccessBg" Color="#FFE8F6EE" />
+        <SolidColorBrush x:Key="AppWarning" Color="#FFB45309" />
+        <SolidColorBrush x:Key="AppWarningBg" Color="#FFFEF3DE" />
+        <SolidColorBrush x:Key="AppInfoBg" Color="#FFEEF4FE" />
+        <SolidColorBrush x:Key="AppInkButton" Color="#FF1D1D1F" />
+        <SolidColorBrush x:Key="AppInkButtonFg" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="AppBarTrack" Color="#FFECECF0" />
+        <SolidColorBrush x:Key="AppPanel" Color="#FFF5F6F7" />
+        <SolidColorBrush x:Key="AppBorder" Color="#FFE7E7EA" />
+        <SolidColorBrush x:Key="AppChrome" Color="#FFFFFFFF" />
 
         <Style TargetType="Window">
             <Setter Property="Background" Value="{DynamicResource AppBackground}" />

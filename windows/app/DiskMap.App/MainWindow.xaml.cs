@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using DiskMap.App.Pages;
@@ -10,77 +11,206 @@ namespace DiskMap.App;
 public partial class MainWindow : Window
 {
     private readonly ScanModel _model = ScanModel.Shared;
-    private readonly Dictionary<string, Func<UserControl>> _pageFactories;
+    private readonly Dictionary<string, Func<UserControl>> _pageFactories = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Border> _navItems = new(StringComparer.Ordinal);
     // One instance per page for the session: a page keeps its state
     // (filters, results) and isn't rebuilt on every sidebar click.
     private readonly Dictionary<string, UserControl> _pages = new(StringComparer.Ordinal);
-    private bool _statusQueued;
-    private string? _scanError;
+    private string _currentPage = "Overview";
+    private TextBox? _searchInput;
 
     public MainWindow()
     {
         InitializeComponent();
-
-        _pageFactories = new Dictionary<string, Func<UserControl>>(StringComparer.Ordinal)
+        BuildNav();
+        BuildTopBar();
+        BuildLogo();
+        InspectorHost.Content = new Controls.InspectorPanel();
+        ModelEvents.WhileLoaded(this, RefreshDrive);
+        _model.PageRequested += SelectPage;
+        _model.ScanRequested += async () => await PickAndScan();
+        _model.StagedChanged += (_, _) => RefreshCleanupBadge();
+        SelectPage("Overview");
+        PreviewKeyDown += (_, e) =>
         {
-            ["Map"] = () => new TreemapPage(),
-            ["Top Sizes"] = () => new TopSizesPage(),
-            ["Folders"] = () => new FoldersPage(),
-            ["Age Map"] = () => new AgeMapPage(),
-            ["Sunburst"] = () => new SunburstPage(),
-            ["Flame"] = () => new FlamePage(),
-            ["Bubbles"] = () => new BubblesPage(),
-            ["Mind Map"] = () => new MindMapPage(),
-            ["Snapshots"] = () => new SnapshotsPage(),
-            ["Duplicates"] = () => new DuplicatesPage(),
-            ["Quick Wins"] = () => new QuickWinsPage(),
-            ["Apps"] = () => new AppsPage(),
-            ["Cleanup"] = () => new CleanupQueuePage(),
-        };
-        var glyphs = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["Map"] = "▦", ["Top Sizes"] = "≡", ["Folders"] = "▤",
-            ["Age Map"] = "◷", ["Sunburst"] = "◐", ["Flame"] = "▲",
-            ["Bubbles"] = "●", ["Mind Map"] = "◈", ["Snapshots"] = "◫",
-            ["Duplicates"] = "⧉", ["Quick Wins"] = "⚡", ["Apps"] = "▣",
-            ["Cleanup"] = "⌫",
-        };
-        foreach (var name in _pageFactories.Keys)
-        {
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(new TextBlock
+            if (e.Key == Key.K && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                Text = glyphs.GetValueOrDefault(name, "▪"),
-                Width = 22,
-                Foreground = System.Windows.Media.Brushes.Gray,
-            });
-            row.Children.Add(new TextBlock { Text = name });
-            NavList.Items.Add(new ListBoxItem { Content = row, Tag = name });
-        }
-        NavList.SelectionChanged += OnNavChanged;
-        NavList.SelectedIndex = 0;
-
-        ScanButton.Click += async (_, _) => await PickAndScan();
-        BasisToggle.SelectionChanged += (_, _) =>
-            _model.SizeBasis = BasisToggle.SelectedIndex == 0 ? SizeBasis.Allocated : SizeBasis.Logical;
-        ResetZoom.Click += (_, _) => _model.DrillToAncestor(0);
-        ModelEvents.WhileLoaded(this, RefreshChrome);
-        _model.PropertyChanged += (_, e) =>
+                _searchInput?.Focus();
+                e.Handled = true;
+            }
+        };
+        // Dev/screenshot hook: DISKMAP_AUTOSCAN=<path> scans on launch,
+        // DISKMAP_PAGE=<page> opens that page afterward.
+        Loaded += async (_, _) =>
         {
-            if (e.PropertyName is nameof(ScanModel.ScanProgress) or nameof(ScanModel.IsScanning))
-                QueueStatus();
+            if (Environment.GetEnvironmentVariable("DISKMAP_AUTOSCAN") is { Length: > 0 } scanPath
+                && !_model.IsScanning && _model.Tree is null)
+            {
+                await _model.ScanAsync(scanPath);
+                if (Environment.GetEnvironmentVariable("DISKMAP_PAGE") is { Length: > 0 } page)
+                    SelectPage(page);
+            }
         };
     }
 
-    private void OnNavChanged(object sender, SelectionChangedEventArgs e)
+    private void BuildLogo()
     {
-        if (NavList.SelectedItem is ListBoxItem { Tag: string name }
-            && _pageFactories.TryGetValue(name, out var factory))
+        LogoTile.Background = Ui.Hex("#1D2B4F");
+        LogoTile.Child = new TextBlock
         {
-            if (!_pages.TryGetValue(name, out var page)) _pages[name] = page = factory();
-            PageHost.Content = page;
-        }
+            Text = "D", FontSize = 15, FontWeight = FontWeights.Bold,
+            Foreground = System.Windows.Media.Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
     }
+
+    // ---- Sidebar ----
+
+    private void BuildNav()
+    {
+        // Scan action sits at the top of the nav — the one global action
+        // the reference top bar doesn't carry.
+        var scan = Ui.Button("Scan Folder…", Icons.Add, Ui.ButtonStyle.Outline,
+            async () => await PickAndScan());
+        scan.Margin = new Thickness(6, 0, 6, 10);
+        NavPanel.Children.Add(scan);
+
+        var sections = new List<(string Header, List<(string Name, string Glyph, Func<UserControl> Factory)> Items)>
+        {
+            ("MAIN",
+            [
+                ("Overview", Icons.Overview, () => (UserControl)new OverviewPage()),
+            ]),
+            ("FIND",
+            [
+                ("Biggest Files", Icons.BiggestFiles, () => (UserControl)new BiggestFilesPage()),
+                ("Biggest Folders", Icons.BiggestFolders, () => (UserControl)new BiggestFoldersPage()),
+                ("Forgotten Files", Icons.Forgotten, () => (UserControl)new ForgottenFilesPage()),
+                ("Duplicates", Icons.Duplicates, () => (UserControl)new DuplicatesPage()),
+            ]),
+            ("CLEAN",
+            [
+                ("Safe to Review", Icons.SafeReview, () => (UserControl)new SafeToReviewPage()),
+                ("Caches", Icons.Caches, () => (UserControl)new CachesPage()),
+                ("Old Downloads", Icons.Downloads, () => (UserControl)new OldDownloadsPage()),
+                ("Large Media", Icons.Media, () => (UserControl)new LargeMediaPage()),
+            ]),
+            ("EXPLORE",
+            [
+                ("File Browser", Icons.FileBrowser, () => (UserControl)new FileBrowserPage()),
+                ("Visualize", Icons.Visualize, () => (UserControl)new VisualizePage()),
+                ("Developer Storage", Icons.Developer, () => (UserControl)new DeveloperStoragePage()),
+                ("Applications", Icons.Applications, () => (UserControl)new ApplicationsPage()),
+                ("Snapshots", Icons.Snapshots, () => (UserControl)new SnapshotsPage()),
+            ]),
+        };
+
+        foreach (var (header, items) in sections)
+        {
+            var label = Ui.SectionLabel(header);
+            label.Margin = new Thickness(10, 14, 0, 4);
+            NavPanel.Children.Add(label);
+            foreach (var (name, glyph, factory) in items)
+            {
+                _pageFactories[name] = factory;
+                var row = new StackPanel { Orientation = Orientation.Horizontal };
+                row.Children.Add(Ui.Glyph(glyph, 13, Ui.Brush("AppSubtle")));
+                row.Children.Add(new TextBlock
+                {
+                    Text = name, FontSize = 13,
+                    Margin = new Thickness(10, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+                var item = new Border
+                {
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(10, 6, 10, 6),
+                    Margin = new Thickness(0, 1, 0, 1),
+                    Child = row,
+                    Tag = name,
+                    Cursor = Cursors.Hand,
+                    Background = System.Windows.Media.Brushes.Transparent,
+                };
+                item.MouseLeftButtonDown += (_, _) => SelectPage(name);
+                _navItems[name] = item;
+                NavPanel.Children.Add(item);
+            }
+        }
+
+        // The Search page exists but has no sidebar slot — reached via the
+        // top-bar search box.
+        _pageFactories["Search"] = () => new SearchPage();
+        _pageFactories["Cleanup"] = () => new CleanupQueuePage();
+    }
+
+    private void SelectPage(string name)
+    {
+        if (!_pageFactories.TryGetValue(name, out var factory)) return;
+        _currentPage = name;
+        foreach (var (itemName, border) in _navItems)
+        {
+            bool selected = itemName == name;
+            border.Background = selected ? Ui.Brush("AppNavSelected") : System.Windows.Media.Brushes.Transparent;
+            if (border.Child is StackPanel row && row.Children.Count == 2)
+            {
+                ((TextBlock)row.Children[0]).Foreground =
+                    selected ? Ui.Brush("AppForeground") : Ui.Brush("AppSubtle");
+                ((TextBlock)row.Children[1]).FontWeight =
+                    selected ? FontWeights.SemiBold : FontWeights.Normal;
+            }
+        }
+        if (!_pages.TryGetValue(name, out var page)) _pages[name] = page = factory();
+        PageHost.Content = page;
+    }
+
+    // ---- Top bar ----
+
+    private void BuildTopBar()
+    {
+        var (box, input) = Ui.SearchBox("Search files, folders or ask anything…  (Ctrl+K)", 460);
+        _searchInput = input;
+        input.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter && input.Text.Trim().Length > 0)
+            {
+                _model.SearchQuery = input.Text.Trim();
+                SelectPage("Search");
+                e.Handled = true;
+            }
+        };
+        SearchHost.Content = box;
+        RefreshCleanupBadge();
+        RescanButtonHost.Content = Ui.Button("Rescan", Icons.Rescan, Ui.ButtonStyle.Outline,
+            async () => await Rescan());
+    }
+
+    private void RefreshCleanupBadge()
+    {
+        int count = _model.StagedItems.Count;
+        string text = count > 0 ? $"Cleanup ({count})" : "Cleanup";
+        CleanupButtonHost.Content = Ui.Button(text, Icons.Cleanup, Ui.ButtonStyle.Outline,
+            () => SelectPage("Cleanup"));
+    }
+
+    // ---- Drive card ----
+
+    private void RefreshDrive()
+    {
+        var vol = _model.Volume ?? VolumeStats.Of(null);
+        if (vol is not { } v)
+        {
+            DriveName.Text = "Drive";
+            DriveStats.Text = "";
+            return;
+        }
+        DriveIcon.Content = Ui.Glyph(Icons.Drive, 14, Ui.Brush("AppSubtle"));
+        DriveName.Text = v.DriveLabel;
+        DriveStats.Text = $"{ByteFormat.Format(v.TotalBytes)} total · {ByteFormat.Format(v.FreeBytes)} free";
+        DriveBar.Content = Ui.Bar(v.UsedFraction, Ui.Brush("AppAccent"), 5, 190);
+    }
+
+    // ---- Scanning ----
 
     private async Task PickAndScan()
     {
@@ -88,91 +218,33 @@ public partial class MainWindow : Window
         var hwnd = new WindowInteropHelper(this).Handle;
         var path = FolderPicker.Pick(hwnd);
         if (path is null) return;
-        _scanError = null;
         try
         {
             await _model.ScanAsync(path);
         }
         catch (Exception ex)
         {
-            _scanError = $"Scan failed: {ex.Message}";
-            RefreshStatus();
+            MessageBox.Show($"Scan failed: {ex.Message}", "DiskMap",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
-    /// <summary>Progress ticks only touch the status line, coalesced like everything else.</summary>
-    private void QueueStatus()
+    private async Task Rescan()
     {
-        if (_statusQueued) return;
-        _statusQueued = true;
-        Dispatcher.InvokeAsync(() =>
+        if (_model.RootPath is null)
         {
-            _statusQueued = false;
-            RefreshStatus();
-        }, DispatcherPriority.Background);
-    }
-
-    private void RefreshStatus()
-    {
-        ScanButton.IsEnabled = !_model.IsScanning;
-        if (_model.IsScanning)
-        {
-            ScanStatus.Text = $"Scanning… {_model.ScanProgress:N0} items";
+            await PickAndScan();
             return;
         }
-        if (_scanError is not null || _model.Tree is null)
+        if (_model.IsScanning) return;
+        try
         {
-            ScanStatus.Text = _scanError ?? "Pick a folder to scan.";
-            return;
+            await _model.RescanAsync();
         }
-        string scanned = $"Scanned {_model.ItemCount:N0} items in {_model.Elapsed:0.0}s via {_model.Backend}";
-        // Only worth saying when the scan was slow enough to notice.
-        if (_model.FallbackReason is { } why && _model.Elapsed >= 2) scanned += $" (fast NTFS scan skipped: {why})";
-        if (_model.NotDownloaded > 0) scanned += $" · {_model.NotDownloaded} in cloud only";
-        ScanStatus.Text = scanned;
-    }
-
-    private void RefreshChrome()
-    {
-        RefreshStatus();
-        // Breadcrumb bar — each crumb clickable, mirrors the macOS path bar.
-        Breadcrumbs.Children.Clear();
-        var tree = _model.Tree;
-        if (tree is null || _model.RootPath is null)
+        catch (Exception ex)
         {
-            StatusBar.Text = "";
-            return;
+            MessageBox.Show($"Rescan failed: {ex.Message}", "DiskMap",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
         }
-        var chain = _model.Breadcrumbs();
-        for (int i = 0; i < chain.Count; i++)
-        {
-            int id = chain[i];
-            var crumb = new Button
-            {
-                Content = tree.NameOf(id),
-                Padding = new Thickness(6, 2, 6, 2),
-                Margin = new Thickness(0, 0, 2, 0),
-                FontWeight = id == _model.ZoomedNode ? FontWeights.SemiBold : FontWeights.Normal,
-            };
-            crumb.Click += (_, _) => _model.DrillToAncestor(id);
-            Breadcrumbs.Children.Add(crumb);
-            if (i < chain.Count - 1)
-                Breadcrumbs.Children.Add(new TextBlock
-                {
-                    Text = "›",
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = (System.Windows.Media.Brush)FindResource("AppSubtle"),
-                });
-        }
-        if (_model.ZoomedNode < _model.Totals.Length)
-        {
-            Breadcrumbs.Children.Add(new TextBlock
-            {
-                Text = $"  {ByteFormat.Format(_model.Totals[_model.ZoomedNode])}",
-                VerticalAlignment = VerticalAlignment.Center,
-                FontWeight = FontWeights.SemiBold,
-            });
-        }
-        StatusBar.Text = _model.Totals.Length > 0 ? $"{_model.RootPath} — {ByteFormat.Format(_model.Totals[0])} total" : _model.RootPath;
     }
 }

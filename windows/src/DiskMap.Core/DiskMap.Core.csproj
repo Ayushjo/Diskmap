@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="quick-wins-patterns.json" />
+    <EmbeddedResource Include="file-type-categories.json" />
     <InternalsVisibleTo Include="DiskMap.Core.Tests" />
   </ItemGroup>
 

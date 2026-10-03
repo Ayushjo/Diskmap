@@ -293,6 +293,35 @@ public sealed class FileTree
     }
 
     /// <summary>
+    /// Post-order descendant counts: files[id] = number of file nodes in
+    /// the subtree (a file counts itself), folders[id] = directory count
+    /// not counting the node itself. Same reverse-pass trick as
+    /// <see cref="RollUpSizes"/> — child ids are always greater than
+    /// their parent's.
+    /// </summary>
+    public (int[] Files, int[] Folders) RollUpCounts()
+    {
+        var files = new int[Count];
+        var folders = new int[Count];
+        for (int id = Count - 1; id >= 0; id--)
+        {
+            int child = _firstChild[id];
+            while (child != -1)
+            {
+                files[id] += files[child];
+                folders[id] += folders[child];
+                child = _nextSibling[child];
+            }
+            if (_isDirectory[id]) folders[id] += 1;
+            else files[id] += 1;
+        }
+        // folders[id] counted the node itself; report descendants only.
+        for (int id = 0; id < Count; id++)
+            if (_isDirectory[id]) folders[id] -= 1;
+        return (files, folders);
+    }
+
+    /// <summary>
     /// Replaces packed storage after a snapshot load and rebuilds the
     /// name lookup. Arrays must all have <c>nameIndex.Count</c> elements.
     /// Returns false and leaves the tree unchanged if the counts disagree.

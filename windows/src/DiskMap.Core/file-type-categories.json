@@ -1,0 +1,68 @@
+{
+  "categories": [
+    {
+      "id": "video",
+      "label": "Video",
+      "color": "#E58FA5",
+      "badgeBackground": "#F3E8FF",
+      "badgeForeground": "#7C3AED",
+      "extensions": ["mp4","mov","m4v","avi","mkv","wmv","flv","webm","mpeg","mpg","m2ts","ts","3gp"]
+    },
+    {
+      "id": "audio",
+      "label": "Audio",
+      "color": "#B493E8",
+      "badgeBackground": "#F3E8FF",
+      "badgeForeground": "#9333EA",
+      "extensions": ["mp3","aac","m4a","wav","flac","aiff","aif","ogg","wma","alac","opus"]
+    },
+    {
+      "id": "image",
+      "label": "Image",
+      "color": "#6FB6CE",
+      "badgeBackground": "#E0F2FE",
+      "badgeForeground": "#0284C7",
+      "extensions": ["png","jpg","jpeg","gif","webp","heic","heif","tif","tiff","bmp","svg","ico","raw","cr2","nef","dng","arw","psd","ai","fig","sketch","xd"]
+    },
+    {
+      "id": "document",
+      "label": "Document",
+      "color": "#7CC79B",
+      "badgeBackground": "#FEF9C3",
+      "badgeForeground": "#A16207",
+      "extensions": ["pdf","doc","docx","xls","xlsx","ppt","pptx","txt","rtf","md","pages","numbers","key","csv","epub","odt","ods","odp","parquet","fig"]
+    },
+    {
+      "id": "developer",
+      "label": "Developer",
+      "color": "#E4C563",
+      "badgeBackground": "#DCFCE7",
+      "badgeForeground": "#15803D",
+      "extensions": ["swift","m","h","c","cpp","cc","hpp","cs","fs","vb","js","ts","jsx","tsx","py","rb","go","rs","java","kt","kts","json","yml","yaml","toml","xml","html","css","scss","lock","gradle","podspec","pbxproj","xcconfig","wasm","o","a","dylib","csproj","sln","slnx","vcxproj","props","targets","pdb","ilk","lib","nupkg","shader","hlsl","glsl"]
+    },
+    {
+      "id": "archive",
+      "label": "Archive",
+      "color": "#F0A95F",
+      "badgeBackground": "#FFEDD5",
+      "badgeForeground": "#C2410C",
+      "extensions": ["zip","7z","rar","tar","gz","tgz","bz2","xz","zst","cab","lz","lz4","ace","pkg"]
+    },
+    {
+      "id": "diskImage",
+      "label": "Disk Image",
+      "color": "#83A9E8",
+      "badgeBackground": "#DBEAFE",
+      "badgeForeground": "#2563EB",
+      "extensions": ["dmg","iso","img","vhd","vhdx","vmdk","vdi","qcow2","wim","esd","swm"]
+    },
+    {
+      "id": "application",
+      "label": "Application",
+      "color": "#7FA8C9",
+      "badgeBackground": "#E2E8F0",
+      "badgeForeground": "#475569",
+      "extensions": ["exe","msi","msix","appx","app","ipa","apk","bat","cmd","ps1","com","scr"]
+    }
+  ]
+}

@@ -15,7 +15,7 @@ public static class TopSizes
     /// <paramref name="include"/>, largest first: a bounded min-heap, so a
     /// multi-million-node scan costs O(n log limit) instead of a full sort.
     /// </summary>
-    internal static List<int> Largest(int from, int to, int limit, Func<int, long> size, Func<int, bool> include)
+    public static List<int> Largest(int from, int to, int limit, Func<int, long> size, Func<int, bool> include)
     {
         var result = new List<int>();
         if (limit <= 0) return result;
