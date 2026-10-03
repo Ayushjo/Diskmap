@@ -330,42 +330,52 @@ struct OldDownloadsView: View {
             .frame(width: 22)
             .contentShape(Rectangle())
 
-            HStack(spacing: 10) {
-                Image(systemName: item.kind.symbolName)
-                    .font(.system(size: 14))
-                    .foregroundStyle(DiskMapTheme.info)
-                    .frame(width: 28, height: 28)
-                    .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name)
-                        .font(DiskMapType.smallStrong)
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .lineLimit(1)
-                    Text(parentDisplay(item.displayPath))
-                        .font(DiskMapType.micro)
+            Button { selectedID = item.nodeID } label: {
+                HStack(spacing: 8) {
+                    HStack(spacing: 10) {
+                        Image(systemName: item.kind.symbolName)
+                            .font(.system(size: 14))
+                            .foregroundStyle(DiskMapTheme.info)
+                            .frame(width: 28, height: 28)
+                            .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.name)
+                                .font(DiskMapType.smallStrong)
+                                .foregroundStyle(DiskMapTheme.ink)
+                                .lineLimit(1)
+                            Text(parentDisplay(item.displayPath))
+                                .font(DiskMapType.micro)
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(ByteFormat.string(item.bytes))
+                        .font(DiskMapType.smallMedium.monospacedDigit())
+                        .frame(width: 80, alignment: .trailing)
+
+                    Text(OldDownloadsCatalog.ageLabel(item.ageDays))
+                        .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(width: 64, alignment: .leading)
+
+                    Text(item.kind.title)
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(width: 72, alignment: .leading)
                         .lineLimit(1)
+
+                    statusPill(item.status)
+                        .frame(width: 100, alignment: .leading)
                 }
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(ByteFormat.string(item.bytes))
-                .font(DiskMapType.smallMedium.monospacedDigit())
-                .frame(width: 80, alignment: .trailing)
-
-            Text(OldDownloadsCatalog.ageLabel(item.ageDays))
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(width: 64, alignment: .leading)
-
-            Text(item.kind.title)
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(width: 72, alignment: .leading)
-                .lineLimit(1)
-
-            statusPill(item.status)
-                .frame(width: 100, alignment: .leading)
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(item.name), \(ByteFormat.string(item.bytes)), \(OldDownloadsCatalog.ageLabel(item.ageDays))")
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityAction(named: "Reveal in Finder") { reveal(item) }
 
             Menu {
                 Button("Reveal in Finder") { reveal(item) }
@@ -382,14 +392,12 @@ struct OldDownloadsView: View {
             .menuIndicator(.hidden)
             .fixedSize()
         }
-        .padding(.vertical, 8)
         .padding(.horizontal, 4)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(selected ? DiskMapTheme.navSelected : Color.clear)
         )
         .contentShape(Rectangle())
-        .onTapGesture { selectedID = item.nodeID }
     }
 
     private func statusPill(_ status: OldDownloadsStatus) -> some View {

@@ -81,15 +81,21 @@ struct LayoutChartView: View {
     private func chart(_ slices: [ChartSlice], in size: CGSize) -> some View {
         switch kind {
         case .sunburst:
-            SunburstChart(slices: slices, size: size, color: color, selected: selectedNode, select: select, drill: drill)
+            SunburstChart(slices: slices, size: size, title: axTitle, color: color, selected: selectedNode, select: select, drill: drill)
         case .flame:
-            FlameChart(slices: slices, size: size, color: color, selected: selectedNode, select: select, drill: drill)
+            FlameChart(slices: slices, size: size, title: axTitle, color: color, selected: selectedNode, select: select, drill: drill)
         case .bubbles:
-            BubbleChart(slices: slices, size: size, color: color, selected: selectedNode, select: select, drill: drill)
+            BubbleChart(slices: slices, size: size, title: axTitle, color: color, selected: selectedNode, select: select, drill: drill)
         case .mindMap:
             MindMapChart(slices: slices, size: size, tree: tree, totals: totals, center: currentNode,
                          color: color, selected: selectedNode, select: select, drill: drill)
         }
+    }
+
+    /// "Sunburst of Downloads" — what VoiceOver says for the chart itself.
+    private var axTitle: String {
+        guard currentNode >= 0, Int(currentNode) < tree.count else { return kind.rawValue }
+        return "\(kind.rawValue) of \(tree.name(of: currentNode))"
     }
 
     private func color(_ id: Int32?) -> Color {
@@ -115,11 +121,18 @@ struct LayoutChartView: View {
     }
 }
 
+/// The slices' biggest real nodes as VoiceOver entries.
+private func axEntries(_ slices: [ChartSlice]) -> [ChartAccessibility.Entry] {
+    let total = slices.reduce(Int64(0)) { $0 + $1.size }
+    return ChartAccessibility.entries(ChartAccessibility.items(in: slices), total: total, format: ByteFormat.string)
+}
+
 private struct SunburstChart: View {
     @Environment(\.multiSelection) private var multi
     private func isSelected(_ id: Int32?) -> Bool { id != nil && (id == selected || multi.contains(id ?? -1)) }
     let slices: [ChartSlice]
     let size: CGSize
+    let title: String
     let color: (Int32?) -> Color
     let selected: Int32
     let select: (Int32?) -> Void
@@ -153,6 +166,13 @@ private struct SunburstChart: View {
         .simultaneousGesture(SpatialTapGesture().onEnded { value in
             select(hit(layout, at: value.location))
         })
+        .chartAccessibility(title, entries: axEntries(slices), frame: { id in
+            // A box around the middle of the wedge — VoiceOver's cursor.
+            guard let wedge = layout.first(where: { $0.nodeID == id }) else { return nil }
+            let point = polarPoint(center: wedge.center, angle: (wedge.start + wedge.end) / 2, radius: (wedge.inner + wedge.outer) / 2)
+            let side = max(8, wedge.outer - wedge.inner)
+            return CGRect(x: point.x - side / 2, y: point.y - side / 2, width: side, height: side)
+        }, select: { select($0) }, open: { drill($0) })
     }
 }
 
@@ -161,6 +181,7 @@ private struct FlameChart: View {
     private func isSelected(_ id: Int32?) -> Bool { id != nil && (id == selected || multi.contains(id ?? -1)) }
     let slices: [ChartSlice]
     let size: CGSize
+    let title: String
     let color: (Int32?) -> Color
     let selected: Int32
     let select: (Int32?) -> Void
@@ -192,6 +213,9 @@ private struct FlameChart: View {
         .simultaneousGesture(SpatialTapGesture().onEnded { value in
             select(bars.first { $0.rect.contains(value.location) }?.nodeID)
         })
+        .chartAccessibility(title, entries: axEntries(slices), frame: { id in
+            bars.first { $0.nodeID == id }?.rect
+        }, select: { select($0) }, open: { drill($0) })
     }
 }
 
@@ -200,6 +224,7 @@ private struct BubbleChart: View {
     private func isSelected(_ id: Int32?) -> Bool { id != nil && (id == selected || multi.contains(id ?? -1)) }
     let slices: [ChartSlice]
     let size: CGSize
+    let title: String
     let color: (Int32?) -> Color
     let selected: Int32
     let select: (Int32?) -> Void
@@ -260,6 +285,11 @@ private struct BubbleChart: View {
                 .min(by: { $0.radius < $1.radius })
             select(hit?.nodeID)
         })
+        .chartAccessibility(title, entries: axEntries(slices), frame: { id in
+            circles.first { $0.nodeID == id }.map {
+                CGRect(x: $0.center.x - $0.radius, y: $0.center.y - $0.radius, width: $0.radius * 2, height: $0.radius * 2)
+            }
+        }, select: { select($0) }, open: { drill($0) })
         .task(id: slices) {
             let input = slices
             let worker = Task.detached(priority: .userInitiated) {

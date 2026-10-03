@@ -233,18 +233,23 @@ struct ForgottenFilesView: View {
                         let bytes = dist[bucket] ?? 0
                         let w = geo.size.width * CGFloat(Double(bytes) / Double(total))
                         if bytes > 0 {
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(ageTint(bucket).opacity(ageFilter == nil || ageFilter == bucket ? 1 : 0.35))
-                                .frame(width: max(4, w))
-                                .help("\(bucket.title): \(ByteFormat.string(bytes))")
-                                .onTapGesture {
-                                    ageFilter = (ageFilter == bucket) ? nil : bucket
-                                }
+                            Button {
+                                ageFilter = (ageFilter == bucket) ? nil : bucket
+                            } label: {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(ageTint(bucket).opacity(ageFilter == nil || ageFilter == bucket ? 1 : 0.35))
+                            }
+                            .buttonStyle(.plain)
+                            .frame(width: max(4, w))
+                            .help("\(bucket.title): \(ByteFormat.string(bytes))")
                         }
                     }
                 }
             }
             .frame(height: 18)
+            // The legend below carries the same buttons with text, so
+            // VoiceOver reads those instead of unlabeled bar segments.
+            .accessibilityHidden(true)
             HStack(spacing: 14) {
                 ForEach(ForgottenAgeBucket.allCases) { bucket in
                     let bytes = dist[bucket] ?? 0

@@ -381,46 +381,51 @@ struct VisualizeView: View {
                     let isDir = tree.isDirectory[Int(row.id)]
                     let name = tree.name(of: row.id)
                     let pct = Double(row.size) / Double(parent) * 100
-                    HStack(spacing: 8) {
-                        Text("\(idx + 1)")
-                            .font(DiskMapType.captionMedium.monospacedDigit())
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .frame(width: 22, alignment: .leading)
-                        HStack(spacing: 6) {
-                            Image(systemName: isDir ? "folder.fill" : "doc")
+                    Button { model.selectedNode = row.id } label: {
+                        HStack(spacing: 8) {
+                            Text("\(idx + 1)")
+                                .font(DiskMapType.captionMedium.monospacedDigit())
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                                .frame(width: 22, alignment: .leading)
+                            HStack(spacing: 6) {
+                                Image(systemName: isDir ? "folder.fill" : "doc")
+                                    .font(DiskMapType.caption)
+                                    .foregroundStyle(isDir ? DiskMapTheme.folderTint : DiskMapTheme.mutedLabel)
+                                Text(name)
+                                    .font(DiskMapType.smallMedium)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(isDir ? "Folder" : FileKind.classify(fileName: name, path: tree.path(of: row.id, root: root).path).title)
                                 .font(DiskMapType.caption)
-                                .foregroundStyle(isDir ? DiskMapTheme.folderTint : DiskMapTheme.mutedLabel)
-                            Text(name)
-                                .font(DiskMapType.smallMedium)
-                                .lineLimit(1)
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                                .frame(width: 80, alignment: .leading)
+                            Text(ByteFormat.string(row.size))
+                                .font(DiskMapType.captionStrong.monospacedDigit())
+                                .frame(width: 72, alignment: .trailing)
+                            Text(String(format: "%.1f%%", pct))
+                                .font(DiskMapType.caption.monospacedDigit())
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                                .frame(width: 48, alignment: .trailing)
+                            Text(relativeModified(tree.modifiedDay[Int(row.id)]))
+                                .font(DiskMapType.caption)
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                                .frame(width: 90, alignment: .trailing)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(isDir ? "Folder" : FileKind.classify(fileName: name, path: tree.path(of: row.id, root: root).path).title)
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .frame(width: 80, alignment: .leading)
-                        Text(ByteFormat.string(row.size))
-                            .font(DiskMapType.captionStrong.monospacedDigit())
-                            .frame(width: 72, alignment: .trailing)
-                        Text(String(format: "%.1f%%", pct))
-                            .font(DiskMapType.caption.monospacedDigit())
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .frame(width: 48, alignment: .trailing)
-                        Text(relativeModified(tree.modifiedDay[Int(row.id)]))
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .frame(width: 90, alignment: .trailing)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 7)
+                    .buttonStyle(.plain)
                     .background(selected ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
+                    .simultaneousGesture(TapGesture(count: 2).onEnded {
+                        if isDir { model.currentNode = row.id }
+                    })
+                    .accessibilityLabel("\(name), \(ByteFormat.string(row.size)), \(String(format: "%.1f", pct)) percent")
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                    .accessibilityAction(named: "Open") {
                         model.selectedNode = row.id
                         if isDir { model.currentNode = row.id }
-                    }
-                    .onTapGesture(count: 1) {
-                        model.selectedNode = row.id
                     }
                     Divider().overlay(DiskMapTheme.cardStroke.opacity(0.5)).padding(.leading, 40)
                 }

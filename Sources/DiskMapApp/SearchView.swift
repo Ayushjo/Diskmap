@@ -174,22 +174,33 @@ struct SearchView: View {
         let isDirectory = tree.isDirectory[index]
         let notDownloaded = tree.flags[index] & NodeFlags.notDownloaded != 0
         HStack(spacing: 8) {
-            Image(systemName: notDownloaded
-                  ? "icloud"
-                  : isDirectory ? "folder" : "doc")
-                .frame(width: 16)
-                .foregroundStyle(.secondary)
-            Text(tree.name(of: id))
-                .lineLimit(1)
-            Text(tree.path(of: id, root: rootURL).path)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer()
-            Text(ByteCountFormatter.string(fromByteCount: totals[index], countStyle: .file))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            Button { selectedID = id } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: notDownloaded
+                          ? "icloud"
+                          : isDirectory ? "folder" : "doc")
+                        .frame(width: 16)
+                        .foregroundStyle(.secondary)
+                    Text(tree.name(of: id))
+                        .lineLimit(1)
+                    Text(tree.path(of: id, root: rootURL).path)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Text(ByteCountFormatter.string(fromByteCount: totals[index], countStyle: .file))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .simultaneousGesture(TapGesture(count: 2).onEnded { revealDownloadedFile(id, tree: tree, root: rootURL) })
+            .accessibilityLabel("\(tree.name(of: id)), \(ByteCountFormatter.string(fromByteCount: totals[index], countStyle: .file))")
+            .accessibilityAddTraits(selectedID == id ? .isSelected : [])
+            .accessibilityAction(named: "Reveal in Finder") { revealDownloadedFile(id, tree: tree, root: rootURL) }
             Button("Show") {
                 currentNode = isDirectory ? id : tree.parent[index]
                 openInMap()
@@ -197,10 +208,6 @@ struct SearchView: View {
             .help("Show in map")
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 4)
         .background(RoundedRectangle(cornerRadius: 6).fill(selectedID == id ? DiskMapTheme.navSelected : .clear))
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) { revealDownloadedFile(id, tree: tree, root: rootURL) }
-        .onTapGesture(count: 1) { selectedID = id }
     }
 }

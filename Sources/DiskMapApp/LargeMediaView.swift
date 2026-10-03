@@ -391,47 +391,57 @@ struct LargeMediaView: View {
             .buttonStyle(.plain)
             .frame(width: 22)
 
-            MediaThumbnailView(
-                url: URL(fileURLWithPath: item.absolutePath),
-                size: CGSize(width: 36, height: 28),
-                fallbackSymbol: item.kind.symbolName,
-                showPlayBadge: false
-            )
+            Button { selectedID = item.nodeID } label: {
+                HStack(spacing: 8) {
+                    MediaThumbnailView(
+                        url: URL(fileURLWithPath: item.absolutePath),
+                        size: CGSize(width: 36, height: 28),
+                        fallbackSymbol: item.kind.symbolName,
+                        showPlayBadge: false
+                    )
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .font(DiskMapType.smallStrong)
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .lineLimit(1)
-                Text(parentDisplay(item.displayPath))
-                    .font(DiskMapType.micro)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.name)
+                            .font(DiskMapType.smallStrong)
+                            .foregroundStyle(DiskMapTheme.ink)
+                            .lineLimit(1)
+                        Text(parentDisplay(item.displayPath))
+                            .font(DiskMapType.micro)
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(item.kind.shortTitle)
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(width: 70, alignment: .leading)
+
+                    Text(item.location.title)
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(width: 88, alignment: .leading)
+                        .lineLimit(1)
+
+                    Text(ByteFormat.string(item.bytes))
+                        .font(DiskMapType.smallMedium.monospacedDigit())
+                        .frame(width: 72, alignment: .trailing)
+
+                    Text(MediaCatalog.ageLabel(item.ageDays))
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(width: 52, alignment: .leading)
+
+                    statusPill(item.status)
+                        .frame(width: 100, alignment: .leading)
+                }
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(item.kind.shortTitle)
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(width: 70, alignment: .leading)
-
-            Text(item.location.title)
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(width: 88, alignment: .leading)
-                .lineLimit(1)
-
-            Text(ByteFormat.string(item.bytes))
-                .font(DiskMapType.smallMedium.monospacedDigit())
-                .frame(width: 72, alignment: .trailing)
-
-            Text(MediaCatalog.ageLabel(item.ageDays))
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(width: 52, alignment: .leading)
-
-            statusPill(item.status)
-                .frame(width: 100, alignment: .leading)
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(item.name), \(ByteFormat.string(item.bytes)), \(item.kind.shortTitle)")
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityAction(named: "Reveal in Finder") { reveal(item) }
 
             Menu {
                 Button("Reveal in Finder") { reveal(item) }
@@ -450,14 +460,12 @@ struct LargeMediaView: View {
                     .frame(width: 24, height: 24)
             }
         }
-        .padding(.vertical, 7)
         .padding(.horizontal, 4)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(selected ? DiskMapTheme.navSelected : Color.clear)
         )
         .contentShape(Rectangle())
-        .onTapGesture { selectedID = item.nodeID }
     }
 
     private func statusPill(_ status: MediaStatus) -> some View {

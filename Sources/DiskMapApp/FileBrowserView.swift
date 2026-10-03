@@ -503,50 +503,61 @@ struct FileBrowserView: View {
             }
             .buttonStyle(.plain)
             .frame(width: Col.check, height: 28)
+            .accessibilityLabel(on ? "Unmark \(name)" : "Mark \(name)")
 
-            Image(systemName: symbol)
-                .font(DiskMapType.callout)
-                .foregroundStyle(isDir ? DiskMapTheme.folderTint : tint)
-                .frame(width: Col.icon, height: 22)
+            // The rest of the row is one button (select), so it is reachable
+            // by VoiceOver and real clicks alike; double-click opens.
+            Button { selectRow(row.id) } label: {
+                HStack(spacing: Col.spacing) {
+                    Image(systemName: symbol)
+                        .font(DiskMapType.callout)
+                        .foregroundStyle(isDir ? DiskMapTheme.folderTint : tint)
+                        .frame(width: Col.icon, height: 22)
 
-            Text(name)
-                .font(DiskMapType.bodyStrong)
-                .foregroundStyle(DiskMapTheme.ink)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .help(name)
+                    Text(name)
+                        .font(DiskMapType.bodyStrong)
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(name)
 
-            Text(kind)
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .lineLimit(1)
-                .frame(width: Col.kind, alignment: .leading)
+                    Text(kind)
+                        .font(DiskMapType.small)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .lineLimit(1)
+                        .frame(width: Col.kind, alignment: .leading)
 
-            // Bar and size are SIDE BY SIDE — never stacked/overlapping.
-            ProportionBar(fraction: frac, tint: DiskMapTheme.folderTint.opacity(0.55))
-                .frame(width: Col.sizeBar, height: 6)
-                .clipShape(Capsule())
+                    // Bar and size are SIDE BY SIDE — never stacked/overlapping.
+                    ProportionBar(fraction: frac, tint: DiskMapTheme.folderTint.opacity(0.55))
+                        .frame(width: Col.sizeBar, height: 6)
+                        .clipShape(Capsule())
 
-            Text(ByteFormat.string(row.size))
-                .font(DiskMapType.smallStrong.monospacedDigit())
-                .foregroundStyle(DiskMapTheme.ink)
-                .frame(width: Col.sizeText, alignment: .trailing)
-                .lineLimit(1)
+                    Text(ByteFormat.string(row.size))
+                        .font(DiskMapType.smallStrong.monospacedDigit())
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .frame(width: Col.sizeText, alignment: .trailing)
+                        .lineLimit(1)
 
-            Text(modified)
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(width: Col.modified, alignment: .trailing)
-                .lineLimit(1)
+                    Text(modified)
+                        .font(DiskMapType.small)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(width: Col.modified, alignment: .trailing)
+                        .lineLimit(1)
+                }
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .simultaneousGesture(TapGesture(count: 2).onEnded { openItem(row.id) })
+            .accessibilityLabel("\(name), \(kind), \(ByteFormat.string(row.size)), modified \(modified)")
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityAction(named: isDir ? "Open" : "Reveal in Finder") { openItem(row.id) }
         }
         .padding(.horizontal, Col.hPad)
-        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(selected ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) { openItem(row.id) }
-        .onTapGesture(count: 1) { selectRow(row.id) }
         .contextMenu { contextMenu(for: row.id) }
     }
 

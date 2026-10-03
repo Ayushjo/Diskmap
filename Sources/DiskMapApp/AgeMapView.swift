@@ -286,9 +286,8 @@ struct AgeMapView: View {
             .frame(width: 24)
         }
         .padding(.vertical, 4)
-        .onTapGesture(count: 2) {
-            openInExplore(id)
-        }
+        .simultaneousGesture(TapGesture(count: 2).onEnded { openInExplore(id) })
+        .accessibilityAction(named: "Show in Explore") { openInExplore(id) }
     }
 
     private var heatmap: some View {

@@ -1355,3 +1355,19 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   0.5% read "<1%" instead of "0%". Verified on ~/Downloads (Video 59.96 GB,
   92%; clicking it opens Find with 6,399 matches, 59.96 GB) and on ~
   (unchanged). 259 tests green.
+- [x] **TASK-078: Rows and charts reachable by keyboard and VoiceOver**
+  Baseline: a harness click on a File Browser row changed nothing (renders
+  byte-identical) — tap-gesture rows are invisible to VoiceOver and to
+  synthetic clicks. Rows in File Browser, Find, Search, Visualize's table,
+  Applications, Large Media and Old Downloads are now a checkbox plus one
+  plain select button (labels, selected trait, "Open"/"Reveal in Finder"
+  action; double-click kept). Age bar segments are buttons; Age Map rows
+  got an action. Treemap, Sunburst, Flame and Bubbles expose their 60
+  biggest items as buttons with "name, size, share" and an "Open" action
+  for folders (`ChartAccessibility`, 3 tests). New harness flag
+  `--dump-ax` writes each screen's accessibility tree from inside the app.
+  Verified: File Browser click → selected, Return → opened the folder;
+  Find click selects; a treemap tile click selects it (inspector shows the
+  file) — the earlier "charts ignore synthetic clicks" was the harness
+  mouse-up bug fixed in TASK-075; trees dumped for File Browser, Find,
+  Media, Treemap and Sunburst. 262 tests green.

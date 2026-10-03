@@ -828,6 +828,19 @@ struct ExploreTreemapView: View {
                     selectedNode = hit
                 }
             )
+            .chartAccessibility(
+                "Treemap of \(currentNode >= 0 && Int(currentNode) < tree.count ? tree.name(of: currentNode) : "this folder")",
+                entries: ChartAccessibility.entries(
+                    layoutRects.map { .init(id: $0.id, name: tree.name(of: $0.id), size: totals[Int($0.id)],
+                                            drillable: tree.isDirectory[Int($0.id)]) },
+                    total: currentSize, format: ByteFormat.string),
+                frame: { id in layoutRects.first { $0.id == id }?.rect },
+                select: { selectedNode = $0 },
+                open: { id in
+                    currentNode = id
+                    cacheLayout()
+                }
+            )
         }
         .onChange(of: currentNode) { _, _ in cacheLayout() }
         .onChange(of: totals.count) { _, _ in cacheLayout() }

@@ -312,44 +312,56 @@ struct FindView: View {
                     .frame(width: 24)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isChecked ? "Deselect \(row.name)" : "Select \(row.name)")
-            FileIdentityIcon(url: URL(fileURLWithPath: row.absolutePath), kind: row.isDirectory ? nil : row.kind, size: 30)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(row.name)
-                    .font(DiskMapType.bodyStrong)
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .lineLimit(1)
-                Text(row.parentDisplay)
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            .accessibilityLabel(isChecked ? "Unmark \(row.name)" : "Mark \(row.name)")
+            // Everything but the checkbox is one button (select); double-click
+            // reveals. Reachable by VoiceOver and by real clicks alike.
+            Button { selectedID = row.id } label: {
+                HStack(alignment: .center, spacing: 12) {
+                    FileIdentityIcon(url: URL(fileURLWithPath: row.absolutePath), kind: row.isDirectory ? nil : row.kind, size: 30)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(row.name)
+                            .font(DiskMapType.bodyStrong)
+                            .foregroundStyle(DiskMapTheme.ink)
+                            .lineLimit(1)
+                        Text(row.parentDisplay)
+                            .font(DiskMapType.caption)
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
+                    Text(row.isDirectory ? "Folder" : row.kind.title)
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(width: 84, alignment: .leading)
+                    Text(Self.relativeModified(row.modifiedDay))
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(width: 96, alignment: .trailing)
+                    Text(ByteFormat.string(row.bytes))
+                        .font(DiskMapType.bodyStrong.monospacedDigit())
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .frame(width: 84, alignment: .trailing)
+                }
+                .padding(.vertical, 9)
+                .contentShape(Rectangle())
             }
-            .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
-            Text(row.isDirectory ? "Folder" : row.kind.title)
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(width: 84, alignment: .leading)
-            Text(Self.relativeModified(row.modifiedDay))
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(width: 96, alignment: .trailing)
-            Text(ByteFormat.string(row.bytes))
-                .font(DiskMapType.bodyStrong.monospacedDigit())
-                .foregroundStyle(DiskMapTheme.ink)
-                .frame(width: 84, alignment: .trailing)
+            .buttonStyle(.plain)
+            .simultaneousGesture(TapGesture(count: 2).onEnded {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: row.absolutePath)])
+            })
+            .accessibilityLabel("\(row.name), \(ByteFormat.string(row.bytes)), \(Self.relativeModified(row.modifiedDay))")
+            .accessibilityAddTraits(selectedID == row.id ? .isSelected : [])
+            .accessibilityAction(named: "Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: row.absolutePath)])
+            }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(isChecked || selectedID == row.id ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
         )
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: row.absolutePath)])
-        }
-        .simultaneousGesture(TapGesture().onEnded { selectedID = row.id })
         .contextMenu {
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: row.absolutePath)])
@@ -362,8 +374,6 @@ struct FindView: View {
             }
             Button("Copy Path") { copyPaths([row.absolutePath]) }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(row.name), \(ByteFormat.string(row.bytes)), \(Self.relativeModified(row.modifiedDay))")
     }
 
     static func relativeModified(_ day: Int32) -> String {

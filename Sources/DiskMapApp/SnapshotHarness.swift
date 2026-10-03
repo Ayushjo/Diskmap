@@ -77,6 +77,13 @@ enum SnapshotHarness {
             let settle = value(after: "--settle").flatMap(Double.init) ?? 1.5
             try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
             write(window: window, to: dir.appendingPathComponent("\(key(destination))-\(appearanceName).png"))
+            // `--dump-ax`: the window's accessibility tree as text, read
+            // in-process, so checking what VoiceOver gets needs no
+            // Accessibility permission for the terminal.
+            if arguments.contains("--dump-ax") {
+                try? dumpAccessibility(of: window).write(to: dir.appendingPathComponent("\(key(destination))-ax.txt"),
+                                                         atomically: true, encoding: .utf8)
+            }
             // `--click 600,300 --keys j,j,down` (window points from the top
             // left): synthetic events sent to this window only, to check the
             // keyboard wiring (TASK-062) without Accessibility permission.
@@ -190,6 +197,35 @@ enum SnapshotHarness {
     private static func snapshotSize() -> NSSize {
         let parts = (value(after: "--snapshot-size") ?? "1280x820").split(separator: "x").compactMap { Double($0) }
         return parts.count == 2 ? NSSize(width: parts[0], height: parts[1]) : NSSize(width: 1280, height: 820)
+    }
+
+    /// One line per element: indentation, role, label, actions. Depth- and
+    /// count-capped; unlabeled groups are kept so structure stays visible.
+    private static func dumpAccessibility(of window: NSWindow) -> String {
+        var lines: [String] = []
+        // Key-value reads through the Objective-C runtime: SwiftUI's elements
+        // are private NSObject subclasses, and the Swift importer sees the
+        // NSAccessibility members both as methods and as properties.
+        func read<T>(_ object: NSObject, _ key: String) -> T? {
+            guard object.responds(to: NSSelectorFromString(key)) else { return nil }
+            return object.value(forKey: key) as? T
+        }
+        func visit(_ element: Any, depth: Int) {
+            guard lines.count < 6_000, depth < 60, let node = element as? NSObject else { return }
+            let role: String = read(node, "accessibilityRole") ?? "?"
+            let label: String = read(node, "accessibilityLabel") ?? ""
+            let title: String = read(node, "accessibilityTitle") ?? ""
+            let actions = (read(node, "accessibilityCustomActions") as [NSAccessibilityCustomAction]? ?? []).map(\.name)
+            let traits = (read(node, "isAccessibilitySelected") as Bool?) == true ? " [selected]" : ""
+            var line = String(repeating: "  ", count: depth) + role
+            if !label.isEmpty { line += " \"\(label)\"" }
+            if !title.isEmpty, title != label { line += " title=\"\(title)\"" }
+            if !actions.isEmpty { line += " actions=\(actions)" }
+            lines.append(line + traits)
+            for child in read(node, "accessibilityChildren") as [Any]? ?? [] { visit(child, depth: depth + 1) }
+        }
+        visit(window, depth: 0)
+        return lines.joined(separator: "\n") + "\n"
     }
 
     private static func write(window: NSWindow, to url: URL) {

@@ -34,9 +34,37 @@
   rescan, ⇧⌘⌫ cleanup queue, ⇧⌘E export. Checked by sending real key events
   to the app's window through the snapshot harness (`--click`, `--keys`).
 
+## Done on `feat/a11y-rows` (TASK-078, 2026-10-03)
+
+- **Rows are buttons.** File Browser, Find, Search, Visualize's table,
+  Applications, Large Media and Old Downloads selected a row with a tap
+  gesture, which VoiceOver does not see as a control and synthetic clicks
+  never reached (checked: a harness click left File Browser's render
+  byte-identical). Each row is now a checkbox ("Mark …") plus one plain
+  button that selects, labelled "name, kind, size, modified", with
+  "Selected" when it is, and a named action for the double-click meaning
+  ("Open" for folders, "Reveal in Finder" for files). Double-click still
+  works (a simultaneous double-tap gesture). Forgotten Files' age bar
+  segments are buttons and hidden from VoiceOver (the legend under them is
+  the same set of buttons, with text); Age Map rows got "Show in Explore".
+- **Charts have elements.** Treemap, Sunburst, Flame and Bubbles are drawn
+  on a Canvas; each now exposes "Treemap of Downloads" with the 60 biggest
+  items as buttons — "Dune (2021)….mkv, 24.28 GB, 37 percent" — whose
+  default action selects and, for folders, an "Open" action drills in
+  (`ChartAccessibility` in core builds the labels; unit-tested). The Mind
+  Map was already buttons.
+- **Checked without Accessibility permission.** `--dump-ax` makes the
+  snapshot harness write each screen's accessibility tree from inside the
+  app (`<screen>-ax.txt`), so the structure above was read, not assumed.
+  Found in passing: the Appearance menu button reports its symbol name
+  ("circle.lefthalf.filled") as its title — for TASK-085.
+- Not done here: a live VoiceOver walk-through (needs a person at the
+  machine); the tree dumps stand in for it.
+
 ## Still open
 
 - Full keyboard grid navigation inside Treemap/Sunburst canvases.
 - A user-facing text-size setting wired to `DiskMapType.scale` (macOS has no
   system Dynamic Type for arbitrary apps).
-- VoiceOver rotor custom actions for stage/reveal.
+- VoiceOver custom actions for "Add to Cleanup" and "Quick Look" on every
+  row (reveal/open are done; TASK-085).

@@ -334,65 +334,69 @@ struct AppsView: View {
             .buttonStyle(.plain)
             .frame(width: 22)
 
-            Text("\(index)")
-                .font(DiskMapType.caption.monospacedDigit())
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(width: 28, alignment: .leading)
-
-            HStack(spacing: 10) {
-                AppIconView(path: app.bundlePath, size: 36)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(app.name)
-                        .font(DiskMapType.bodyStrong)
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .lineLimit(1)
-                    if let publisher = app.publisher, !publisher.isEmpty {
-                        Text(publisher)
-                            .font(DiskMapType.micro)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .lineLimit(1)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Group {
-                if app.sizePending {
-                    Text("…")
+            Button { selectedID = app.id; inspectorTab = .overview } label: {
+                HStack(spacing: 8) {
+                    Text("\(index)")
+                        .font(DiskMapType.caption.monospacedDigit())
                         .foregroundStyle(DiskMapTheme.mutedLabel)
-                } else {
-                    Text(ByteFormat.string(app.totalBytes))
-                        .foregroundStyle(DiskMapTheme.ink)
+                        .frame(width: 28, alignment: .leading)
+
+                    HStack(spacing: 10) {
+                        AppIconView(path: app.bundlePath, size: 36)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(app.name)
+                                .font(DiskMapType.bodyStrong)
+                                .foregroundStyle(DiskMapTheme.ink)
+                                .lineLimit(1)
+                            if let publisher = app.publisher, !publisher.isEmpty {
+                                Text(publisher)
+                                    .font(DiskMapType.micro)
+                                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Group {
+                        if app.sizePending {
+                            Text("…")
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
+                        } else {
+                            Text(ByteFormat.string(app.totalBytes))
+                                .foregroundStyle(DiskMapTheme.ink)
+                        }
+                    }
+                    .font(DiskMapType.smallMedium.monospacedDigit())
+                    .frame(width: 88, alignment: .trailing)
+
+                    Text(lastUsedLabel(app.lastUsed))
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(width: 100, alignment: .leading)
+                        .lineLimit(1)
+
+                    Text(app.source.title)
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .frame(width: 80, alignment: .leading)
+
+                    statusPill(app.status)
+                        .frame(width: 90, alignment: .leading)
                 }
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
             }
-            .font(DiskMapType.smallMedium.monospacedDigit())
-            .frame(width: 88, alignment: .trailing)
-
-            Text(lastUsedLabel(app.lastUsed))
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(width: 100, alignment: .leading)
-                .lineLimit(1)
-
-            Text(app.source.title)
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .frame(width: 80, alignment: .leading)
-
-            statusPill(app.status)
-                .frame(width: 90, alignment: .leading)
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(app.name), \(app.sizePending ? "size pending" : ByteFormat.string(app.totalBytes)), \(app.status.title)")
+            .accessibilityAddTraits(selected ? .isSelected : [])
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(selected ? DiskMapTheme.navSelected : Color.clear)
         )
         .contentShape(Rectangle())
-        .onTapGesture {
-            selectedID = app.id
-            inspectorTab = .overview
-        }
     }
 
     private func statusPill(_ status: ApplicationStatus) -> some View {
