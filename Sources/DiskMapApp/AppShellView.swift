@@ -27,12 +27,12 @@ struct AppShellView: View {
             ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
                     topBar(compactSidebar: compactSidebar)
-                    Divider().overlay(DiskMapTheme.cardStroke)
+                    Hairline()
                     HStack(spacing: 0) {
                         if !compactSidebar {
                             sidebar
                                 .frame(width: DiskMapMetric.sidebarWidth)
-                            Divider().overlay(DiskMapTheme.cardStroke)
+                            Rectangle().fill(DiskMapTheme.line).frame(width: 1)
                         }
                         GeometryReader { geo in
                             let page = destinationBody
@@ -71,12 +71,16 @@ struct AppShellView: View {
 
                 if let toast = model.toastMessage {
                     Text(toast)
-                        .font(DiskMapType.bodyStrong)
-                        .foregroundStyle(DiskMapTheme.onInk)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Capsule().fill(DiskMapTheme.ink.opacity(0.92)))
-                        .padding(.top, 56)
+                        .font(DiskMapType.bodyEmphasis)
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .padding(.horizontal, 14)
+                        .frame(height: 34)
+                        .background(
+                            Capsule().fill(DiskMapTheme.raised)
+                                .overlay(Capsule().stroke(DiskMapTheme.line, lineWidth: 1))
+                                .shadow(color: .black.opacity(0.08), radius: 10, y: 3)
+                        )
+                        .padding(.top, DiskMapMetric.topBarHeight + 12)
                         .frame(maxWidth: .infinity)
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .zIndex(10)
@@ -86,7 +90,7 @@ struct AppShellView: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: showCompactSidebar)
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.toastMessage)
-        .background(DiskMapTheme.cream)
+        .background(DiskMapTheme.canvas)
         .frame(minWidth: 880, minHeight: 600)
         .onChange(of: model.destination) { _, _ in model.clearMultiSelection() }
         .sheet(isPresented: $model.isCleanupQueuePresented) {
@@ -119,53 +123,61 @@ struct AppShellView: View {
     }
 
     private func topBar(compactSidebar: Bool) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             if compactSidebar {
                 Button {
                     showCompactSidebar.toggle()
                 } label: {
-                    Image(systemName: "sidebar.left")
-                        .frame(width: 24, height: 24)
+                    Label(showCompactSidebar ? "Hide Sidebar" : "Show Sidebar", systemImage: "sidebar.left")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(IconButtonStyle())
                 .help(showCompactSidebar ? "Hide Sidebar" : "Show Sidebar")
-                .accessibilityLabel(showCompactSidebar ? "Hide Sidebar" : "Show Sidebar")
             }
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            TextField("Search files, folders and actions…", text: $searchText)
-                .textFieldStyle(.plain)
-                .font(DiskMapType.body)
-                .accessibilityLabel("Search storage")
-                .disabled(!hasCompletedScan)
-                .opacity(hasCompletedScan ? 1 : 0.45)
-                .onSubmit {
+            // One search field: typing opens the palette (⌘K anywhere).
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: DiskMapType.scaled(11.5), weight: .medium))
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .accessibilityHidden(true)
+                TextField("Search files, folders and actions", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(DiskMapType.body)
+                    .accessibilityLabel("Search storage")
+                    .disabled(!hasCompletedScan)
+                    .onSubmit {
+                        guard hasCompletedScan else { return }
+                        showPalette = true
+                    }
+                Button {
                     guard hasCompletedScan else { return }
                     showPalette = true
+                } label: {
+                    Kbd("⌘K")
                 }
-            Button {
-                guard hasCompletedScan else { return }
-                showPalette = true
-            } label: {
-                Text("⌘K")
-                    .font(DiskMapType.captionStrong)
-                    .padding(.horizontal, 8)
-                    .frame(height: DiskMapMetric.controlHeight)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(DiskMapTheme.navSelected))
+                .buttonStyle(.plain)
+                .keyboardShortcut("k", modifiers: .command)
+                .disabled(!hasCompletedScan)
+                .help(hasCompletedScan ? "Command palette" : "Scan first to search")
+                .accessibilityLabel("Command palette")
             }
-            .buttonStyle(.plain)
-            .keyboardShortcut("k", modifiers: .command)
-            .disabled(!hasCompletedScan)
-            .opacity(hasCompletedScan ? 1 : 0.45)
-            .help(hasCompletedScan ? "Command palette" : "Scan first to search")
+            .padding(.horizontal, 10)
+            .frame(maxWidth: 460)
+            .frame(height: DiskMapMetric.searchHeight)
+            .background(
+                RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                    .fill(DiskMapTheme.raised.opacity(0.55))
+                    .overlay(RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                        .stroke(DiskMapTheme.line, lineWidth: 1))
+            )
+            .opacity(hasCompletedScan ? 1 : 0.5)
             Spacer()
-            if model.isScanning {
+            if model.isScanning, model.tree != nil {
+                // The first scan shows its own counter on the page.
                 HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text(model.scanPhase == .checkingChanges ? "Checking what changed…"
-                         : model.tree == nil ? "Scanning… \(model.scannedCount.formatted())" : "Rescanning… \(model.scannedCount.formatted())")
-                        .font(DiskMapType.captionMedium.monospacedDigit())
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                    ProgressView().controlSize(.mini)
+                    Text(model.scanPhase == .checkingChanges ? "Checking changes" : "Rescanning · \(model.scannedCount.formatted())")
+                        .font(DiskMapType.figureSmall)
+                        .foregroundStyle(DiskMapTheme.ink2)
                         .lineLimit(1)
                 }
                 .layoutPriority(1)
@@ -176,83 +188,78 @@ struct AppShellView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "trash")
-                    if model.stagedItems.isEmpty {
-                        Text("Cleanup")
-                    } else {
-                        Text("Cleanup (\(model.stagedItems.count))")
-                        if model.reclaimableBytes > 0 {
-                            Text("· \(ByteFormat.string(model.reclaimableBytes))")
-                                .foregroundStyle(DiskMapTheme.safe)
-                        }
+                    Text("Cleanup")
+                    if !model.stagedItems.isEmpty {
+                        Text("\(model.stagedItems.count)")
+                            .font(DiskMapType.figureSmall)
+                            .foregroundStyle(DiskMapTheme.onInk)
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 18, minHeight: 16)
+                            .background(Capsule().fill(DiskMapTheme.accent))
                     }
                 }
-                .font(DiskMapType.smallMedium)
             }
-            .buttonStyle(InkButtonStyle(filled: !model.stagedItems.isEmpty))
+            .buttonStyle(QuietButtonStyle(tint: model.stagedItems.isEmpty ? DiskMapTheme.ink2 : DiskMapTheme.ink))
             .disabled(!hasCompletedScan)
-            .opacity(hasCompletedScan ? 1 : 0.4)
             .help(!hasCompletedScan
                   ? "Scan first to stage cleanup"
                   : (model.stagedItems.isEmpty
                      ? "Review items staged for Trash"
                      : "\(countLabel(model.stagedItems.count, "item")) · \(ByteFormat.string(model.reclaimableBytes)) reclaimable"))
             .accessibilityLabel(model.stagedItems.isEmpty ? "Cleanup" : "Cleanup, \(countLabel(model.stagedItems.count, "item"))")
-            AppearanceMenuButton()
             if hasCompletedScan {
-                Button {
-                    if let root = model.rootURL {
-                        Task { await model.scan(root) }
-                    } else {
-                        pickFolder()
+                Menu {
+                    Button("Quick Update — re-read what changed") {
+                        if let root = model.rootURL { Task { await model.scan(root) } }
                     }
-                } label: {
-                    Label("Rescan", systemImage: "arrow.clockwise")
-                        .font(DiskMapType.smallMedium)
-                }
-                .buttonStyle(InkButtonStyle(filled: false))
-                .disabled(model.isScanning)
-                .help("Re-reads only what changed since the last scan. Right-click for a full rescan.")
-                .contextMenu {
                     Button("Full Rescan — walk every folder") {
                         if let root = model.rootURL { Task { await model.scan(root, mode: .full) } }
                     }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: DiskMapType.scaled(12.5), weight: .medium))
+                        .foregroundStyle(DiskMapTheme.ink2)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                } primaryAction: {
+                    if let root = model.rootURL { Task { await model.scan(root) } } else { pickFolder() }
                 }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .disabled(model.isScanning)
+                .help("Rescan — re-reads only what changed. Hold for a full rescan.")
+                .accessibilityLabel("Rescan")
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 14)
         .frame(height: DiskMapMetric.topBarHeight)
-        .background(DiskMapTheme.cardFill)
+        .background(DiskMapTheme.canvas)
     }
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+            HStack(spacing: 9) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(DiskMapTheme.ink)
-                    .frame(width: 28, height: 28)
-                    .overlay(Text("D").font(.system(size: DiskMapType.scaled(13), weight: .bold)).foregroundStyle(DiskMapTheme.onInk))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("DiskMap")
-                        .font(DiskMapType.callout)
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Text("Understand your storage.")
-                        .font(DiskMapType.micro)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                }
+                    .frame(width: 22, height: 22)
+                    .overlay(Text("D").font(.system(size: DiskMapType.scaled(11), weight: .bold)).foregroundStyle(DiskMapTheme.onInk))
+                    .accessibilityHidden(true)
+                Text("DiskMap")
+                    .font(DiskMapType.bodyEmphasis)
+                    .foregroundStyle(DiskMapTheme.ink)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
+            .padding(.bottom, 14)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 18) {
                     ForEach(AppNavSection.allCases) { section in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(section.rawValue.uppercased())
-                                .font(DiskMapType.microStrong)
-                                .tracking(0.8)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .padding(.horizontal, 12)
-                                .padding(.bottom, 2)
+                        VStack(alignment: .leading, spacing: 1) {
+                            MonoLabel(section.rawValue)
+                                .padding(.horizontal, 18)
+                                .padding(.bottom, 5)
                             ForEach(section.items) { dest in
                                 navRow(dest)
                             }
@@ -267,14 +274,30 @@ struct AppShellView: View {
             }
 
             Spacer(minLength: 0)
-            volumeChip
-                .padding(12)
+            volumeFooter
         }
-        .background(DiskMapTheme.sidebarFill)
+        .background(DiskMapTheme.canvas)
+    }
+
+    /// A quiet figure beside a nav item, read from catalogs already built —
+    /// never builds one (catalogs stay lazy, TASK-043).
+    private func navFigure(_ dest: AppDestination) -> String? {
+        func bytes(_ value: Int64) -> String? { value > 0 ? ByteFormat.string(value) : nil }
+        switch dest {
+        case .cleanSafe: return model.isCatalogReady(.reviewables) ? bytes(model.cachedReviewableSummary.totalBytes) : nil
+        case .cleanCaches: return model.isCatalogReady(.reviewables) ? bytes(model.cachedReviewableSummary.cacheBytes) : nil
+        case .cleanDownloads: return model.isCatalogReady(.oldDownloads) ? bytes(model.cachedOldDownloads.summary.totalBytes) : nil
+        case .cleanMedia: return model.isCatalogReady(.largeMedia) ? bytes(model.cachedLargeMedia.summary.totalBytes) : nil
+        case .forgottenFiles: return model.isCatalogReady(.forgotten) ? bytes(model.cachedForgottenSummary.reviewableBytes) : nil
+        case .developerStorage: return model.isCatalogReady(.developer) ? bytes(model.cachedDeveloper.summary.reclaimableBytes) : nil
+        case .duplicates: return model.duplicateDidRun && !model.duplicateGroups.isEmpty ? "\(model.duplicateGroups.count)" : nil
+        default: return nil
+        }
     }
 
     private func navRow(_ dest: AppDestination) -> some View {
         let locked = dest.requiresScan && !hasCompletedScan
+        let selected = model.destination == dest && !locked
         return Button {
             guard !locked else { return }
             showCompactSidebar = false
@@ -283,67 +306,66 @@ struct AppShellView: View {
             if dest == .duplicates { model.topNav = .duplicates }
             if dest == .applications { model.topNav = .applications }
             if dest == .snapshots { model.topNav = .snapshots }
-            if dest == .biggestFiles { model.exploreMode = .topSizes }
-            if dest == .biggestFolders { model.exploreMode = .folders }
-            if dest == .forgottenFiles { model.exploreMode = .ageMap }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 9) {
                 Image(systemName: dest.symbol)
-                    .font(DiskMapType.small)
-                    .frame(width: 18)
+                    .font(.system(size: DiskMapType.scaled(11.5), weight: .regular))
+                    .foregroundStyle(selected ? DiskMapTheme.accent : DiskMapTheme.ink3)
+                    .frame(width: 16)
                 Text(dest.label)
-                    .font(.system(size: DiskMapType.scaled(13), weight: model.destination == dest ? .semibold : .regular))
-                Spacer()
+                    .font(selected ? DiskMapType.bodyEmphasis : DiskMapType.body)
+                    .foregroundStyle(locked ? DiskMapTheme.ink3 : selected ? DiskMapTheme.ink : DiskMapTheme.ink2)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if !locked, let figure = navFigure(dest) {
+                    Text(figure)
+                        .font(DiskMapType.figureSmall)
+                        .foregroundStyle(DiskMapTheme.ink3)
+                        .lineLimit(1)
+                }
             }
-            .foregroundStyle(locked ? DiskMapTheme.disabledLabel.opacity(0.62) : DiskMapTheme.ink)
             .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .frame(height: 28)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(model.destination == dest && !locked ? DiskMapTheme.navSelected : Color.clear)
+                RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                    .fill(selected ? DiskMapTheme.accentSoft : Color.clear)
             )
+            .contentShape(Rectangle())
             .padding(.horizontal, 8)
         }
         .buttonStyle(.plain)
         .disabled(locked)
         .help(locked ? "Scan your Mac first." : dest.label)
-        .accessibilityLabel(locked ? "\(dest.label), scan first" : dest.label)
+        .accessibilityLabel(locked ? "\(dest.label), scan first" : navFigure(dest).map { "\(dest.label), \($0)" } ?? dest.label)
         .accessibilityAddTraits(model.destination == dest ? .isSelected : [])
     }
 
-    private var volumeChip: some View {
+    /// The disk at the foot of the sidebar: name, a 2 pt bar, free space.
+    private var volumeFooter: some View {
         let vol = model.analysis.volume
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: "internaldrive.fill")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+        return VStack(alignment: .leading, spacing: 7) {
+            Hairline()
+                .padding(.bottom, 5)
+            HStack(spacing: 6) {
+                Image(systemName: "internaldrive")
+                    .font(.system(size: DiskMapType.scaled(11), weight: .regular))
+                    .foregroundStyle(DiskMapTheme.ink3)
                 Text(vol?.volumeName ?? "Macintosh HD")
-                    .font(DiskMapType.smallStrong)
-                    .foregroundStyle(DiskMapTheme.ink)
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .lineLimit(1)
             }
-            if let vol {
-                ProportionBar(fraction: vol.usedFraction, tint: DiskMapTheme.ink.opacity(0.45))
-                Text("\(ByteFormat.string(Int64(vol.totalBytes))) total · \(ByteFormat.string(Int64(vol.freeBytes))) free")
-                    .font(DiskMapType.micro)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            } else {
-                ProportionBar(fraction: 0, tint: DiskMapTheme.ink.opacity(0.12))
-                Text("Capacity appears after you scan")
-                    .font(DiskMapType.micro)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
+            ProportionBar(fraction: vol?.usedFraction ?? 0, tint: DiskMapTheme.ink.opacity(0.4), height: 2)
+            Text(vol.map { "\(ByteFormat.string(Int64($0.freeBytes))) free of \(ByteFormat.string(Int64($0.totalBytes)))" } ?? "Scan to see capacity")
+                .font(DiskMapType.figureSmall)
+                .foregroundStyle(DiskMapTheme.ink3)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
-        .padding(10)
-        .opacity(hasCompletedScan ? 1 : 0.72)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(DiskMapTheme.cardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                )
-        )
-        .accessibilityLabel(vol.map { "Volume \($0.volumeName)" } ?? "Volume capacity unavailable until scan")
+        .padding(.horizontal, 18)
+        .padding(.bottom, 16)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(vol.map { "\($0.volumeName), \(ByteFormat.string(Int64($0.freeBytes))) free" } ?? "Volume capacity unavailable until scan")
     }
 
     @ViewBuilder

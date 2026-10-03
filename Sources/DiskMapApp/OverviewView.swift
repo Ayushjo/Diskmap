@@ -1,7 +1,8 @@
 import DiskMapCore
 import SwiftUI
 
-/// Home — answer "Why is my Mac full?" in ~5 seconds. Matches DiskMap2 hierarchy.
+/// Home — answer "Why is my Mac full?" in ~5 seconds: one reading column,
+/// every figure once.
 struct OverviewView: View {
     @ObservedObject var model: ScanModel
     var pickFolder: () -> Void
@@ -12,6 +13,7 @@ struct OverviewView: View {
     var onOpenBiggestFiles: () -> Void = {}
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showWhy = false
 
     var body: some View {
         Group {
@@ -29,125 +31,355 @@ struct OverviewView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiskMapTheme.cream)
+        .background(DiskMapTheme.canvas)
     }
 
     private var snap: AnalysisSnapshot { model.analysis }
 
     private var loaded: some View {
         ScrollView {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 16) {
-                    headerCard
-                    unreadableNotice
-                    explainBanner
-                    whereGoingCard
-                    biggestFilesCard
+            VStack(alignment: .leading, spacing: DiskMapSpace.xl) {
+                hero
+                unreadableNotice
+                whereGoing
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: DiskMapSpace.xl) {
+                        worthReviewing.frame(maxWidth: .infinity, alignment: .topLeading)
+                        sideList.frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                    .frame(minWidth: 640)
+                    VStack(alignment: .leading, spacing: DiskMapSpace.xl) {
+                        worthReviewing
+                        sideList
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .leading, spacing: 12) {
-                    healthCard
-                    growthCard
-                    insightCard
-                    findingsCard
-                    recoverCard
-                }
-                .frame(width: 280)
+                footer
             }
-            .padding(20)
+            .frame(maxWidth: DiskMapMetric.readingWidth, alignment: .leading)
+            .padding(.horizontal, DiskMapSpace.page)
+            .padding(.top, DiskMapSpace.pageTop + 8)
+            .padding(.bottom, DiskMapSpace.xl)
+            .frame(maxWidth: .infinity)
         }
     }
 
-    private var headerCard: some View {
-        PanelCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Your Mac")
-                    .font(DiskMapType.title)
+    // MARK: Hero
+
+    private var hero: some View {
+        VStack(alignment: .leading, spacing: DiskMapSpace.sm) {
+            if let vol = snap.volume {
+                MonoLabel((vol.volumeName ?? "Macintosh HD").uppercased())
+                Text("\(ByteFormat.string(Int64(vol.freeBytes))) free")
+                    .font(DiskMapType.display)
                     .foregroundStyle(DiskMapTheme.ink)
-                if let vol = snap.volume {
-                    Text("\(ByteFormat.string(Int64(vol.usedBytes))) used of \(ByteFormat.string(Int64(vol.totalBytes)))")
-                        .font(DiskMapType.body)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    HStack(spacing: 10) {
-                        Text("\(ByteFormat.string(Int64(vol.freeBytes))) free (\(pct(1 - vol.usedFraction)) available)")
-                            .font(DiskMapType.body)
-                            .foregroundStyle(DiskMapTheme.ink)
-                        if snap.health == .low || snap.health == .critical {
-                            Text(snap.health.title)
-                                .font(DiskMapType.captionStrong)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .foregroundStyle(DiskMapTheme.danger)
-                                .background(Capsule().fill(DiskMapTheme.danger.opacity(0.12)))
-                        }
+                    .contentTransition(reduceMotion ? .identity : .numericText())
+                    .accessibilityIdentifier("overview-free")
+                HStack(spacing: DiskMapSpace.sm) {
+                    Text("of \(ByteFormat.string(Int64(vol.totalBytes)))  ·  \(pct(vol.usedFraction)) used")
+                        .font(DiskMapType.figure)
+                        .foregroundStyle(DiskMapTheme.ink2)
+                    if snap.health != .healthy {
+                        SafetyLabel(level: nil, title: snap.health.title, tint: healthColor)
                     }
-                    if let reconciliation = snap.reconciliation {
-                        reconciliationRow(reconciliation)
-                    }
-                    cloneRow
-                    SegmentedStorageBar(segments: categorySegments(total: categorySum))
-                        .padding(.top, 4)
-                    categoryLegend
-                    scanKindRow
-                } else {
-                    Text("\(ByteFormat.string(snap.scannedBytes)) in this scan")
-                        .font(DiskMapType.body)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    SegmentedStorageBar(segments: categorySegments(total: categorySum))
-                    categoryLegend
-                    scanKindRow
+                }
+                ProportionBar(fraction: vol.usedFraction,
+                              tint: snap.health == .healthy ? DiskMapTheme.ink.opacity(0.55) : healthColor,
+                              height: 6)
+                    .frame(maxWidth: 520)
+                    .padding(.vertical, 4)
+                    .accessibilityHidden(true)
+            } else {
+                MonoLabel((model.rootURL?.lastPathComponent ?? "This scan").uppercased())
+                Text(ByteFormat.string(snap.scannedBytes))
+                    .font(DiskMapType.display)
+                    .foregroundStyle(DiskMapTheme.ink)
+                    .contentTransition(reduceMotion ? .identity : .numericText())
+            }
+            coverageLine
+        }
+    }
+
+    /// One line on what the scan covers, with the causes behind "Why?".
+    private var coverageLine: some View {
+        HStack(alignment: .firstTextBaseline, spacing: DiskMapSpace.xs) {
+            Text(coverageText)
+                .font(DiskMapType.secondary)
+                .foregroundStyle(DiskMapTheme.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("volume-reconciliation")
+            if hasWhyDetail {
+                Button("Why?") { showWhy.toggle() }
+                    .buttonStyle(LinkButtonStyle())
+                    .font(DiskMapType.secondary)
+                    .popover(isPresented: $showWhy, arrowEdge: .bottom) { whyPopover }
+                    .accessibilityHint("Explains the gap between this scan and the disk")
+            }
+        }
+    }
+
+    private var coverageText: String {
+        if let rec = snap.reconciliation { return reconciliationHeadline(rec) }
+        return "\(ByteFormat.string(snap.scannedBytes)) found in this scan."
+    }
+
+    private var hasWhyDetail: Bool {
+        if let rec = snap.reconciliation, reconciliationDetail(rec) != nil { return true }
+        if snap.hasSharingInfo { return Self.cloneText(snap.sharingCorrection) != nil }
+        return model.rootURL.map { StorageSharing.isAPFS($0.path) } == true
+    }
+
+    private var whyPopover: some View {
+        VStack(alignment: .leading, spacing: DiskMapSpace.md) {
+            MonoLabel("Why the numbers differ")
+            if let rec = snap.reconciliation, let detail = reconciliationDetail(rec) {
+                Text(detail)
+                    .font(DiskMapType.body)
+                    .foregroundStyle(DiskMapTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            cloneNote
+        }
+        .padding(DiskMapSpace.lg)
+        .frame(width: 340, alignment: .leading)
+        .background(DiskMapTheme.raised)
+    }
+
+    /// TASK-077: what counting each clone family once changed — or, when it
+    /// is off on an APFS volume, that clones may be counted more than once.
+    @ViewBuilder
+    private var cloneNote: some View {
+        if snap.hasSharingInfo {
+            if let text = Self.cloneText(snap.sharingCorrection) {
+                Text(text)
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("clone-accounting")
+            }
+        } else if model.rootURL.map({ StorageSharing.isAPFS($0.path) }) == true {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Cloned files are counted once per copy, so these totals can be higher than the disk really uses.")
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                SettingsLink { Text("Count clones once…") }
+                    .buttonStyle(LinkButtonStyle())
+                    .font(DiskMapType.secondary)
+            }
+            .accessibilityIdentifier("clone-accounting-off")
+        }
+    }
+
+    /// TASK-039: say when the totals are short because folders were unreadable.
+    @ViewBuilder
+    private var unreadableNotice: some View {
+        let count = model.deniedDirectoryIDs.count
+        if count > 0 {
+            DiskMapNoticeBanner(
+                symbol: "lock",
+                tint: DiskMapTheme.review,
+                title: "\(count.formatted()) folder\(count == 1 ? "" : "s") couldn’t be read",
+                detail: "Totals are missing whatever \(count == 1 ? "it holds" : "they hold"). Grant Full Disk Access, then rescan.",
+                examples: model.deniedDirectoryExamples(),
+                actionTitle: "Grant access",
+                action: { model.openFullDiskAccessSettings() }
+            )
+            .accessibilityIdentifier("unreadable-folders-notice")
+        }
+    }
+
+    // MARK: Where it's going
+
+    private var whereGoing: some View {
+        VStack(alignment: .leading, spacing: DiskMapSpace.md) {
+            SectionHeader(label: snap.categoryMode == .folder ? "What’s in this folder" : "Where it’s going",
+                          detail: snap.categoryMode == .folder ? "by file type" : nil) {
+                Button("Open in Visualize →", action: onOpenVisualize)
+                    .buttonStyle(LinkButtonStyle())
+                    .font(DiskMapType.secondary)
+            }
+            SegmentedStorageBar(segments: categorySegments(total: categorySum))
+                .accessibilityHidden(true)
+            VStack(spacing: 0) {
+                ForEach(snap.categories) { cat in
+                    CategoryRow(title: cat.title, bytes: cat.bytes,
+                                fraction: Double(cat.bytes) / Double(categorySum),
+                                tint: color(of: cat), help: openHelp(cat)) { open(cat) }
                 }
             }
+        }
+    }
+
+    // MARK: Worth reviewing
+
+    private struct ReviewItem: Identifiable {
+        var id: String
+        var title: String
+        var detail: String
+        var bytes: Int64?
+        var level: SafetyLevel
+        var open: () -> Void
+    }
+
+    private var reviewItems: [ReviewItem] {
+        var items: [ReviewItem] = StorageNarrator.recommendations(from: snap).map { rec in
+            let dest: AppDestination = {
+                if rec.id == "rec-quickwins" { return .cleanSafe }
+                if rec.id == "rec-downloads" { return .cleanDownloads }
+                if rec.id == "rec-forgotten" { return .forgottenFiles }
+                if rec.id == "rec-caches" { return .cleanCaches }
+                return .cleanMedia
+            }()
+            return ReviewItem(id: rec.id, title: rec.title, detail: rec.detail, bytes: rec.bytes,
+                              level: rec.safety) { [model] in model.destination = dest }
+        }
+        if model.duplicateDidRun, !model.duplicateGroups.isEmpty {
+            let groups = model.duplicateGroups.count
+            items.append(ReviewItem(id: "rec-duplicates", title: "Review duplicates",
+                                    detail: "\(groups) group\(groups == 1 ? "" : "s") of identical files.",
+                                    bytes: nil, level: .review) { [model] in
+                model.destination = .duplicates
+                model.topNav = .duplicates
+            })
+        }
+        return items
+    }
+
+    private var worthReviewing: some View {
+        VStack(alignment: .leading, spacing: DiskMapSpace.sm) {
+            SectionHeader(label: "Worth reviewing",
+                          detail: snap.reviewableBytes > 0 ? "~" + ByteFormat.string(snap.reviewableBytes) : nil) {
+                Button("Explain my storage", action: onExplain)
+                    .buttonStyle(LinkButtonStyle())
+                    .font(DiskMapType.secondary)
+            }
+            let items = reviewItems
+            if items.isEmpty {
+                Text("Nothing stands out. Your biggest folders are on the left of Visualize.")
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .padding(.vertical, DiskMapSpace.xs)
+            }
+            VStack(spacing: 0) {
+                ForEach(items) { item in
+                    LinkRow(title: item.title, subtitle: item.detail,
+                            figure: item.bytes.map(ByteFormat.string), subtitleTruncation: .tail,
+                            action: item.open) {
+                        Circle()
+                            .fill(item.level == .safe ? DiskMapTheme.safe : DiskMapTheme.review)
+                            .frame(width: 6, height: 6)
+                            .frame(width: 14)
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("worth-reviewing")
+    }
+
+    // MARK: What grew / biggest files
+
+    @ViewBuilder
+    private var sideList: some View {
+        if let comparison = model.weekComparison {
+            growth(comparison)
+        } else {
+            biggestFiles
         }
     }
 
     /// TASK-079: what grew since about a week ago, from the scan history.
-    @ViewBuilder
-    private var growthCard: some View {
-        if let comparison = model.weekComparison {
-            PanelCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(comparison.isWeek ? "What grew this week"
-                         : "What grew since \(comparison.since.formatted(date: .abbreviated, time: .omitted))")
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    Text(Self.freeDeltaText(comparison.freeDelta))
-                        .font(DiskMapType.body)
-                        .foregroundStyle(comparison.freeDelta < -Self.growthNoise ? DiskMapTheme.danger : DiskMapTheme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if comparison.growers.isEmpty {
-                        Text("No folder here grew by more than 100 MB.")
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
+    private func growth(_ comparison: StorageHistory.Comparison) -> some View {
+        VStack(alignment: .leading, spacing: DiskMapSpace.sm) {
+            SectionHeader(label: comparison.isWeek ? "What grew this week"
+                          : "Since \(comparison.since.formatted(date: .abbreviated, time: .omitted))",
+                          detail: Self.freeDeltaShort(comparison.freeDelta))
+            if comparison.growers.isEmpty {
+                Text("No folder grew by more than 100 MB.")
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .padding(.vertical, DiskMapSpace.xs)
+            }
+            VStack(spacing: 0) {
+                ForEach(comparison.growers, id: \.path) { growth in
+                    LinkRow(title: URL(fileURLWithPath: growth.path).lastPathComponent,
+                            subtitle: growth.path,
+                            figure: "+" + ByteFormat.string(growth.delta),
+                            action: { openGrown(growth.path) }) {
+                        Image(systemName: "folder")
+                            .font(.system(size: DiskMapType.scaled(12)))
+                            .foregroundStyle(DiskMapTheme.ink3)
+                            .frame(width: 14)
                     }
-                    ForEach(comparison.growers, id: \.path) { growth in
-                        Button { openGrown(growth.path) } label: {
-                            HStack {
-                                Text(growth.path)
-                                    .font(DiskMapType.body)
-                                    .foregroundStyle(DiskMapTheme.ink)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                Spacer(minLength: 6)
-                                Text("+" + ByteFormat.string(growth.delta))
-                                    .font(DiskMapType.small.monospacedDigit())
-                                    .foregroundStyle(DiskMapTheme.review)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Open in File Browser · \(ByteFormat.string(growth.before)) → \(ByteFormat.string(growth.after))")
-                        .accessibilityLabel("\(growth.path) grew \(ByteFormat.string(growth.delta))")
-                    }
-                    if comparison.deniedChanged {
-                        Text("Some folders were readable in one scan and not the other, so small changes may be the reading, not the disk.")
-                            .font(DiskMapType.micro)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .fixedSize(horizontal: false, vertical: true)
+                    .help("Open in File Browser · \(ByteFormat.string(growth.before)) → \(ByteFormat.string(growth.after))")
+                    .accessibilityLabel("\(growth.path) grew \(ByteFormat.string(growth.delta))")
+                }
+            }
+            if comparison.deniedChanged {
+                Text("Some folders were readable in one scan and not the other, so small changes may be the reading, not the disk.")
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityIdentifier("growth-card")
+    }
+
+    static func freeDeltaShort(_ delta: Int64) -> String {
+        if abs(delta) < growthNoise { return "free space unchanged" }
+        return delta < 0 ? "−\(ByteFormat.string(-delta)) free" : "+\(ByteFormat.string(delta)) free"
+    }
+
+    private var biggestFiles: some View {
+        VStack(alignment: .leading, spacing: DiskMapSpace.sm) {
+            SectionHeader(label: "Biggest files") {
+                Button("View all →", action: onOpenBiggestFiles)
+                    .buttonStyle(LinkButtonStyle())
+                    .font(DiskMapType.secondary)
+            }
+            VStack(spacing: 0) {
+                ForEach(snap.topFiles.prefix(5)) { file in
+                    let root = model.rootURL ?? URL(fileURLWithPath: "/")
+                    let abs = file.relativePath.hasPrefix("/") ? file.relativePath : root.appendingPathComponent(file.relativePath).path
+                    let url = URL(fileURLWithPath: abs)
+                    LinkRow(title: file.name, subtitle: relativeParent(of: abs, root: root),
+                            figure: ByteFormat.string(file.bytes), action: { onSelectFile(file.nodeID) }) {
+                        FileIdentityIcon(url: url, size: 20)
                     }
                 }
             }
-            .accessibilityIdentifier("growth-card")
+        }
+    }
+
+    // MARK: Footer
+
+    @ViewBuilder
+    private var footer: some View {
+        if let kind = model.lastScanKind {
+            HStack(alignment: .firstTextBaseline, spacing: DiskMapSpace.xs) {
+                Text(Self.scanKindText(kind))
+                    .font(DiskMapType.figureSmall)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+                if case .quick = kind, let root = model.rootURL {
+                    Button("Full Rescan") { Task { await model.scan(root, mode: .full) } }
+                        .buttonStyle(LinkButtonStyle())
+                        .font(DiskMapType.figureSmall)
+                        .disabled(model.isScanning)
+                }
+            }
+            .padding(.top, DiskMapSpace.xs)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("scan-kind")
+        }
+    }
+
+    // MARK: Helpers
+
+    private var healthColor: Color {
+        switch snap.health {
+        case .healthy: return DiskMapTheme.safe
+        case .tight: return DiskMapTheme.review
+        case .low, .critical: return DiskMapTheme.danger
         }
     }
 
@@ -166,44 +398,6 @@ struct OverviewView: View {
         model.destination = .fileBrowser
     }
 
-    /// TASK-077: what counting each clone family once changed — or, when it
-    /// is off on an APFS volume, that clones may be counted more than once.
-    @ViewBuilder
-    private var cloneRow: some View {
-        let correction = snap.sharingCorrection
-        if snap.hasSharingInfo {
-            if let text = Self.cloneText(correction) {
-                Label {
-                    Text(text)
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "square.on.square")
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("clone-accounting")
-            }
-        } else if model.rootURL.map({ StorageSharing.isAPFS($0.path) }) == true {
-            HStack(spacing: 8) {
-                Image(systemName: "square.on.square")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .accessibilityHidden(true)
-                Text("Cloned files are counted once per copy, so these totals can be higher than the disk really uses.")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .fixedSize(horizontal: false, vertical: true)
-                SettingsLink {
-                    Text("Count clones once…")
-                }
-                .buttonStyle(.link)
-                .font(DiskMapType.captionStrong)
-            }
-            .accessibilityIdentifier("clone-accounting-off")
-        }
-    }
-
     static func cloneText(_ correction: FileTree.SharingCorrection) -> String? {
         var parts: [String] = []
         if correction.cloneCount > 0 {
@@ -213,31 +407,6 @@ struct OverviewView: View {
             parts.append("\(ByteFormat.string(correction.partialSharedBytes)) in \(correction.partialCount.formatted()) edited cop\(correction.partialCount == 1 ? "y" : "ies") is shared with files DiskMap can’t name, and counted in full.")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
-    }
-
-    /// TASK-061: say whether these numbers come from a full walk or a quick
-    /// update of the last one, and offer the full walk.
-    @ViewBuilder
-    private var scanKindRow: some View {
-        if let kind = model.lastScanKind {
-            HStack(spacing: 8) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .accessibilityHidden(true)
-                Text(Self.scanKindText(kind))
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .fixedSize(horizontal: false, vertical: true)
-                if case .quick = kind, let root = model.rootURL {
-                    Button("Full Rescan") { Task { await model.scan(root, mode: .full) } }
-                        .buttonStyle(.link)
-                        .font(DiskMapType.captionStrong)
-                        .disabled(model.isScanning)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("scan-kind")
-        }
     }
 
     static func scanKindText(_ kind: ScanModel.ScanKind) -> String {
@@ -253,25 +422,6 @@ struct OverviewView: View {
             let base = "Full scan in \(String(format: "%.1f", seconds)) s."
             return reason.map { base + " (Walked in full: \($0).)" } ?? base
         }
-    }
-
-    /// TASK-040: the gap between "used" and what the scan found is the most
-    /// common "where did my disk go?" confusion. Name every cause that can
-    /// apply rather than implying there is one.
-    private func reconciliationRow(_ rec: AnalysisSnapshot.VolumeReconciliation) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(reconciliationHeadline(rec))
-                .font(DiskMapType.body)
-                .foregroundStyle(DiskMapTheme.ink)
-            if let detail = reconciliationDetail(rec) {
-                Text(detail)
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("volume-reconciliation")
     }
 
     private func reconciliationHeadline(_ rec: AnalysisSnapshot.VolumeReconciliation) -> String {
@@ -310,132 +460,6 @@ struct OverviewView: View {
         return "The other \(ByteFormat.string(rec.unaccountedBytes)) is \(list)."
     }
 
-    /// TASK-039: say when the totals are short because folders were unreadable.
-    @ViewBuilder
-    private var unreadableNotice: some View {
-        let count = model.deniedDirectoryIDs.count
-        if count > 0 {
-            DiskMapNoticeBanner(
-                symbol: "lock.trianglebadge.exclamationmark",
-                tint: DiskMapTheme.review,
-                title: "\(count.formatted()) folder\(count == 1 ? "" : "s") couldn’t be read",
-                detail: "DiskMap doesn’t have permission to open \(count == 1 ? "it" : "them"), so every size above \(count == 1 ? "it" : "them") is missing whatever \(count == 1 ? "it holds" : "they hold"). Grant Full Disk Access, then rescan, for complete numbers.",
-                examples: model.deniedDirectoryExamples(),
-                actionTitle: "Open Full Disk Access Settings",
-                action: { model.openFullDiskAccessSettings() }
-            )
-            .accessibilityIdentifier("unreadable-folders-notice")
-        }
-    }
-
-    private var categoryLegend: some View {
-        HStack(spacing: 12) {
-            ForEach(snap.categories.prefix(6)) { cat in
-                HStack(spacing: 4) {
-                    Circle().fill(color(of: cat)).frame(width: 8, height: 8)
-                    Text("\(cat.title) \(ByteFormat.string(cat.bytes))")
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .lineLimit(1)
-                }
-            }
-        }
-    }
-
-    private var explainBanner: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "sparkles")
-                .foregroundStyle(DiskMapTheme.developer)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Not sure where to start?")
-                    .font(DiskMapType.callout)
-                    .foregroundStyle(Color.white)
-                Text("Diskmap can explain what's taking up space and point you toward things worth reviewing.")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(Color.white.opacity(0.75))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            Button("Explain my storage →", action: onExplain)
-                .buttonStyle(InkButtonStyle(filled: false))
-                .colorScheme(.dark)
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(DiskMapTheme.inverseSurface)
-        )
-    }
-
-    private var whereGoingTitle: String {
-        guard snap.categoryMode == .folder else { return "Where is your storage going?" }
-        let name = model.rootURL?.lastPathComponent ?? ""
-        return name.isEmpty ? "What’s in this folder?" : "What’s in \(name)?"
-    }
-
-    private var whereGoingCard: some View {
-        PanelCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text(whereGoingTitle)
-                        .font(DiskMapType.section)
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Spacer()
-                }
-                if snap.categoryMode == .folder {
-                    Text("By file type — folder names only mean something at the top of a home folder or a disk.")
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                ForEach(snap.categories) { cat in
-                    categoryRow(cat)
-                }
-                Button("View in Visualizations →", action: onOpenVisualize)
-                    .buttonStyle(.plain)
-                    .font(DiskMapType.smallStrong)
-                    .foregroundStyle(DiskMapTheme.info)
-                    .padding(.top, 4)
-            }
-        }
-    }
-
-    private func categoryRow(_ cat: StorageCategory) -> some View {
-        let denom = categorySum
-        let tint = color(of: cat)
-        return Button { open(cat) } label: {
-            HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(tint.opacity(0.2))
-                    .frame(width: 28, height: 28)
-                    .overlay(
-                        Image(systemName: cat.fileKind != nil ? "doc.fill" : "folder.fill")
-                            .font(DiskMapType.small)
-                            .foregroundStyle(tint)
-                    )
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(cat.title).font(DiskMapType.bodyMedium).foregroundStyle(DiskMapTheme.ink)
-                        Spacer()
-                        Text(ByteFormat.string(cat.bytes))
-                            .font(DiskMapType.bodyStrong.monospacedDigit())
-                            .foregroundStyle(DiskMapTheme.ink)
-                    }
-                    ProportionBar(fraction: Double(cat.bytes) / Double(denom), tint: tint)
-                }
-                Text(pct(Double(cat.bytes) / Double(denom)))
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .frame(width: 40, alignment: .trailing)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(openHelp(cat))
-        .accessibilityLabel("\(cat.title), \(ByteFormat.string(cat.bytes)), \(pct(Double(cat.bytes) / Double(denom)))")
-        .accessibilityHint(openHelp(cat))
-    }
-
     /// A file type opens Find on that kind; "Other" opens Biggest Files; a
     /// folder category opens Visualize at its folder.
     private func open(_ cat: StorageCategory) {
@@ -460,188 +484,6 @@ struct OverviewView: View {
         cat.colorHex.map(DiskMapTheme.hex) ?? DiskMapTheme.categoryColor(cat.colorHint)
     }
 
-    private var biggestFilesCard: some View {
-        PanelCard {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Biggest files")
-                        .font(DiskMapType.section)
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Spacer()
-                    Button("View all →", action: onOpenBiggestFiles)
-                        .buttonStyle(.plain)
-                        .font(DiskMapType.smallStrong)
-                        .foregroundStyle(DiskMapTheme.info)
-                }
-                ForEach(snap.topFiles.prefix(5)) { file in
-                    Button {
-                        onSelectFile(file.nodeID)
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "doc.fill")
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .frame(width: 20)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(file.name)
-                                    .font(DiskMapType.bodyMedium)
-                                    .foregroundStyle(DiskMapTheme.ink)
-                                    .lineLimit(1)
-                                Text(file.relativePath)
-                                    .font(DiskMapType.caption)
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            Text(ByteFormat.string(file.bytes))
-                                .font(DiskMapType.smallStrong.monospacedDigit())
-                                .foregroundStyle(DiskMapTheme.ink)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    private var healthCard: some View {
-        PanelCard {
-            VStack(spacing: 10) {
-                Text("Storage Health")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                ZStack {
-                    Circle()
-                        .stroke(DiskMapTheme.cardStroke, lineWidth: 7)
-                    Circle()
-                        .trim(from: 0, to: snap.volume?.usedFraction ?? 0)
-                        .stroke(healthColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    VStack(spacing: 2) {
-                        Text(pct(snap.volume?.usedFraction ?? 0))
-                            .font(DiskMapType.callout.monospacedDigit())
-                            .foregroundStyle(DiskMapTheme.ink)
-                    }
-                }
-                .frame(width: 72, height: 72)
-                .frame(maxWidth: .infinity)
-                if let vol = snap.volume {
-                    Text("\(ByteFormat.string(Int64(vol.freeBytes))) free")
-                        .font(DiskMapType.body)
-                        .foregroundStyle(DiskMapTheme.ink)
-                }
-                Text(snap.health.title)
-                    .font(DiskMapType.smallStrong)
-                    .foregroundStyle(healthColor)
-            }
-        }
-    }
-
-    private var insightCard: some View {
-        let top = StorageNarrator.recommendations(from: snap).first
-        return PanelCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Quick insight")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                if let top {
-                    Text(top.title)
-                        .font(DiskMapType.callout)
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Text("\(top.detail) · \(ByteFormat.string(top.bytes))")
-                        .font(DiskMapType.body)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("You have \(ByteFormat.string(snap.reviewableBytes)) worth of files that may be worth reviewing.")
-                        .font(DiskMapType.body)
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Button("Review cleanup →", action: onReviewCleanup)
-                    .buttonStyle(PrimaryCTAStyle())
-                    .padding(.top, 4)
-            }
-        }
-    }
-
-    private var findingsCard: some View {
-        let stories = StorageNarrator.stories(from: snap, limit: 3)
-        return PanelCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Worth looking at")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                if stories.isEmpty {
-                    ForEach(snap.categories.prefix(3)) { cat in
-                        HStack {
-                            Text(cat.title).font(DiskMapType.body).foregroundStyle(DiskMapTheme.ink)
-                            Spacer()
-                            Text(ByteFormat.string(cat.bytes))
-                                .font(DiskMapType.small.monospacedDigit())
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                        }
-                    }
-                } else {
-                    ForEach(stories) { story in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(story.title)
-                                    .font(DiskMapType.body)
-                                    .foregroundStyle(DiskMapTheme.ink)
-                                    .lineLimit(1)
-                                Spacer()
-                                Text(ByteFormat.string(story.bytes))
-                                    .font(DiskMapType.small.monospacedDigit())
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                            }
-                            Text(story.detail)
-                                .font(DiskMapType.caption)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .lineLimit(2)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var recoverCard: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "leaf.fill")
-                .foregroundStyle(DiskMapTheme.safe)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Potential reclaimable space")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                Text("~" + ByteFormat.string(snap.reviewableBytes))
-                    .font(.system(size: DiskMapType.scaled(18), weight: .semibold).monospacedDigit())
-                    .foregroundStyle(DiskMapTheme.safe)
-                Text("Estimated — review before deleting.")
-                    .font(DiskMapType.micro)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
-            Spacer()
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(DiskMapTheme.safe.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(DiskMapTheme.safe.opacity(0.25), lineWidth: 1)
-                )
-        )
-    }
-
-    private var healthColor: Color {
-        switch snap.health {
-        case .healthy: return DiskMapTheme.safe
-        case .tight: return DiskMapTheme.review
-        case .low, .critical: return DiskMapTheme.danger
-        }
-    }
-
     private var categorySum: Int64 {
         max(1, snap.categories.reduce(Int64(0)) { $0 + $1.bytes })
     }
@@ -656,5 +498,98 @@ struct OverviewView: View {
     private func pct(_ f: Double) -> String {
         if f > 0 && f < 0.005 { return "<1%" }
         return String(format: "%.0f%%", min(100, max(0, f * 100)))
+    }
+}
+
+/// A storage category: dot, name, a 3 pt bar, mono size and share.
+private struct CategoryRow: View {
+    var title: String
+    var bytes: Int64
+    var fraction: Double
+    var tint: Color
+    var help: String
+    var action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: DiskMapSpace.sm) {
+                Circle().fill(tint).frame(width: 8, height: 8)
+                Text(title)
+                    .font(DiskMapType.body)
+                    .foregroundStyle(DiskMapTheme.ink)
+                    .lineLimit(1)
+                    .frame(width: 150, alignment: .leading)
+                ProportionBar(fraction: fraction, tint: tint)
+                    .frame(maxWidth: .infinity)
+                MonoColumn(text: ByteFormat.string(bytes), width: 76, emphasis: true)
+                MonoColumn(text: Self.percent(fraction), width: 40)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: DiskMapSpace.row)
+            .background(RowBackground(selected: false, hovering: hovering))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .padding(.horizontal, -10)
+        .help(help)
+        .accessibilityLabel("\(title), \(ByteFormat.string(bytes)), \(Self.percent(fraction))")
+        .accessibilityHint(help)
+    }
+
+    static func percent(_ f: Double) -> String {
+        if f > 0 && f < 0.005 { return "<1%" }
+        return String(format: "%.0f%%", min(100, max(0, f * 100)))
+    }
+}
+
+/// A row that goes somewhere: leading mark, name over detail, mono figure, chevron.
+private struct LinkRow<Leading: View>: View {
+    var title: String
+    var subtitle: String?
+    var figure: String?
+    var subtitleTruncation: Text.TruncationMode = .middle
+    var action: () -> Void
+    @ViewBuilder var leading: Leading
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: DiskMapSpace.sm) {
+                leading
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(DiskMapType.bodyEmphasis)
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(DiskMapType.secondary)
+                            .foregroundStyle(DiskMapTheme.ink3)
+                            .lineLimit(1)
+                            .truncationMode(subtitleTruncation)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let figure {
+                    Text(figure)
+                        .font(DiskMapType.figure)
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .lineLimit(1)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: DiskMapType.scaled(10), weight: .semibold))
+                    .foregroundStyle(hovering ? DiskMapTheme.ink2 : DiskMapTheme.ink3.opacity(0.6))
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: DiskMapSpace.rowTwoLine + 4)
+            .background(RowBackground(selected: false, hovering: hovering))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .padding(.horizontal, -10)
     }
 }

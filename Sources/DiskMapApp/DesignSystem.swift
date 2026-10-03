@@ -40,45 +40,60 @@ enum DiskMapTheme {
         })
     }
 
-    /// Canvas background — calm off-white matching DiskMap1/2 mocks.
-    static let cream = adaptive(light: (250, 250, 252), dark: (29, 29, 31))
-    /// Near-black primary / active in light; near-white in dark.
-    static let ink = adaptive(light: (28, 27, 23), dark: (236, 236, 240))
-    /// Text and icons placed ON an `ink` fill (selected chips, toasts, the
-    /// primary ink button). It was hardcoded white, which vanishes once `ink`
-    /// turns light in dark mode.
-    static let onInk = adaptive(light: (255, 255, 255), dark: (29, 29, 31))
-    static let mutedLabel = adaptive(light: (110, 110, 115), dark: (158, 158, 166),
-                                     highContrastLight: (72, 72, 78), highContrastDark: (198, 198, 206))
-    static let cardFill = adaptive(light: (255, 255, 255), dark: (40, 40, 44))
-    static let cardStroke = adaptive(light: (226, 226, 230), dark: (60, 60, 66),
-                                     highContrastLight: (150, 150, 158), highContrastDark: (120, 120, 130))
-    static let compressed = adaptive(light: (70, 140, 90), dark: (98, 184, 124))
-    static let inspectorFill = adaptive(light: (248, 248, 250), dark: (35, 35, 38))
-    /// The navigation rail shares the application canvas so the shell reads as one surface.
-    static let sidebarFill = cream
-    static let navSelected = adaptive(light: (232, 232, 237), dark: (58, 58, 64))
-    static let hoverFill = adaptive(light: (242, 242, 245), dark: (48, 48, 53))
-    static let inspectedFill = adaptive(light: (235, 239, 246), dark: (38, 48, 66))
-    static let disabledLabel = adaptive(light: (118, 118, 124), dark: (118, 118, 126),
-                                        highContrastLight: (92, 92, 98), highContrastDark: (150, 150, 158))
-    static let focus = adaptive(light: (56, 110, 209), dark: (104, 152, 242))
-    /// A deliberately dark banner surface in both appearances (Overview's
-    /// "Explain my storage"); lifted in dark mode so it still reads as a card.
-    static let inverseSurface = adaptive(light: (46, 46, 56), dark: (54, 56, 70))
+    // MARK: Surfaces and text — "calm" palette (Milestone 18)
+    //
+    // Light follows the launch site (design/website-motion-v1): warm paper,
+    // ink, one violet. Dark is near-black with hairlines (designeer.xyz).
+    // One surface for window, sidebar, page and inspector; `raised` only for
+    // popovers, sheets and the rare card.
+
+    /// The one surface: window, sidebar, page, inspector.
+    static let canvas = adaptive(light: (248, 247, 244), dark: (11, 11, 12))
+    /// Popovers, palette, sheets, the rare card.
+    static let raised = adaptive(light: (255, 255, 255), dark: (20, 20, 22))
+    /// Hairlines.
+    static let line = adaptive(light: (228, 227, 223), dark: (38, 38, 42),
+                               highContrastLight: (185, 184, 179), highContrastDark: (74, 74, 80))
+    /// Primary text and the primary button.
+    static let ink = adaptive(light: (37, 43, 49), dark: (242, 242, 243))
+    /// Text and icons on an `ink` fill.
+    static let onInk = adaptive(light: (255, 255, 255), dark: (11, 11, 12))
+    /// Secondary text.
+    static let ink2 = adaptive(light: (102, 113, 126), dark: (163, 163, 168),
+                               highContrastLight: (64, 72, 82), highContrastDark: (205, 205, 210))
+    /// Mono labels, tertiary text.
+    static let ink3 = adaptive(light: (148, 154, 162), dark: (118, 118, 124),
+                               highContrastLight: (98, 104, 112), highContrastDark: (170, 170, 176))
+    /// The single accent: selection, focus, links, active chips.
+    static let accent = adaptive(light: (121, 102, 218), dark: (154, 139, 240))
+    /// Selected rows and active chips.
+    static var accentSoft: Color { accent.opacity(0.11) }
+    /// Row hover.
+    static let hover = adaptive(light: (37, 43, 49), dark: (255, 255, 255)).opacity(0.045)
+
+    // Older names, now mapped onto the calm palette so screens not yet
+    // rebuilt follow it too. Removed once every page uses the kit.
+    static let cream = canvas
+    static let mutedLabel = ink2
+    static let cardFill = raised
+    static let cardStroke = line
+    static let inspectorFill = canvas
+    static let sidebarFill = canvas
+    /// Neutral selection / secondary fill (sidebar, quiet buttons).
+    static let navSelected = adaptive(light: (37, 43, 49), dark: (255, 255, 255)).opacity(0.065)
+    static let disabledLabel = ink3
+    /// Temporary: Overview's explain banner until the pilot removes it.
+    static let focus = accent
     /// Text drawn on pastel data tiles. Fixed, because the tiles are.
-    static let tileLabel = Color(red: 28 / 255, green: 27 / 255, blue: 23 / 255)
+    static let tileLabel = Color(red: 37 / 255, green: 43 / 255, blue: 49 / 255)
 
     /// A data tint made OPAQUE by compositing it over the light canvas
-    /// (TASK-049). Charts used `color.opacity(x)` for depth fades and bubble
-    /// containers; over a dark canvas translucency darkens the fill, so the
-    /// fixed dark `tileLabel` lost contrast (bubble labels read dark-on-dark).
-    /// Compositing against the fixed light canvas keeps tiles identical in
-    /// both appearances.
+    /// (TASK-049), so tiles look the same in both appearances and keep the
+    /// fixed dark `tileLabel` readable.
     static func wash(_ color: Color, strength: Double) -> Color {
         let a = min(max(strength, 0), 1)
         guard let c = NSColor(color).usingColorSpace(.sRGB) else { return color.opacity(a) }
-        let bg = (250.0 / 255, 250.0 / 255, 252.0 / 255)
+        let bg = (248.0 / 255, 247.0 / 255, 244.0 / 255)
         return Color(
             .sRGB,
             red: Double(c.redComponent) * a + bg.0 * (1 - a),
@@ -88,12 +103,13 @@ enum DiskMapTheme {
         )
     }
 
-    // Semantic — lifted slightly in dark mode to keep contrast on dark surfaces.
-    static let info = adaptive(light: (51, 115, 242), dark: (96, 152, 255))
-    static let safe = adaptive(light: (46, 158, 97), dark: (74, 192, 128))
-    static let review = adaptive(light: (230, 158, 31), dark: (242, 178, 66))
-    static let danger = adaptive(light: (219, 56, 56), dark: (242, 100, 100))
-    static let developer = adaptive(light: (122, 89, 217), dark: (162, 136, 246))
+    // Semantic — safety only, shown as a dot and a word, never as a fill.
+    static let safe = adaptive(light: (62, 142, 99), dark: (108, 196, 149))
+    static let review = adaptive(light: (183, 121, 31), dark: (224, 165, 72))
+    static let danger = adaptive(light: (194, 69, 61), dark: (238, 122, 112))
+    /// Links and highlights: the accent (blue and purple were two more accents).
+    static let info = accent
+    static let developer = accent
 
     static func hex(_ hex: String) -> Color {
         var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -106,47 +122,46 @@ enum DiskMapTheme {
         )
     }
 
+    /// The one data palette (launch site): slate, violet, rose, sage, sand,
+    /// sky, stone. Charts, bars, categories and kinds all draw from it.
+    static let dataPalette = ["849BB8", "A795C7", "C78797", "7BA89C", "B9A071", "8FACC0", "A2A4AC"]
+    static func data(_ index: Int) -> Color { hex(dataPalette[abs(index) % dataPalette.count]) }
+
     static let folderPastels: [Color] = [
-        Color(red: 0.55, green: 0.45, blue: 0.85), // library purple
-        Color(red: 0.92, green: 0.45, blue: 0.62), // downloads pink
-        Color(red: 0.30, green: 0.55, blue: 0.95), // developer blue
-        Color(red: 0.25, green: 0.72, blue: 0.48), // caches green
-        Color(red: 0.95, green: 0.55, blue: 0.25), // apps orange
-        Color(red: 0.45, green: 0.55, blue: 0.65), // documents slate
-        Color(red: 0.70, green: 0.70, blue: 0.72), // other gray
-        Color(red: 0.62, green: 0.80, blue: 0.78),
+        hex("A795C7"), // library
+        hex("C78797"), // downloads
+        hex("849BB8"), // developer
+        hex("7BA89C"), // caches
+        hex("B9A071"), // apps
+        hex("8FACC0"), // documents
+        hex("A2A4AC"), // other
+        hex("9FB5A9"),
     ]
 
-    /// The one colour per file kind (TASK-047). There were four copies of
-    /// this switch — two identical in BiggestFilesView, a partial one in
-    /// ForgottenFilesView, and a drifted one in FileBrowserView where documents
-    /// were teal instead of gold. These are the Biggest Files values.
+    /// The one colour per file kind (TASK-047), from the data palette.
     static func kindColor(_ kind: FileKind) -> Color {
         switch kind {
-        case .video: return Color(red: 0.55, green: 0.35, blue: 0.85)
-        case .diskImage: return Color(red: 0.25, green: 0.45, blue: 0.90)
-        case .archive: return Color(red: 0.92, green: 0.50, blue: 0.20)
-        case .application: return Color(red: 0.20, green: 0.55, blue: 0.85)
-        case .document: return Color(red: 0.85, green: 0.65, blue: 0.15)
-        case .virtualDisk: return Color(red: 0.50, green: 0.35, blue: 0.80)
-        case .deviceBackup: return Color(red: 0.20, green: 0.65, blue: 0.45)
-        case .database: return Color(red: 0.40, green: 0.50, blue: 0.60)
-        case .other: return DiskMapTheme.mutedLabel
+        case .video: return hex("C78797")
+        case .diskImage: return hex("849BB8")
+        case .archive: return hex("B9A071")
+        case .application: return hex("8FACC0")
+        case .document: return hex("7BA89C")
+        case .virtualDisk: return hex("A795C7")
+        case .deviceBackup: return hex("9FB5A9")
+        case .database: return hex("A2A4AC")
+        case .other: return DiskMapTheme.ink3
         }
     }
 
-    /// One ramp for file age, used by the Age Map screen and by Explore's
-    /// "age" colouring (TASK-047). There were two copies with drifted
-    /// saturation; these are the Age Map screen's values. Newest = green,
-    /// oldest = deep red.
+    /// One ramp for file age (TASK-047): sage (new) through sand to rose (old).
     static func ageColor(_ bucket: AgeBucket) -> Color {
         switch bucket {
-        case .under30: return Color(hue: 0.42, saturation: 0.45, brightness: 0.72)
-        case .days30to90: return Color(hue: 0.38, saturation: 0.5, brightness: 0.62)
-        case .days90to365: return Color(hue: 0.12, saturation: 0.55, brightness: 0.78)
-        case .oneToTwoYears: return Color(hue: 0.06, saturation: 0.65, brightness: 0.72)
-        case .overTwoYears: return Color(hue: 0.02, saturation: 0.7, brightness: 0.55)
-        case .unknown: return DiskMapTheme.mutedLabel.opacity(0.4)
+        case .under30: return hex("7BA89C")
+        case .days30to90: return hex("8FACC0")
+        case .days90to365: return hex("B9A071")
+        case .oneToTwoYears: return hex("C99A7E")
+        case .overTwoYears: return hex("C78797")
+        case .unknown: return DiskMapTheme.ink3.opacity(0.5)
         }
     }
 
@@ -158,22 +173,20 @@ enum DiskMapTheme {
         case "library": return hex("A795C7")
         case "downloads": return hex("C78797")
         case "desktop", "documents": return hex("849BB8")
-        case "applications": return hex("C9A078")
+        case "applications": return hex("B9A071")
         default: return hex(treemapFolderPalette[abs(index) % treemapFolderPalette.count])
         }
     }
 
-    static let treemapFolderPalette = ["849BB8", "A795C7", "C78797", "7BA89C", "B9A071", "8FACC0", "A2A4AC"]
+    static let treemapFolderPalette = dataPalette
 
-    /// Tinted panel backgrounds. Built from the semantic colour at low
-    /// opacity so they sit correctly on either canvas — the hardcoded pale
-    /// blue / warm cream fills they replace glared in dark mode.
-    static var infoSurface: Color { info.opacity(0.08) }
-    static var reviewSurface: Color { review.opacity(0.10) }
+    /// Former tinted panel backgrounds — calm pages use no tinted boxes;
+    /// screens not yet rebuilt get a barely-there wash.
+    static var infoSurface: Color { ink.opacity(0.035) }
+    static var reviewSurface: Color { ink.opacity(0.035) }
 
-    /// Folders in lists (was an ad-hoc "link blue" repeated 8× in
-    /// FileBrowserView, close to but not equal to `info`).
-    static let folderTint = info
+    /// Folder glyphs in lists: neutral, not an accent.
+    static let folderTint = ink2
 
     static func categoryColor(_ hint: String) -> Color {
         switch hint {
@@ -183,7 +196,7 @@ enum DiskMapTheme {
         case "caches": return folderPastels[3]
         case "apps": return folderPastels[4]
         case "documents": return folderPastels[5]
-        case "system": return Color(red: 0.45, green: 0.47, blue: 0.52)
+        case "system": return hex("A2A4AC")
         default: return folderPastels[6]
         }
     }
@@ -194,14 +207,16 @@ enum DiskMapSpace {
     static let xs: CGFloat = 8
     static let sm: CGFloat = 12
     static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-    static let xl: CGFloat = 24
-    static let xxl: CGFloat = 32
+    static let lg: CGFloat = 24
+    static let xl: CGFloat = 32
+    static let xxl: CGFloat = 48
 
-    /// Default page padding.
-    static let page: CGFloat = 20
-    /// Compact list row height target.
-    static let rowMin: CGFloat = 44
+    /// Page margins (calm pages: 32 sides, 28 top).
+    static let page: CGFloat = 32
+    static let pageTop: CGFloat = 28
+    /// List row height (one line / two lines).
+    static let row: CGFloat = 36
+    static let rowTwoLine: CGFloat = 44
 }
 
 /// "1 item" / "3 items", with the number in the user's locale.
@@ -210,20 +225,25 @@ func countLabel(_ count: Int, _ singular: String, _ plural: String? = nil) -> St
 }
 
 enum DiskMapRadius {
-    static let control: CGFloat = 8
-    static let card: CGFloat = 12
+    /// Controls, chips, rows.
+    static let control: CGFloat = 6
+    /// Raised surfaces: popovers, sheets, the rare card.
+    static let card: CGFloat = 10
 }
 
 enum DiskMapMetric {
-    static let topBarHeight: CGFloat = 50
-    /// Widens with the text size (TASK-085) so "Developer Storage" stays one line.
-    static var sidebarWidth: CGFloat { (200 * max(1, DiskMapType.scale)).rounded() }
-    static let controlHeight: CGFloat = 30
-    static let searchHeight: CGFloat = 32
-    static let tableHeaderHeight: CGFloat = 30
+    static let topBarHeight: CGFloat = 44
+    /// Widens with the text size (TASK-085) so labels stay on one line.
+    static var sidebarWidth: CGFloat { (212 * max(1, DiskMapType.scale)).rounded() }
+    static let controlHeight: CGFloat = 28
+    static let searchHeight: CGFloat = 30
+    static let tableHeaderHeight: CGFloat = 28
     static let statusBarHeight: CGFloat = 30
     static let checkboxColumnWidth: CGFloat = 24
-    static let inspectorPadding: CGFloat = 18
+    static let inspectorPadding: CGFloat = 20
+    static let inspectorWidth: CGFloat = 300
+    /// Reading width for single-column pages (Overview).
+    static let readingWidth: CGFloat = 880
 }
 
 /// The type scale (TASK-050). Every text size goes through `scale`, so a
@@ -277,139 +297,267 @@ enum DiskMapType {
         .system(size: size * scale, weight: weight)
     }
 
+    private static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size * scale, weight: weight, design: .monospaced)
+    }
+
+    // MARK: Calm scale (Milestone 18): names 13, secondary 12, figures and
+    // labels in SF Mono, one title and one display figure per page.
+
+    /// The one big figure on a page ("120 GB free").
+    static var display: Font { text(28, .semibold).monospacedDigit() }
+    /// Page title.
+    static var title: Font { text(20, .semibold) }
+    /// Section and inspector-name headings.
+    static var heading: Font { text(15, .semibold) }
+    static var body: Font { text(13) }
+    /// Names in lists.
+    static var bodyEmphasis: Font { text(13, .medium) }
+    static var secondary: Font { text(12) }
+    /// Sizes, counts, dates.
+    static var figure: Font { mono(12) }
+    static var figureStrong: Font { mono(12, .medium) }
+    static var figureSmall: Font { mono(11) }
+    /// Uppercase eyebrow and section labels (use `MonoLabel`).
+    static var label: Font { mono(10, .medium) }
+
+    // Older names, mapped onto the calm scale while pages migrate.
     static var micro: Font { text(10) }
     static var microStrong: Font { text(10, .semibold) }
     static var microMedium: Font { text(10, .medium) }
     static var caption: Font { text(11) }
     static var captionMedium: Font { text(11, .medium) }
     static var captionStrong: Font { text(11, .semibold) }
-    /// 12 pt had no token, which is why it was the most hand-rolled size.
     static var small: Font { text(12) }
     static var smallMedium: Font { text(12, .medium) }
     static var smallStrong: Font { text(12, .semibold) }
-    static var body: Font { text(13) }
     static var bodyMedium: Font { text(13, .medium) }
     static var bodyStrong: Font { text(13, .semibold) }
-    static var callout: Font { text(14, .semibold) }
+    static var callout: Font { text(13, .semibold) }
     static var section: Font { text(15, .semibold) }
-    static var headline: Font { text(16, .semibold) }
-    static var title: Font { text(22, .semibold) }
-    static var heroNumber: Font { text(28, .semibold).monospacedDigit() }
+    static var headline: Font { text(15, .semibold) }
+    static var heroNumber: Font { display }
 }
 
+/// Uppercase mono label — section labels, eyebrows, column headers.
 struct SectionLabel: View {
     let title: String
     var body: some View {
-        Text(title.uppercased())
-            .font(.system(size: DiskMapType.scaled(10), weight: .semibold))
-            .tracking(1.2)
-            .foregroundStyle(DiskMapTheme.mutedLabel)
+        MonoLabel(title)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
+/// A rare card: hairline on `raised`. Calm pages prefer hairlines and space.
 struct PanelCard<Content: View>: View {
-    var padding: CGFloat = 14
+    var padding: CGFloat = 16
     @ViewBuilder var content: Content
     var body: some View {
         content
             .padding(padding)
             .background(
                 RoundedRectangle(cornerRadius: DiskMapRadius.card, style: .continuous)
-                    .fill(DiskMapTheme.cardFill)
+                    .fill(DiskMapTheme.raised)
                     .overlay(
                         RoundedRectangle(cornerRadius: DiskMapRadius.card, style: .continuous)
-                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
+                            .stroke(DiskMapTheme.line, lineWidth: 1)
                     )
             )
     }
 }
 
+/// Label / value row (inspectors). Value in mono.
 struct StatRow: View {
     let label: String
     let value: String
     var emphasize: Bool = false
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(label)
-                .foregroundStyle(emphasize ? DiskMapTheme.safe : DiskMapTheme.mutedLabel)
+                .font(DiskMapType.secondary)
+                .foregroundStyle(DiskMapTheme.ink2)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(value)
-                .fontWeight(emphasize ? .semibold : .regular)
-                .foregroundStyle(emphasize ? DiskMapTheme.safe : DiskMapTheme.ink)
+                .font(emphasize ? DiskMapType.figureStrong : DiskMapType.figure)
+                .foregroundStyle(DiskMapTheme.ink)
                 .multilineTextAlignment(.trailing)
         }
-        .font(.system(size: DiskMapType.scaled(12)))
     }
 }
 
+/// A thin proportion bar on a hairline track.
 struct ProportionBar: View {
     let fraction: Double
-    var tint: Color = DiskMapTheme.ink.opacity(0.35)
+    var tint: Color = DiskMapTheme.ink.opacity(0.32)
+    var height: CGFloat = 3
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(DiskMapTheme.cardStroke.opacity(0.5))
+                Capsule().fill(DiskMapTheme.line)
                 Capsule()
                     .fill(tint)
                     .frame(width: max(0, geo.size.width * min(1, max(0, fraction))))
             }
         }
-        .frame(height: 5)
+        .frame(height: height)
     }
 }
 
+/// One stacked bar; the list under it is its legend.
 struct SegmentedStorageBar: View {
     let segments: [(color: Color, fraction: Double)]
+    var height: CGFloat = 6
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 2) {
                 ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
                     let w = max(0, geo.size.width * min(1, max(0, seg.fraction)))
                     if w > 0.5 {
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
                             .fill(seg.color)
                             .frame(width: w)
                     }
                 }
+                Spacer(minLength: 0)
             }
         }
-        .frame(height: 9)
-        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .frame(height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
     }
 }
 
+// MARK: - Buttons (one primary per screen)
+
+/// Filled ink — the one primary action on a screen.
+struct PrimaryButtonStyle: ButtonStyle {
+    var fullWidth: Bool = false
+    @Environment(\.isEnabled) private var isEnabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(DiskMapType.bodyEmphasis)
+            .lineLimit(1)
+            .frame(maxWidth: fullWidth ? .infinity : nil)
+            .padding(.horizontal, 12)
+            .frame(height: DiskMapMetric.controlHeight)
+            .foregroundStyle(DiskMapTheme.onInk)
+            .background(
+                RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                    .fill(DiskMapTheme.ink.opacity(!isEnabled ? 0.3 : configuration.isPressed ? 0.82 : 1))
+            )
+            .contentShape(Rectangle())
+    }
+}
+
+/// Hairline outline — a secondary action that still needs a label.
+struct SecondaryButtonStyle: ButtonStyle {
+    var fullWidth: Bool = false
+    @Environment(\.isEnabled) private var isEnabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(DiskMapType.bodyEmphasis)
+            .lineLimit(1)
+            .frame(maxWidth: fullWidth ? .infinity : nil)
+            .padding(.horizontal, 12)
+            .frame(height: DiskMapMetric.controlHeight)
+            .foregroundStyle(DiskMapTheme.ink.opacity(isEnabled ? 1 : 0.35))
+            .background(
+                RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                    .fill(configuration.isPressed ? DiskMapTheme.navSelected : DiskMapTheme.raised.opacity(0.6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                            .stroke(DiskMapTheme.line, lineWidth: 1)
+                    )
+            )
+            .contentShape(Rectangle())
+    }
+}
+
+/// Text only, with a hover / press fill.
+struct QuietButtonStyle: ButtonStyle {
+    var tint: Color = DiskMapTheme.ink2
+    func makeBody(configuration: Configuration) -> some View {
+        QuietButtonBody(configuration: configuration, tint: tint)
+    }
+
+    private struct QuietButtonBody: View {
+        let configuration: Configuration
+        let tint: Color
+        @State private var hovering = false
+        @Environment(\.isEnabled) private var isEnabled
+        var body: some View {
+            configuration.label
+                .font(DiskMapType.bodyEmphasis)
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .frame(height: DiskMapMetric.controlHeight)
+                .foregroundStyle(hovering ? DiskMapTheme.ink : tint)
+                .opacity(isEnabled ? 1 : 0.4)
+                .background(
+                    RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                        .fill(configuration.isPressed ? DiskMapTheme.navSelected : hovering ? DiskMapTheme.hover : .clear)
+                )
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+        }
+    }
+}
+
+/// A 28 pt square icon button (row hover actions, inspector secondary actions).
+struct IconButtonStyle: ButtonStyle {
+    var size: CGFloat = 28
+    func makeBody(configuration: Configuration) -> some View {
+        IconButtonBody(configuration: configuration, size: size)
+    }
+
+    private struct IconButtonBody: View {
+        let configuration: Configuration
+        let size: CGFloat
+        @State private var hovering = false
+        @Environment(\.isEnabled) private var isEnabled
+        var body: some View {
+            configuration.label
+                .font(.system(size: DiskMapType.scaled(12.5), weight: .medium))
+                .labelStyle(.iconOnly)
+                .frame(width: size, height: size)
+                .foregroundStyle(hovering ? DiskMapTheme.ink : DiskMapTheme.ink2)
+                .opacity(isEnabled ? 1 : 0.35)
+                .background(
+                    RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
+                        .fill(configuration.isPressed ? DiskMapTheme.navSelected : hovering ? DiskMapTheme.hover : .clear)
+                )
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+        }
+    }
+}
+
+/// Violet text link.
+struct LinkButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(DiskMapType.bodyEmphasis)
+            .foregroundStyle(DiskMapTheme.accent.opacity(configuration.isPressed ? 0.7 : 1))
+            .contentShape(Rectangle())
+    }
+}
+
+/// Former names: `filled` is the primary, unfilled the secondary.
 struct InkButtonStyle: ButtonStyle {
     var filled: Bool = true
     var fullWidth: Bool = false
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: DiskMapType.scaled(13), weight: .semibold))
-            .frame(maxWidth: fullWidth ? .infinity : nil)
-            .padding(.horizontal, 14)
-            .frame(height: DiskMapMetric.controlHeight)
-            .foregroundStyle(filled ? DiskMapTheme.onInk : DiskMapTheme.ink)
-            .background(
-                RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
-                    .fill(filled ? DiskMapTheme.ink.opacity(configuration.isPressed ? 0.85 : 1) : DiskMapTheme.navSelected)
-            )
+        if filled {
+            PrimaryButtonStyle(fullWidth: fullWidth).makeBody(configuration: configuration)
+        } else {
+            SecondaryButtonStyle(fullWidth: fullWidth).makeBody(configuration: configuration)
+        }
     }
 }
 
+/// Former green CTA: now the ink primary everywhere.
 struct PrimaryCTAStyle: ButtonStyle {
     var fullWidth: Bool = false
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: DiskMapType.scaled(13), weight: .semibold))
-            .frame(maxWidth: fullWidth ? .infinity : nil)
-            .padding(.horizontal, 16)
-            .frame(height: DiskMapMetric.controlHeight)
-            .foregroundStyle(Color.white)
-            .background(
-                // Fixed brand green: the lifted dark-mode `safe` would drop
-                // white text to ~2.3:1 contrast.
-                RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
-                    .fill(Color(red: 46 / 255, green: 158 / 255, blue: 97 / 255).opacity(configuration.isPressed ? 0.85 : 1))
-            )
+        PrimaryButtonStyle(fullWidth: fullWidth).makeBody(configuration: configuration)
     }
 }
