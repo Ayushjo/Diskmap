@@ -437,10 +437,7 @@ struct AppShellView: View {
                 pickFolder: pickFolder
             )
         case .applications:
-            AppsView(
-                model: model,
-                onOpenCleanup: { model.isCleanupQueuePresented = true }
-            )
+            AppsView(model: model)
         case .snapshots:
             SnapshotsView(model: model, onOpenCleanup: { model.isCleanupQueuePresented = true })
         }

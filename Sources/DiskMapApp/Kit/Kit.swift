@@ -204,6 +204,8 @@ struct Chip: View {
                 }
             }
             .foregroundStyle(isOn ? DiskMapTheme.ink : DiskMapTheme.ink2)
+            .lineLimit(1)
+            .fixedSize()
             .padding(.horizontal, 9)
             .frame(height: 26)
             .background(
