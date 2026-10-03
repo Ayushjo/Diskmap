@@ -18,17 +18,17 @@ struct SettingsView: View {
                     Text("Also find edited clones").tag(SharingMode.full.rawValue)
                 }
                 Text(CloneAccounting.explanation(SharingMode(rawValue: cloneMode) ?? .off))
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
                 Text("Scanning")
             }
             Section {
                 Toggle("Keep storage history", isOn: $keepHistory)
-                Text("After each scan DiskMap notes a few hundred folder sizes, so it can say what grew this week. Kept for a year in ~/Library/Application Support/DiskMap/History, never sent anywhere. Turning this off stops new notes; what is there stays.")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                Text("Notes a few hundred folder sizes per scan so DiskMap can say what grew — kept a year on this Mac, never sent anywhere.")
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
                 Text("History")
@@ -68,11 +68,11 @@ enum CloneAccounting {
     static func explanation(_ mode: SharingMode) -> String {
         switch mode {
         case .off:
-            return "Fastest. A file copied with Finder or by tools like pnpm shares its blocks with the original, but is counted again for every copy — totals can be far above what the disk actually uses."
+            return "Fastest, but a cloned copy (Finder, pnpm) is counted again for every copy, so totals can exceed what the disk uses."
         case .refcount:
-            return "Clones count once, so folder sizes match the disk. Scans take roughly 15–20% longer. The next scan reads every folder again."
+            return "Clones count once so sizes match the disk; scans take about 15–20% longer, and the next one reads every folder."
         case .full:
-            return "Also notices copies that were edited after cloning and still share some blocks (counted in full and reported), and lets Cleanup measure a folder that hasn’t changed since the scan instantly instead of reading it again. Scans take nearly twice as long."
+            return "Also finds edited clones and lets Cleanup measure unchanged folders instantly; scans take nearly twice as long."
         }
     }
 }

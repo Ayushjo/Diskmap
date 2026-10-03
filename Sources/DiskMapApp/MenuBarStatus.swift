@@ -100,76 +100,73 @@ struct MenuBarStatusView: View {
     @State private var week: StorageHistory.Comparison?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             if let volume {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(ByteFormat.string(Int64(volume.freeBytes))) free")
-                        .font(DiskMapType.section)
-                        .foregroundStyle(MenuBarText.isLow(volume) ? DiskMapTheme.danger : DiskMapTheme.ink)
-                    Text("\(volume.volumeName) · \(ByteFormat.string(Int64(volume.totalBytes))) total")
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    GeometryReader { proxy in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(DiskMapTheme.navSelected)
-                            Capsule()
-                                .fill(MenuBarText.isLow(volume) ? DiskMapTheme.danger : DiskMapTheme.info)
-                                .frame(width: proxy.size.width * min(1, max(0, volume.usedFraction)))
-                        }
+                VStack(alignment: .leading, spacing: 6) {
+                    MonoLabel(volume.volumeName.uppercased())
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(ByteFormat.string(Int64(volume.freeBytes))) free")
+                            .font(.system(size: DiskMapType.scaled(20), weight: .semibold).monospacedDigit())
+                            .foregroundStyle(DiskMapTheme.ink)
+                        Text("of \(ByteFormat.string(Int64(volume.totalBytes)))")
+                            .font(DiskMapType.figureSmall)
+                            .foregroundStyle(DiskMapTheme.ink3)
                     }
-                    .frame(height: 6)
-                    .accessibilityLabel("\(Int((volume.usedFraction * 100).rounded())) percent used")
+                    ProportionBar(fraction: min(1, max(0, volume.usedFraction)),
+                                  tint: MenuBarText.isLow(volume) ? DiskMapTheme.danger : DiskMapTheme.ink.opacity(0.55),
+                                  height: 2)
+                        .accessibilityLabel("\(Int((volume.usedFraction * 100).rounded())) percent used")
+                    if MenuBarText.isLow(volume) {
+                        SafetyLabel(level: nil, title: "Low on space", tint: DiskMapTheme.danger)
+                    }
                 }
             }
             if let record {
-                VStack(alignment: .leading, spacing: 3) {
-                    if let volume {
-                        Text(MenuBarText.delta(previousFree: record.freeBytes, currentFree: volume.freeBytes))
-                            .font(DiskMapType.body)
-                            .foregroundStyle(DiskMapTheme.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                VStack(alignment: .leading, spacing: 4) {
+                    // One change line: the week when there is history, else since the last scan.
                     if let week, let line = MenuBarText.week(week) {
                         Text(line)
-                            .font(DiskMapType.caption)
+                            .font(DiskMapType.secondary)
+                            .foregroundStyle(DiskMapTheme.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if let volume {
+                        Text(MenuBarText.delta(previousFree: record.freeBytes, currentFree: volume.freeBytes))
+                            .font(DiskMapType.secondary)
                             .foregroundStyle(DiskMapTheme.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text("Last scan: \(CanonicalPath.displayPath(absolutePath: record.rootPath)) · \(ByteFormat.string(record.scannedBytes)) · \(record.scannedAt.formatted(.relative(presentation: .named)))")
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                    Text("Last scan  \(CanonicalPath.displayPath(absolutePath: record.rootPath)) · \(record.scannedAt.formatted(.relative(presentation: .named)))")
+                        .font(DiskMapType.figureSmall)
+                        .foregroundStyle(DiskMapTheme.ink3)
                         .lineLimit(2)
                 }
             } else {
                 Text("No scan yet.")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink3)
             }
             if model.cachedDeveloper.summary.staleProjectCount > 0 {
-                Text("\(model.cachedDeveloper.summary.staleProjectCount) projects untouched for 6+ months hold \(ByteFormat.string(model.cachedDeveloper.summary.staleReclaimableBytes)).")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                Text("\(countLabel(model.cachedDeveloper.summary.staleProjectCount, "project")) untouched for 6+ months hold \(ByteFormat.string(model.cachedDeveloper.summary.staleReclaimableBytes)).")
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Divider()
+            Hairline()
             HStack(spacing: 8) {
                 Button(model.isScanning ? "Scanning…" : "Rescan") { rescan() }
-                    .buttonStyle(InkButtonStyle(filled: true))
+                    .buttonStyle(PrimaryButtonStyle())
                     .disabled(model.isScanning || (model.rootURL ?? record.map { URL(fileURLWithPath: $0.rootPath) }) == nil)
                 Button("Open DiskMap") { openApp() }
-                    .buttonStyle(InkButtonStyle(filled: false))
+                    .buttonStyle(SecondaryButtonStyle())
             }
-            Button { showMenuBarExtra = false } label: {
-                Text("Hide from Menu Bar")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
-            .buttonStyle(.plain)
-            .help("Bring it back from the DiskMap menu › Show in Menu Bar")
         }
-        .padding(14)
+        .padding(16)
         .frame(width: 300)
         .fixedSize(horizontal: false, vertical: true)   // the panel is as tall as its content
+        .background(DiskMapTheme.raised)
+        .contextMenu {
+            Button("Hide from Menu Bar") { showMenuBarExtra = false }
+        }
         .onAppear(perform: refresh)
         .onChange(of: model.isScanning) { _, _ in refresh() }
     }
