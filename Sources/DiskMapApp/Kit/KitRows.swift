@@ -206,15 +206,36 @@ struct FolderInspector: View {
         return max(1, model.analysis.scannedBytes)
     }
 
+    /// Built off the main thread: composition and largest files walk the
+    /// whole subtree, which is slow for a home folder or a volume root.
+    @State private var insight: FolderInsight?
+    @State private var builtFor: String?
+
+    private var buildKey: String { "\(id):\(model.scanID):\(model.sizeBasis)" }
+
     var body: some View {
-        if let insight = FolderInsight.build(
-            nodeID: id, tree: tree, root: rootURL, totals: model.selectedTotals,
-            fileCounts: model.descendantFileCounts, folderCounts: model.descendantFolderCounts,
-            categories: model.fileTypeCategories
-        ) {
-            content(insight)
-        } else {
-            DiskMapEmptyState(symbol: "folder", title: "Select a folder", message: "Its details and actions appear here.")
+        Group {
+            if let insight, insight.nodeID == id {
+                content(insight)
+            } else if builtFor == buildKey {
+                DiskMapEmptyState(symbol: "folder", title: "Select a folder", message: "Its details and actions appear here.")
+            } else {
+                DiskMapLoadingState(title: "Reading folder", detail: tree.name(of: id))
+            }
+        }
+        .task(id: buildKey) {
+            let key = buildKey
+            let (tree, root, id) = (self.tree, self.rootURL, self.id)
+            let totals = model.selectedTotals
+            let files = model.descendantFileCounts, folders = model.descendantFolderCounts
+            let categories = model.fileTypeCategories
+            let built = await Task.detached(priority: .userInitiated) {
+                FolderInsight.build(nodeID: id, tree: tree, root: root, totals: totals,
+                                    fileCounts: files, folderCounts: folders, categories: categories)
+            }.value
+            guard !Task.isCancelled else { return }
+            insight = built
+            builtFor = key
         }
     }
 
