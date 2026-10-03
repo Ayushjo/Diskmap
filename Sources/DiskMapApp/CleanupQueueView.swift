@@ -7,149 +7,21 @@ struct CleanupQueueView: View {
     @ObservedObject var model: ScanModel
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingTrash = false
-    @State private var pendingRemove: CleanupQueue.StagedItem?
-    @State private var confirmRemove = false
+    @State private var showReceipt = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Cleanup Queue")
-                        .font(DiskMapType.headline)
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Text(freeSummary)
-                        .font(DiskMapType.smallMedium)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    if model.reclaimEstimate.heldByUnqueuedCopies > 0 {
-                        Text("\(diskByteString(model.reclaimEstimate.heldByUnqueuedCopies)) stays in use by copies or links that aren’t queued")
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                    }
-                }
-                Spacer()
-                if model.reclaimEstimate.isCalculating {
-                    ProgressView().controlSize(.small)
-                }
-                // Never offer the destructive action on a provisional figure.
-                Button("Move to Trash…") { confirmingTrash = true }
-                    .buttonStyle(.borderedProminent)
-                    .tint(DiskMapTheme.ink)
-                    .disabled(model.stagedItems.isEmpty || model.reclaimEstimate.isCalculating)
-                    .help(model.reclaimEstimate.isCalculating ? "Measuring what these items share on disk…" : "")
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                    .buttonStyle(.bordered)
-                    .tint(DiskMapTheme.ink)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-
-            Divider().overlay(DiskMapTheme.cardStroke)
-
+            header
+            Hairline()
             if model.stagedItems.isEmpty {
-                VStack(spacing: 10) {
-                    Image(systemName: "tray")
-                        .font(.system(size: DiskMapType.scaled(28), weight: .light))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    Text("Nothing staged")
-                        .font(DiskMapType.callout)
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Text("Duplicates, Quick Wins, and app leftovers land here for review. Confirm moves them to the Trash — nothing is deleted directly.")
-                        .font(DiskMapType.small)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 420)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(24)
+                DiskMapEmptyState(symbol: "tray", title: "Nothing in Cleanup",
+                                  message: "Add files from any page with Add to Cleanup (⌘⌫). Nothing moves to the Trash until you confirm here.")
             } else {
-                List {
-                    ForEach(grouped.keys.sorted(), id: \.self) { reason in
-                        Section {
-                            ForEach(grouped[reason] ?? []) { item in
-                                HStack(alignment: .center, spacing: 12) {
-                                    FileIdentityIcon(url: item.url, size: 34)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(item.url.lastPathComponent)
-                                            .font(DiskMapType.bodyMedium)
-                                            .foregroundStyle(DiskMapTheme.ink)
-                                            .lineLimit(1)
-                                        Text(item.url.path)
-                                            .font(DiskMapType.caption)
-                                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                                            .lineLimit(1)
-                                            .truncationMode(.middle)
-                                        Text(rowCaption(for: item))
-                                            .font(DiskMapType.caption.monospacedDigit())
-                                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                                        // Staged from any screen (Biggest Files
-                                        // can surface Docker.raw): warn where
-                                        // the Trash would damage a tool's state.
-                                        if let recipe = CleanupRecipes.recipe(forPath: item.url.path), recipe.trashIsUnsafe {
-                                            Text("Moving this to the Trash damages \(recipe.id == "docker" ? "Docker" : "the tool")’s data. Use `\(recipe.command)` instead.")
-                                                .font(DiskMapType.caption)
-                                                .foregroundStyle(DiskMapTheme.danger)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                        }
-                                    }
-                                    Spacer(minLength: 8)
-                                    Button("Quick Look") { QuickLookPresenter.shared.present(item.url) }
-                                        .buttonStyle(.bordered)
-                                        .tint(DiskMapTheme.ink)
-                                    Button("Remove", role: .destructive) {
-                                        pendingRemove = item
-                                        confirmRemove = true
-                                    }
-                                    .buttonStyle(.bordered)
-                                }
-                                .padding(.vertical, 4)
-                                .listRowBackground(DiskMapTheme.cardFill)
-                            }
-                        } header: {
-                            Text(reason.capitalized)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                        }
-                    }
-                }
-                .scrollContentBackground(.hidden)
-                .background(DiskMapTheme.cream)
+                list
             }
-
-            if let last = model.lastCleanup, !last.items.isEmpty {
-                // TASK-080: the last Move to Trash can be undone from here.
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.uturn.backward.circle")
-                        .foregroundStyle(DiskMapTheme.info)
-                        .accessibilityHidden(true)
-                    Text("\(last.items.count) item\(last.items.count == 1 ? "" : "s") moved to the Trash \(last.date.formatted(.relative(presentation: .named))).")
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    Spacer()
-                    Button("Put Back \(last.items.count) Item\(last.items.count == 1 ? "" : "s")") {
-                        Task { await model.putBackLastCleanup() }
-                    }
-                    .help("Move them from the Trash back where they were. Nothing that is there now is replaced.")
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(DiskMapTheme.inspectorFill)
-            }
-            if !model.lastCommitLines.isEmpty {
-                // PR #16: a big commit reports one line per item — bound it so
-                // the receipt can't push the staged list out of the window.
-                ScrollView {
-                    Text(model.lastCommitLines.joined(separator: "\n"))
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .textSelection(.enabled)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 140)
-                .background(DiskMapTheme.inspectorFill)
-            }
+            lastCleanup
         }
-        .background(DiskMapTheme.cream)
+        .background(DiskMapTheme.canvas)
         .frame(minWidth: 640, minHeight: 480)
         .task { await model.refreshQueue() }
         .confirmationDialog(
@@ -164,34 +36,224 @@ struct CleanupQueueView: View {
         } message: {
             Text(confirmMessage)
         }
-        .confirmationDialog(
-            "Remove from Cleanup Queue?",
-            isPresented: $confirmRemove,
-            titleVisibility: .visible
-        ) {
-            Button("Remove from Queue", role: .destructive) {
-                guard let item = pendingRemove else { return }
-                let name = item.url.lastPathComponent
-                Task {
-                    await model.unstageFromCleanup(item)
-                    model.showToast("Removed “\(name)” from Cleanup")
-                    pendingRemove = nil
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Cleanup")
+                    .font(DiskMapType.title)
+                    .foregroundStyle(DiskMapTheme.ink)
+                Text(freeSummary)
+                    .font(DiskMapType.figure)
+                    .foregroundStyle(DiskMapTheme.ink2)
+                if model.reclaimEstimate.heldByUnqueuedCopies > 0 {
+                    Text("\(diskByteString(model.reclaimEstimate.heldByUnqueuedCopies)) stays in use by copies or links that aren’t queued")
+                        .font(DiskMapType.secondary)
+                        .foregroundStyle(DiskMapTheme.ink3)
                 }
             }
-            Button("Cancel", role: .cancel) {
-                pendingRemove = nil
+            Spacer()
+            if model.reclaimEstimate.isCalculating {
+                ProgressView().controlSize(.small)
             }
-        } message: {
-            if let item = pendingRemove {
-                Text(item.url.path)
-            } else {
-                Text("This item will stay on disk. Only the queue entry is removed.")
+            Button("Done") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .buttonStyle(SecondaryButtonStyle())
+            // Never offer the destructive action on a provisional figure.
+            Button("Move to Trash…") { confirmingTrash = true }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(model.stagedItems.isEmpty || model.reclaimEstimate.isCalculating)
+                .help(model.reclaimEstimate.isCalculating ? "Measuring what these items share on disk…" : "Moves everything here to the Trash, after you confirm")
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+    }
+
+    private var list: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(grouped, id: \.source) { group in
+                    SectionHeader(label: group.source,
+                                  detail: countLabel(group.items.count, "item") + " · " + diskByteString(group.items.reduce(0) { $0 + (model.reclaimEstimate.perItem[$1.id] ?? $1.size) }))
+                        .padding(.horizontal, 10)
+                        .padding(.top, 16)
+                        .padding(.bottom, 2)
+                    ForEach(group.items) { item in
+                        row(item)
+                        RowSeparator(indent: 10 + 28 + 12)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 12)
+        }
+    }
+
+    private func row(_ item: CleanupQueue.StagedItem) -> some View {
+        CleanupRow(item: item, caption: rowCaption(for: item), detail: Self.detail(of: item.reason)) {
+            QuickLookPresenter.shared.present(item.url)
+        } onRemove: {
+            let name = item.url.lastPathComponent
+            Task {
+                await model.unstageFromCleanup(item)
+                model.showToast("Removed “\(name)” from Cleanup — it stays on disk")
             }
         }
     }
 
-    private var grouped: [String: [CleanupQueue.StagedItem]] {
-        Dictionary(grouping: model.stagedItems, by: \.reason)
+    /// TASK-080: the last Move to Trash can be undone; its receipt folds in here.
+    @ViewBuilder
+    private var lastCleanup: some View {
+        if let last = model.lastCleanup, !last.items.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) { showReceipt.toggle() }
+                    } label: {
+                        Label("Last cleanup", systemImage: showReceipt ? "chevron.down" : "chevron.right")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(QuietButtonStyle())
+                    .disabled(model.lastCommitLines.isEmpty)
+                    Text("\(countLabel(last.items.count, "item")) moved \(last.date.formatted(.relative(presentation: .named)))")
+                        .font(DiskMapType.figureSmall)
+                        .foregroundStyle(DiskMapTheme.ink3)
+                    Spacer()
+                    Button("Put Back") { Task { await model.putBackLastCleanup() } }
+                        .buttonStyle(LinkButtonStyle())
+                        .font(DiskMapType.secondary)
+                        .help("Move them from the Trash back where they were. Nothing that is there now is replaced.")
+                }
+                if showReceipt, !model.lastCommitLines.isEmpty {
+                    // PR #16: one line per item — bounded so it can't push the list away.
+                    ScrollView {
+                        Text(model.lastCommitLines.joined(separator: "\n"))
+                            .font(DiskMapType.figureSmall)
+                            .foregroundStyle(DiskMapTheme.ink2)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 140)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 10)
+            .overlay(alignment: .top) { Hairline() }
+        } else if !model.lastCommitLines.isEmpty {
+            ScrollView {
+                Text(model.lastCommitLines.joined(separator: "\n"))
+                    .font(DiskMapType.figureSmall)
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 140)
+            .overlay(alignment: .top) { Hairline() }
+        }
+    }
+
+    /// Items grouped by where they came from ("Old Downloads", "Biggest
+    /// file"), not by their full per-item reason, which made one-item groups.
+    private var grouped: [(source: String, items: [CleanupQueue.StagedItem])] {
+        let groups = Dictionary(grouping: model.stagedItems) { Self.source(of: $0.reason) }
+        return groups.keys.sorted().map { ($0, groups[$0] ?? []) }
+    }
+
+    static func source(of reason: String) -> String {
+        let head = reason.split(separator: ":", maxSplits: 1).first.map(String.init) ?? reason
+        let trimmed = head.trimmingCharacters(in: .whitespaces)
+        guard let first = trimmed.first else { return "Other" }
+        return first.uppercased() + trimmed.dropFirst()
+    }
+
+    static func detail(of reason: String) -> String? {
+        let parts = reason.split(separator: ":", maxSplits: 1)
+        guard parts.count == 2 else { return nil }
+        let text = parts[1].trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
+    }
+}
+
+/// One staged item: icon, name over path, what it frees, hover actions.
+private struct CleanupRow: View {
+    let item: CleanupQueue.StagedItem
+    let caption: String
+    let detail: String?
+    var onQuickLook: () -> Void
+    var onRemove: () -> Void
+    @State private var hovering = false
+
+    private var isFolder: Bool {
+        var dir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: item.url.path, isDirectory: &dir) && dir.boolValue
+            && item.url.pathExtension.isEmpty
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            if isFolder {
+                Image(systemName: "folder")
+                    .font(.system(size: DiskMapType.scaled(14)))
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .frame(width: 28, height: 28)
+                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(DiskMapTheme.ink.opacity(0.06)))
+            } else {
+                FileIdentityIcon(url: item.url, size: 28)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.url.lastPathComponent)
+                    .font(DiskMapType.bodyEmphasis)
+                    .foregroundStyle(DiskMapTheme.ink)
+                    .lineLimit(1)
+                Text(CanonicalPath.parentDisplay(of: item.url.path))
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                // Staged from any screen (Biggest Files can surface Docker.raw):
+                // warn where the Trash would damage a tool's state.
+                if let recipe = CleanupRecipes.recipe(forPath: item.url.path), recipe.trashIsUnsafe {
+                    Text("Moving this to the Trash damages \(recipe.id == "docker" ? "Docker" : "the tool")’s data. Use `\(recipe.command)` instead.")
+                        .font(DiskMapType.secondary)
+                        .foregroundStyle(DiskMapTheme.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if hovering {
+                HStack(spacing: 0) {
+                    Button(action: onQuickLook) { Label("Quick Look", systemImage: "eye") }
+                        .help("Quick Look")
+                    Button(action: onRemove) { Label("Remove from Cleanup", systemImage: "minus.circle") }
+                        .help("Remove from Cleanup — the file stays where it is")
+                }
+                .buttonStyle(IconButtonStyle(size: 24))
+            }
+            Text(caption)
+                .font(DiskMapType.figureSmall)
+                .foregroundStyle(DiskMapTheme.ink2)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: 220, alignment: .trailing)
+        }
+        .padding(.horizontal, 10)
+        .frame(minHeight: DiskMapSpace.rowTwoLine + 4)
+        .background(RowBackground(selected: false, hovering: hovering))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .help(detail ?? "")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.url.lastPathComponent), \(caption)")
+        .accessibilityAction(named: "Quick Look", onQuickLook)
+        .accessibilityAction(named: "Remove from Cleanup", onRemove)
+        .contextMenu {
+            Button("Quick Look", action: onQuickLook)
+            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
+            Divider()
+            Button("Remove from Cleanup", action: onRemove)
+        }
     }
 }
 
