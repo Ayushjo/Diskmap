@@ -439,7 +439,7 @@ struct AppShellView: View {
         case .applications:
             AppsView(model: model)
         case .snapshots:
-            SnapshotsView(model: model, onOpenCleanup: { model.isCleanupQueuePresented = true })
+            SnapshotsView(model: model)
         }
     }
 
