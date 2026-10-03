@@ -15,7 +15,6 @@ enum AppDestination: Hashable, Identifiable {
     case visualize
     case developerStorage
     /// PR #16's ecosystem-grouped Quick Wins page, kept beside Developer Storage.
-    case regenerableData
     case applications
     case snapshots
 
@@ -30,7 +29,6 @@ enum AppDestination: Hashable, Identifiable {
         switch self {
         case .overview: return "Overview"
         case .find: return "Find"
-        case .regenerableData: return "Regenerable Data"
         case .biggestFiles: return "Biggest Files"
         case .biggestFolders: return "Biggest Folders"
         case .forgottenFiles: return "Forgotten Files"
@@ -51,7 +49,6 @@ enum AppDestination: Hashable, Identifiable {
         switch self {
         case .overview: return "square.grid.2x2"
         case .find: return "magnifyingglass"
-        case .regenerableData: return "arrow.3.trianglepath"
         case .biggestFiles: return "doc.fill"
         case .biggestFolders: return "folder.fill"
         case .forgottenFiles: return "clock.arrow.circlepath"
@@ -81,7 +78,7 @@ enum AppNavSection: String, CaseIterable, Identifiable {
         case .main: return [.overview]
         case .find: return [.find, .biggestFiles, .biggestFolders, .forgottenFiles, .duplicates]
         case .clean: return [.cleanSafe, .cleanCaches, .cleanDownloads, .cleanMedia]
-        case .explore: return [.fileBrowser, .visualize, .developerStorage, .regenerableData, .applications, .snapshots]
+        case .explore: return [.fileBrowser, .visualize, .developerStorage, .applications, .snapshots]
         }
     }
 }

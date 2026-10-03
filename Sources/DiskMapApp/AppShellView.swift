@@ -18,7 +18,7 @@ struct AppShellView: View {
     /// header. Pages that already scroll as a whole are not listed.
     static let pageScrollsWhenShort: Set<AppDestination> = [
         .find, .biggestFiles, .biggestFolders, .forgottenFiles, .duplicates,
-        .cleanSafe, .cleanCaches, .fileBrowser, .visualize, .regenerableData, .applications,
+        .cleanSafe, .cleanCaches, .fileBrowser, .visualize, .applications,
     ]
 
     var body: some View {
@@ -386,10 +386,6 @@ struct AppShellView: View {
                 },
                 onOpenBiggestFiles: { model.destination = .biggestFiles }
             )
-        case .regenerableData:
-            if let tree = model.tree, let root = model.rootURL {
-                DeveloperView(model: model, tree: tree, totals: model.selectedTotals, rootURL: root)
-            } else { needsScan }
         case .find:
             if let tree = model.tree, let root = model.rootURL {
                 FindView(model: model, tree: tree, rootURL: root)
@@ -438,8 +434,7 @@ struct AppShellView: View {
         case .developerStorage:
             DeveloperStorageView(
                 model: model,
-                pickFolder: pickFolder,
-                onOpenCleanup: { model.isCleanupQueuePresented = true }
+                pickFolder: pickFolder
             )
         case .applications:
             AppsView(

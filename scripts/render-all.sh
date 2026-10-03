@@ -19,7 +19,7 @@ swift build --product DiskMapApp >/dev/null
 swift build -c release --product ImageDiff >/dev/null
 BIN=$(swift build --show-bin-path)
 rm -rf "$OUT"; mkdir -p "$OUT"
-DESTINATIONS=overview,find,regenerableData,biggestFiles,biggestFolders,forgottenFiles,duplicates,cleanSafe,cleanCaches,cleanDownloads,cleanMedia,fileBrowser,visualize,developerStorage
+DESTINATIONS=overview,find,biggestFiles,biggestFolders,forgottenFiles,duplicates,cleanSafe,cleanCaches,cleanDownloads,cleanMedia,fileBrowser,visualize,developerStorage
 for appearance in light dark hc-light hc-dark; do
   # Defaults-style pairs (-Key value) never go here: after a valueless flag
   # macOS would take the value as a document to open.

@@ -277,7 +277,7 @@ enum SnapshotHarness {
     }
 
     private static let all: [(String, AppDestination)] = [
-        ("overview", .overview), ("find", .find), ("regenerableData", .regenerableData), ("biggestFiles", .biggestFiles), ("biggestFolders", .biggestFolders),
+        ("overview", .overview), ("find", .find), ("biggestFiles", .biggestFiles), ("biggestFolders", .biggestFolders),
         ("forgottenFiles", .forgottenFiles), ("duplicates", .duplicates), ("cleanSafe", .cleanSafe),
         ("cleanCaches", .cleanCaches), ("cleanDownloads", .cleanDownloads), ("cleanMedia", .cleanMedia),
         ("fileBrowser", .fileBrowser), ("visualize", .visualize), ("developerStorage", .developerStorage),
