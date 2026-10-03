@@ -1,18 +1,56 @@
+import AppKit
 import DiskMapCore
 import SwiftUI
 
 /// Review-first duplicates list: select → inspect → stage. Does not rewrite CloneDetector.
 struct DuplicatesView: View {
     @ObservedObject var model: ScanModel
+    @Environment(\.diskMapContentWidth) private var contentWidth
     let tree: FileTree
     let rootURL: URL
 
     @State private var checked: Set<Int32> = []
 
+    private var hasGroups: Bool { !model.duplicateGroups.isEmpty && !model.isFindingDuplicates && model.duplicateError == nil }
+
     var body: some View {
+        Group {
+            if hasGroups {
+                AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: String(model.selectedNode),
+                                       main: mainColumn, inspector: inspector)
+            } else {
+                mainColumn
+            }
+        }
+        .background(DiskMapTheme.canvas)
+        .onChange(of: model.duplicateGroups.map { $0.fileIDs }) { _, _ in
+            checked.removeAll()
+        }
+    }
+
+    private var mainColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider().overlay(DiskMapTheme.cardStroke)
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader(eyebrow: "Find", title: "Duplicates",
+                           subtitle: "Files with identical contents. Tick the copies you don’t need, then review them in Cleanup.") {
+                    if model.duplicateDidRun && !model.isFindingDuplicates {
+                        Button("Search Again") { Task { await model.findDuplicates() } }
+                            .buttonStyle(SecondaryButtonStyle())
+                    }
+                }
+                if hasGroups {
+                    FigureStrip(figures: [
+                        Figure(label: "Groups", value: model.duplicateGroups.count.formatted()),
+                        Figure(label: "Copies", value: duplicateFileIDs.count.formatted()),
+                        Figure(label: "Extra copies free", value: ByteFormat.string(extraCopiesBytes),
+                               detail: "keeping the newest of each"),
+                    ])
+                }
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, DiskMapSpace.pageTop)
+            .padding(.bottom, 12)
+            Hairline()
 
             if model.isFindingDuplicates {
                 loadingState
@@ -38,90 +76,90 @@ struct DuplicatesView: View {
                     primaryAction: { Task { await model.findDuplicates() } }
                 )
             } else if model.duplicateGroups.isEmpty {
-                emptyState
-            } else {
-                List {
-                    ForEach(Array(model.duplicateGroups.enumerated()), id: \.offset) { _, group in
-                        groupSection(group)
-                    }
-                }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
-                .background(DiskMapTheme.cream)
-                .listKeyboard(
-                    ids: duplicateFileIDs, selection: keyboardSelection,
-                    path: { tree.path(of: $0, root: rootURL).path },
-                    stage: { id in
-                        model.stageRow(path: tree.path(of: id, root: rootURL).path, size: tree.allocatedSize[Int(id)],
-                                       reason: "Duplicate of \(tree.name(of: id))")
-                    }
+                DiskMapEmptyState(
+                    symbol: "doc.on.doc",
+                    title: model.duplicateDidRun ? "No duplicates found" : "Find files with identical contents",
+                    message: model.duplicateDidRun
+                        ? "Nothing in this scan is stored twice."
+                        : "DiskMap compares local files in stages, on this Mac. Cloud-only placeholders are skipped; shared APFS clones are recognised.",
+                    primaryTitle: model.duplicateDidRun ? "Search Again" : "Find Duplicates",
+                    primaryAction: { Task { await model.findDuplicates() } }
                 )
-
-                if !checked.isEmpty {
+            } else {
+                list
+                if checked.isEmpty {
+                    HStack {
+                        Text("Tick copies to remove, or")
+                            .font(DiskMapType.secondary)
+                            .foregroundStyle(DiskMapTheme.ink3)
+                        Button("Select extra copies") { selectOtherCopies() }
+                            .buttonStyle(LinkButtonStyle())
+                            .font(DiskMapType.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 28)
+                    .frame(height: 44)
+                    .overlay(alignment: .top) { Hairline() }
+                } else {
                     SelectionToolbar(
                         selectedCount: checked.count,
                         selectedBytes: reclaimable,
-                        primaryTitle: "Add to Cleanup",
                         onPrimary: { Task { await stageSelected() } },
                         onClear: { checked.removeAll() },
+                        onReveal: {
+                            NSWorkspace.shared.activateFileViewerSelecting(checked.sorted().map { tree.path(of: $0, root: rootURL) })
+                        },
                         paths: checked.sorted().map { tree.path(of: $0, root: rootURL).path }
                     )
                 }
             }
         }
-        .background(DiskMapTheme.cream)
-        .onChange(of: model.duplicateGroups.map { $0.fileIDs }) { _, _ in
-            checked.removeAll()
-        }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: DiskMapSpace.sm) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: DiskMapSpace.xxs) {
-                    Text("Duplicates")
-                        .font(DiskMapType.title)
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Text("Review groups, choose the copies you no longer need, then confirm them in Cleanup.")
-                        .font(DiskMapType.body)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                }
-                Spacer(minLength: 8)
-                if model.duplicateDidRun || !model.duplicateGroups.isEmpty {
-                    VStack(alignment: .trailing, spacing: DiskMapSpace.xxs) {
-                        Text("Estimated \(diskByteString(reclaimable))")
-                            .font(DiskMapType.bodyStrong.monospacedDigit())
-                            .foregroundStyle(DiskMapTheme.ink)
-                        Text("\(model.duplicateGroups.count) groups")
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                    }
+    private var list: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(model.duplicateGroups.enumerated()), id: \.offset) { _, group in
+                    groupSection(group)
                 }
             }
-            HStack(spacing: DiskMapSpace.xs) {
-                if model.isFindingDuplicates {
-                    Button("Cancel") { model.cancelDuplicateSearch() }
-                        .buttonStyle(InkButtonStyle(filled: false))
-                } else if model.duplicateDidRun {
-                    Button("Find Duplicates") {
-                        Task { await model.findDuplicates() }
-                    }
-                    .buttonStyle(InkButtonStyle())
+            .padding(.horizontal, 18)
+            .padding(.bottom, 8)
+        }
+        .listKeyboard(
+            ids: duplicateFileIDs, selection: keyboardSelection,
+            path: { tree.path(of: $0, root: rootURL).path },
+            stage: { id in
+                if let group = model.duplicateGroups.first(where: { $0.fileIDs.contains(id) }),
+                   otherCopiesStaged(id, in: group) {
+                    model.showToast("Keep at least one copy")
+                    return
                 }
-                if !model.duplicateGroups.isEmpty {
-                    Button("Select other copies") { selectOtherCopies() }
-                        .buttonStyle(InkButtonStyle(filled: false))
-                }
-                if model.duplicateGroups.contains(where: { $0.fileIDs.contains(model.selectedNode) }) {
-                    Button("Show in Explore") {
-                        model.exploreMode = .treemap
-                        model.destination = .visualize
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false))
-                }
+                model.stageRow(path: tree.path(of: id, root: rootURL).path, size: tree.allocatedSize[Int(id)],
+                               reason: "Duplicate of \(tree.name(of: id))")
+            }
+        )
+    }
+
+    private var inspector: some View {
+        Group {
+            let id = duplicateFileIDs.contains(model.selectedNode) ? model.selectedNode : (duplicateFileIDs.first ?? -1)
+            if duplicateFileIDs.contains(id), let group = model.duplicateGroups.first(where: { $0.fileIDs.contains(id) }) {
+                FileInspector(
+                    model: model, tree: tree, rootURL: rootURL, id: id, size: tree.allocatedSize[Int(id)],
+                    reason: group.sharesStorage ? "Shared APFS copy" : "Duplicate copy",
+                    extraFacts: [("Copies", "\(group.fileIDs.count) with the same contents")],
+                    note: group.sharesStorage
+                        ? (label: "Shared storage", text: "These copies are APFS clones. Removing one frees nothing; the space returns only when every copy is gone.")
+                        : (label: "Same contents", text: "Every copy in this group is byte-for-byte identical. Keep one."),
+                    // Keep at least one copy: no staging the last one left.
+                    allowStage: !otherCopiesStaged(id, in: group)
+                )
+            } else {
+                DiskMapEmptyState(symbol: "doc.on.doc", title: "Select a copy", message: "Its details and actions appear here.")
             }
         }
-        .padding(DiskMapSpace.md)
+        .background(DiskMapTheme.canvas)
     }
 
     private var loadingState: some View {
@@ -160,29 +198,8 @@ struct DuplicatesView: View {
         }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 18) {
-            DuplicateEmptyIllustration()
-            VStack(spacing: 7) {
-                Text(model.duplicateDidRun ? "No duplicate groups found" : "Find files with identical contents")
-                    .font(.system(size: DiskMapType.scaled(18), weight: .semibold))
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text(model.duplicateDidRun
-                     ? "DiskMap didn’t find independently stored duplicate groups in this scan."
-                     : "DiskMap compares local files in stages and keeps everything on your Mac. Cloud-only placeholders are skipped; shared APFS storage is identified separately.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 480)
-            }
-            Button(model.duplicateDidRun ? "Search Again" : "Find Duplicates") {
-                Task { await model.findDuplicates() }
-            }
-            .buttonStyle(InkButtonStyle())
-        }
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private func otherCopiesStaged(_ id: Int32, in group: DuplicateGroup) -> Bool {
+        group.fileIDs.filter { $0 != id }.allSatisfy { model.isStaged(tree.path(of: $0, root: rootURL)) }
     }
 
     /// On-disk size of one member, the basis every reclaim figure uses.
@@ -196,59 +213,65 @@ struct DuplicatesView: View {
         }
     }
 
-    @ViewBuilder
+    /// What removing every copy but the suggested keeper would free.
+    private var extraCopiesBytes: Int64 {
+        model.duplicateGroups.reduce(Int64(0)) { total, group in
+            let keeper = group.defaultKeeperID { tree.modifiedDay[Int($0)] }
+            let extras = Set(group.fileIDs.filter { $0 != keeper })
+            return total + group.reclaimableBytes(deleting: extras) { tree.allocatedSize[Int($0)] }
+        }
+    }
+
     private func groupSection(_ group: DuplicateGroup) -> some View {
-        Section {
+        let keeper = group.defaultKeeperID { tree.modifiedDay[Int($0)] }
+        let title = countLabel(group.fileIDs.count, "copy", "copies") + "  ·  " + diskByteString(onDisk(group)) + " each"
+            + (group.sharesStorage ? "  ·  APFS clone" : "")
+        return VStack(alignment: .leading, spacing: 0) {
+            SectionHeader(label: title)
+                .padding(.horizontal, 10)
+                .padding(.top, 18)
+                .padding(.bottom, 4)
             if group.sharesStorage {
-                Text("Shares storage. Deleting one copy does not free \(diskByteString(onDisk(group))). That space is freed only if every copy in this group is removed.")
-                    .font(DiskMapType.callout)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                Text("Shares storage: removing one copy frees nothing until every copy is gone.")
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 4)
             }
             ForEach(group.fileIDs, id: \.self) { id in
-                let keeper = group.defaultKeeperID { tree.modifiedDay[Int($0)] }
-                HStack(alignment: .center, spacing: 10) {
-                    Toggle(isOn: binding(id)) { EmptyView() }
-                        .labelsHidden()
-                        .toggleStyle(.checkbox)
-                    Button {
-                        model.selectedNode = id
-                        let parent = tree.parent[Int(id)]
-                        if parent >= 0 { model.currentNode = parent }
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(tree.name(of: id))
-                                .font(DiskMapType.bodyStrong)
-                                .foregroundStyle(DiskMapTheme.ink)
-                                .lineLimit(1)
-                            Text(CanonicalPath.displayPath(absolutePath: tree.path(of: id, root: rootURL).path))
-                                .font(DiskMapType.caption.monospaced())
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Text(diskByteString(tree.allocatedSize[Int(id)]))
-                                .font(DiskMapType.caption)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                            if id == keeper {
-                                Text("Suggested keeper")
-                                    .font(DiskMapType.microStrong)
-                                    .foregroundStyle(DiskMapTheme.safe)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+                copyRow(id, keeper: keeper)
+            }
+        }
+    }
+
+    private func copyRow(_ id: Int32, keeper: Int32?) -> some View {
+        let abs = tree.path(of: id, root: rootURL).path
+        let isOn = checked.contains(id)
+        return CheckRow {
+            KitCheckbox(isOn: binding(id), label: isOn ? "Unmark \(tree.name(of: id))" : "Mark \(tree.name(of: id)) for removal")
+            Button {
+                model.selectedNode = id
+                let parent = tree.parent[Int(id)]
+                if parent >= 0 { model.currentNode = parent }
+            } label: {
+                KitRow(title: tree.name(of: id), subtitle: relativeParent(of: abs, root: rootURL),
+                       selected: id == (duplicateFileIDs.contains(model.selectedNode) ? model.selectedNode : duplicateFileIDs.first),
+                       path: abs, onStage: nil) {
+                    FileIdentityIcon(url: URL(fileURLWithPath: abs), size: 24)
+                } trailing: {
+                    if id == keeper {
+                        Text("Keeper")
+                            .font(DiskMapType.secondary)
+                            .foregroundStyle(DiskMapTheme.safe)
+                            .help("Suggested keeper: the most recently modified copy")
                     }
-                    .buttonStyle(.plain)
-                }
-                .listRowBackground(id == model.selectedNode ? DiskMapTheme.navSelected : Color.clear)
-            }
-        } header: {
-            HStack {
-                Text(group.sharesStorage ? "Shared clone · \(diskByteString(onDisk(group))) each" : "Same contents · \(diskByteString(onDisk(group))) each")
-                    .foregroundStyle(DiskMapTheme.ink)
-                if group.sharesStorage {
-                    ClassificationBadge(kind: .custom(title: "APFS clone", tint: DiskMapTheme.info))
+                    MonoColumn(text: RelativeAge.short(day: tree.modifiedDay[Int(id)]), width: 74)
+                    MonoColumn(text: diskByteString(tree.allocatedSize[Int(id)]), width: 74, emphasis: true)
                 }
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(tree.name(of: id)), \(diskByteString(tree.allocatedSize[Int(id)]))\(id == keeper ? ", suggested keeper" : "")")
+            .rowActions(path: abs, stage: nil)
         }
     }
 
@@ -322,36 +345,5 @@ struct DuplicatesView: View {
         let rejected = Set(result.rejectedURLs.map(\.standardizedFileURL.path))
         checked = Set(checked.filter { rejected.contains(tree.path(of: $0, root: rootURL).standardizedFileURL.path) })
         model.showToast(result.added > 0 ? "Added \(result.added) copies to Cleanup" : "Nothing new added")
-    }
-}
-
-private struct DuplicateEmptyIllustration: View {
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(DiskMapTheme.info.opacity(0.08))
-                .frame(width: 116, height: 92)
-            fileCard(offset: CGSize(width: 14, height: -8), tint: DiskMapTheme.developer.opacity(0.22))
-            fileCard(offset: CGSize(width: -14, height: 8), tint: DiskMapTheme.info.opacity(0.18))
-            Image(systemName: "equal.circle.fill")
-                .font(.system(size: DiskMapType.scaled(26), weight: .semibold))
-                .foregroundStyle(DiskMapTheme.ink)
-                .background(Circle().fill(DiskMapTheme.cardFill).frame(width: 34, height: 34))
-        }
-        .accessibilityHidden(true)
-    }
-
-    private func fileCard(offset: CGSize, tint: Color) -> some View {
-        RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .fill(DiskMapTheme.cardFill)
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(DiskMapTheme.cardStroke, lineWidth: 1))
-            .overlay(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: 6) {
-                    RoundedRectangle(cornerRadius: 2).fill(tint).frame(width: 22, height: 6)
-                    RoundedRectangle(cornerRadius: 2).fill(DiskMapTheme.cardStroke).frame(width: 36, height: 4)
-                }.padding(9)
-            }
-            .frame(width: 58, height: 68)
-            .offset(offset)
     }
 }

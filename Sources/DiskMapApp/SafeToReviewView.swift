@@ -3,22 +3,24 @@ import DiskMapCore
 import SwiftUI
 
 /// Clean → Safe to Review: categorized, selectable cleanup opportunities.
+/// One bar whose segments are the tabs; one list; one inspector.
 struct SafeToReviewView: View {
     @ObservedObject var model: ScanModel
     @Environment(\.diskMapContentWidth) private var contentWidth
-    var onOpenCleanup: () -> Void
     var onOpenCaches: () -> Void
 
     @State private var checked: Set<String> = []
     @State private var selectedID: String?
     @State private var query = ""
+    @State private var category: ReviewableCategory?
 
-    private var targets: [ReviewableTarget] { model.cachedReviewables }
+    private var targets: [ReviewableTarget] { model.cachedReviewables.filter { $0.safety.level != .protected } }
     private var summary: ReviewableSummary { model.cachedReviewableSummary }
 
     private var visible: [ReviewableTarget] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let list = targets.filter { $0.safety.level != .protected }
+        var list = targets
+        if let category { list = list.filter { $0.category == category } }
         if q.isEmpty { return list }
         return list.filter {
             $0.displayName.lowercased().contains(q)
@@ -32,400 +34,165 @@ struct SafeToReviewView: View {
         return visible.first
     }
 
-    private var selectedBytes: Int64 {
-        visible.filter { checked.contains($0.id) }.reduce(Int64(0)) { $0 + $1.bytes }
+    private var checkedTargets: [ReviewableTarget] { visible.filter { checked.contains($0.id) } }
+
+    /// The four categories, each with its bar colour and size.
+    private var segments: [(category: ReviewableCategory, bytes: Int64, color: Color)] {
+        [
+            (.caches, summary.cacheBytes, DiskMapTheme.data(0)),
+            (.buildArtifacts, summary.buildBytes, DiskMapTheme.data(4)),
+            (.packageCaches, summary.packageBytes, DiskMapTheme.data(1)),
+            (.other, summary.otherBytes, DiskMapTheme.data(6)),
+        ]
     }
 
     var body: some View {
         AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID, main: mainColumn, inspector: inspector)
-        .background(DiskMapTheme.cream)
+        .background(DiskMapTheme.canvas)
         .catalogGate(.reviewables, model: model, title: "Finding safe-to-review items…")
     }
 
     private var mainColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            summaryCard
-                .padding(.horizontal, 20)
-                .padding(.bottom, 12)
-            quickWins
-                .padding(.horizontal, 20)
-                .padding(.bottom, 12)
-            listControls
-            VStack(alignment: .leading, spacing: 0) {
-                Divider().overlay(DiskMapTheme.cardStroke)
-                if visible.isEmpty {
-                    emptyState
-                } else {
-                    list
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader(eyebrow: "Clean", title: "Safe to Review",
+                           subtitle: "Storage with a clear cleanup path. Nothing is removed until you confirm in Cleanup.") {
+                    HeaderSummary(parts: [ByteFormat.string(summary.totalBytes), countLabel(summary.targetCount, "item")])
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            selectionBar
-        }
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Safe to Review")
-                .font(DiskMapType.title)
-                .foregroundStyle(DiskMapTheme.ink)
-            Text("Storage with an understandable cleanup path. Nothing is deleted automatically — you review, then confirm in Cleanup.")
-                .font(DiskMapType.body)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 18)
-        .padding(.bottom, 14)
-    }
-
-    private var summaryCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Potentially reviewable")
-                .font(DiskMapType.captionStrong)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text(ByteFormat.string(summary.totalBytes))
-                .font(.system(size: DiskMapType.scaled(28), weight: .semibold).monospacedDigit())
-                .foregroundStyle(DiskMapTheme.ink)
-            Text("\(summary.targetCount.formatted()) items · \(summary.cacheAppCount.formatted()) cache apps")
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-
-            Color.clear
-                .frame(height: 10)
-                .overlay {
-                    GeometryReader { geo in
-                        let total = max(1, summary.totalBytes)
-                        HStack(spacing: 2) {
-                            seg(summary.cacheBytes, total, geo.size.width, DiskMapTheme.safe)
-                            seg(summary.buildBytes, total, geo.size.width, DiskMapTheme.review)
-                            seg(summary.packageBytes, total, geo.size.width, Color(red: 0.35, green: 0.55, blue: 0.90))
-                            seg(summary.otherBytes, total, geo.size.width, DiskMapTheme.mutedLabel.opacity(0.5))
-                        }
+                categoryBar
+                HStack(spacing: 10) {
+                    DiskMapSearchField(placeholder: "Search items", text: $query)
+                        .frame(maxWidth: 300)
+                    Spacer(minLength: 8)
+                    if category == .caches {
+                        Button("Caches by app →", action: onOpenCaches)
+                            .buttonStyle(LinkButtonStyle())
+                            .font(DiskMapType.secondary)
                     }
                 }
-
-            HStack(spacing: 14) {
-                legend("Caches", summary.cacheBytes, DiskMapTheme.safe)
-                legend("Build", summary.buildBytes, DiskMapTheme.review)
-                legend("Packages", summary.packageBytes, Color(red: 0.35, green: 0.55, blue: 0.90))
-                legend("Other", summary.otherBytes, DiskMapTheme.mutedLabel)
-                Spacer()
             }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(DiskMapTheme.cardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                )
-        )
-    }
-
-    private func seg(_ bytes: Int64, _ total: Int64, _ width: CGFloat, _ color: Color) -> some View {
-        let w = width * CGFloat(Double(bytes) / Double(total))
-        return RoundedRectangle(cornerRadius: 3)
-            .fill(color)
-            .frame(width: max(bytes > 0 ? 4 : 0, w))
-    }
-
-    private func legend(_ title: String, _ bytes: Int64, _ color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle().fill(color).frame(width: 7, height: 7)
-            Text("\(title) · \(ByteFormat.string(bytes))")
-                .font(DiskMapType.microMedium)
-                .foregroundStyle(DiskMapTheme.ink)
-        }
-    }
-
-    private var quickWins: some View {
-        HStack(spacing: 10) {
-            quickCard(
-                title: "Caches",
-                bytes: summary.cacheBytes,
-                subtitle: "\(summary.cacheAppCount) apps · Generally regenerable",
-                tint: DiskMapTheme.safe
-            ) { onOpenCaches() }
-            quickCard(
-                title: "Build artifacts",
-                bytes: summary.buildBytes,
-                subtitle: "Generated output · Review first",
-                tint: DiskMapTheme.review
-            ) {
-                selectedID = visible.first(where: { $0.category == .buildArtifacts })?.id
+            .padding(.horizontal, 28)
+            .padding(.top, DiskMapSpace.pageTop)
+            .padding(.bottom, 12)
+            Hairline()
+            if visible.isEmpty {
+                DiskMapEmptyState(symbol: "leaf", title: targets.isEmpty ? "Nothing to clean up" : "Nothing matches",
+                                  message: targets.isEmpty ? "DiskMap didn’t find high-confidence cleanup candidates in this scan."
+                                      : "Try another category, or clear the search.")
+            } else {
+                list
             }
-            quickCard(
-                title: "Package caches",
-                bytes: summary.packageBytes,
-                subtitle: "npm · Cargo · Gradle…",
-                tint: Color(red: 0.35, green: 0.55, blue: 0.90)
-            ) {
-                selectedID = visible.first(where: { $0.category == .packageCaches })?.id
-            }
-        }
-    }
-
-    private func quickCard(title: String, bytes: Int64, subtitle: String, tint: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(DiskMapType.bodyStrong)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text(ByteFormat.string(bytes))
-                    .font(.system(size: DiskMapType.scaled(18), weight: .semibold).monospacedDigit())
-                    .foregroundStyle(tint)
-                Text(subtitle)
-                    .font(DiskMapType.micro)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .lineLimit(2)
-                Text("Review →")
-                    .font(DiskMapType.captionStrong)
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .padding(.top, 4)
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(DiskMapTheme.cardFill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                    )
+            ReviewSelectionFooter(
+                checkedTargets: checkedTargets,
+                hint: "Tick items to clean, or",
+                quickSelectTitle: "Select generally safe",
+                quickSelectEnabled: visible.contains(where: \.isGenerallySafe),
+                onQuickSelect: { checked = Set(visible.filter(\.isGenerallySafe).map(\.id)) },
+                onStage: { Task { await stage(checkedTargets) } },
+                onClear: { checked.removeAll() }
             )
+        }
+    }
+
+    /// The stacked bar and, under it, the tabs that filter by its segments.
+    private var categoryBar: some View {
+        let total = max(1, summary.totalBytes)
+        return VStack(alignment: .leading, spacing: 12) {
+            SegmentedStorageBar(segments: segments.map { seg in
+                (seg.color.opacity(category == nil || category == seg.category ? 1 : 0.3), Double(seg.bytes) / Double(total))
+            })
+            .accessibilityHidden(true)
+            HStack(spacing: DiskMapSpace.lg) {
+                tab(nil, title: "All", bytes: summary.totalBytes, color: nil)
+                ForEach(segments.filter { $0.bytes > 0 }, id: \.category) { seg in
+                    tab(seg.category, title: Self.shortTitle(seg.category), bytes: seg.bytes, color: seg.color)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func tab(_ value: ReviewableCategory?, title: String, bytes: Int64, color: Color?) -> some View {
+        let on = category == value
+        return Button { category = value } label: {
+            HStack(spacing: 6) {
+                if let color { Circle().fill(color).frame(width: 7, height: 7) }
+                Text(title)
+                    .font(on ? DiskMapType.bodyEmphasis : DiskMapType.body)
+                    .foregroundStyle(on ? DiskMapTheme.ink : DiskMapTheme.ink2)
+                Text(ByteFormat.string(bytes))
+                    .font(DiskMapType.figureSmall)
+                    .foregroundStyle(DiskMapTheme.ink3)
+            }
+            .fixedSize()
+            .padding(.vertical, 4)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(on ? DiskMapTheme.ink : .clear).frame(height: 1.5).offset(y: 5)
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(title), \(ByteFormat.string(bytes))")
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
-    private var listControls: some View {
-        HStack {
-            Text("Recommended cleanup")
-                .font(DiskMapType.bodyStrong)
-                .foregroundStyle(DiskMapTheme.ink)
-            Spacer()
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                TextField("Search…", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(DiskMapType.small)
-                    .frame(width: 160)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(DiskMapTheme.cardFill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                    )
-            )
+    static func shortTitle(_ category: ReviewableCategory) -> String {
+        switch category {
+        case .caches: return "Caches"
+        case .buildArtifacts: return "Build output"
+        case .packageCaches: return "Packages"
+        case .other: return "Other"
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 8)
     }
 
     private var list: some View {
-        ScrollView {
+        // Worked out once per draw, not once per row.
+        let items = visible
+        let activeID = active?.id
+        return ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(visible) { t in
-                    row(t)
-                    Rectangle()
-                        .fill(DiskMapTheme.cardStroke.opacity(0.55))
-                        .frame(height: 1)
-                        .padding(.leading, 48)
+                ForEach(items) { t in
+                    ReviewTargetRow(
+                        target: t, subtitle: "\(t.detail) · \(t.category.title)",
+                        checked: checked.contains(t.id), selected: t.id == activeID,
+                        onToggle: { toggle(t.id) },
+                        onSelect: { selectedID = t.id },
+                        onStage: t.isProtected ? nil : { Task { await stage([t]) } }
+                    )
+                    RowSeparator(indent: 10 + 18 + 10 + 24 + 12)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 4)
         }
         .listKeyboard(
-            ids: visible.map(\.id), selection: $selectedID,
-            path: { id in visible.first { $0.id == id }?.paths.first },
+            ids: items.map(\.id), selection: $selectedID,
+            path: { id in items.first { $0.id == id }?.primaryPath },
             stage: { id in
-                if let target = visible.first(where: { $0.id == id }) { Task { await stageOne(target) } }
+                if let target = items.first(where: { $0.id == id }) { Task { await stage([target]) } }
             },
-            selectAll: { checked = Set(visible.map(\.id)) },
+            selectAll: { checked = Set(items.map(\.id)) },
             clearSelection: { checked.removeAll() }
         )
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private func row(_ t: ReviewableTarget) -> some View {
-        let on = checked.contains(t.id)
-        let selected = t.id == selectedID
-        return HStack(spacing: 10) {
-            Button {
-                if on { checked.remove(t.id) } else { checked.insert(t.id) }
-            } label: {
-                Image(systemName: on ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(on ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                selectedID = t.id
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: t.symbolName)
-                        .font(.system(size: DiskMapType.scaled(14)))
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .frame(width: 28, height: 28)
-                        .background(RoundedRectangle(cornerRadius: 7).fill(DiskMapTheme.navSelected))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(t.displayName)
-                            .font(DiskMapType.bodyStrong)
-                            .foregroundStyle(DiskMapTheme.ink)
-                        Text("\(t.detail) · \(t.category.title)")
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    safetyPill(t.safety.level)
-                    Text(ByteFormat.string(t.bytes))
-                        .font(DiskMapType.bodyStrong.monospacedDigit())
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .frame(width: 84, alignment: .trailing)
-                }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(selected ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 8)
-    }
-
-    private func safetyPill(_ level: SafetyLevel) -> some View {
-        Text(level == .safe ? "Generally safe" : level.title)
-            .font(DiskMapType.microStrong)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .foregroundStyle(color(level))
-            .background(Capsule().fill(color(level).opacity(0.14)))
-            .frame(width: 110, alignment: .leading)
-    }
-
-    private func color(_ level: SafetyLevel) -> Color {
-        switch level {
-        case .safe: return DiskMapTheme.safe
-        case .review: return DiskMapTheme.review
-        case .protected: return DiskMapTheme.danger
-        }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "leaf")
-                .font(.system(size: DiskMapType.scaled(28), weight: .light))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text("Nothing to clean up")
-                .font(DiskMapType.section)
-            Text("DiskMap didn’t find high-confidence cleanup candidates in this scan.")
-                .font(DiskMapType.body)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .multilineTextAlignment(.center)
-        }
-        .foregroundStyle(DiskMapTheme.ink)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
-    }
-
-    private var selectionBar: some View {
-        HStack {
-            if checked.isEmpty {
-                Text(countLabel(visible.count, "item"))
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            } else {
-                Text("\(checked.count.formatted()) selected · \(ByteFormat.string(selectedBytes))")
-                    .font(DiskMapType.smallStrong)
-                    .foregroundStyle(DiskMapTheme.ink)
-            }
-            Spacer()
-            if checked.isEmpty {
-                Button("Select generally safe") {
-                    checked = Set(visible.filter(\.isGenerallySafe).map(\.id))
-                }
-                .buttonStyle(.plain)
-                .font(DiskMapType.smallStrong)
-                .foregroundStyle(DiskMapTheme.ink)
-            } else {
-                Button("Clear") { checked.removeAll() }
-                    .buttonStyle(.plain)
-                    .font(DiskMapType.smallStrong)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                Button("Review selected →") {
-                    Task { await stageChecked() }
-                }
-                .buttonStyle(InkButtonStyle(filled: true))
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(DiskMapTheme.cardFill)
-        .overlay(alignment: .top) { Divider().overlay(DiskMapTheme.cardStroke) }
+    private func toggle(_ id: String) {
+        if checked.contains(id) { checked.remove(id) } else { checked.insert(id) }
     }
 
     private var inspector: some View {
         Group {
             if let t = active {
-                ReviewableInspector(model: model, target: t, onOpenCleanup: onOpenCleanup) {
-                    Task { await stageOne(t) }
-                }
+                ReviewableInspector(model: model, target: t) { Task { await stage([t]) } }
             } else {
-                VStack {
-                    Text("Select an item")
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                DiskMapEmptyState(symbol: "leaf", title: "Select an item", message: "Its details and actions appear here.")
             }
         }
-        .background(DiskMapTheme.cardFill)
+        .background(DiskMapTheme.canvas)
     }
 
-    private func stageChecked() async {
-        let items = visible.filter { checked.contains($0.id) && !$0.isProtected }
-        var ok = 0
-        for t in items {
-            ok += await stageTarget(t) ? 1 : 0
-        }
-        await model.refreshQueue()
-        model.showToast(ok > 0 ? "Added \(ok) to Cleanup" : "Nothing added")
-        if ok > 0 { onOpenCleanup() }
-    }
-
-    private func stageOne(_ t: ReviewableTarget) async {
-        let ok = await stageTarget(t)
-        await model.refreshQueue()
-        model.showToast(ok ? "Added to Cleanup" : "Blocked or already added")
-        if ok { onOpenCleanup() }
-    }
-
-    private func stageTarget(_ t: ReviewableTarget) async -> Bool {
-        guard !t.isProtected, !t.paths.isEmpty else { return false }
-        var any = false
-        let totals = model.selectedTotals
-        for (idx, path) in t.paths.enumerated() {
-            let url = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
-            if model.isStaged(url) { any = true; continue }
-            var size = t.bytes / Int64(max(1, t.paths.count))
-            if idx < t.nodeIDs.count {
-                let nid = Int(t.nodeIDs[idx])
-                if nid < totals.count { size = totals[nid] }
-            }
-            if await model.cleanupQueue.stage(url, size: size, reason: "Safe to review: " + t.displayName) {
-                any = true
-            }
-        }
-        return any
+    private func stage(_ items: [ReviewableTarget]) async {
+        let added = await model.stageReviewTargets(items) { "Safe to review: " + $0.displayName }
+        if added > 0 { checked.subtract(items.map(\.id)) }
     }
 }

@@ -113,11 +113,3 @@ struct NodeSelectionToolbar: View {
     }
 }
 
-/// A hint shown where multi-select is possible, until it is used.
-struct MultiSelectHint: View {
-    var body: some View {
-        Text("⌘-click to select several · ⇧-click for a range")
-            .font(DiskMapType.micro)
-            .foregroundStyle(DiskMapTheme.mutedLabel)
-    }
-}

@@ -18,150 +18,106 @@ struct FirstScanHero: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiskMapTheme.cream)
+        .background(DiskMapTheme.canvas)
     }
 
     private var emptyBody: some View {
-        VStack(spacing: DiskMapSpace.lg) {
-            StorageMapIllustration(mode: .idle, size: 147)
+        VStack(alignment: .leading, spacing: DiskMapSpace.lg) {
+            TreemapMark()
+                .frame(width: 220, height: 132)
                 .accessibilityHidden(true)
                 .padding(.bottom, DiskMapSpace.xs)
 
-            VStack(spacing: DiskMapSpace.sm) {
-                Text("Understand where your storage is going.")
-                    .font(DiskMapType.title)
+            VStack(alignment: .leading, spacing: DiskMapSpace.sm) {
+                MonoLabel("Local  ·  Fast  ·  Private")
+                Text("See where your space went.")
+                    .font(.system(size: DiskMapType.scaled(30), weight: .semibold))
                     .foregroundStyle(DiskMapTheme.ink)
-                    .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-
-                Text("Scan your Mac and DiskMap will map your files, folders, apps, and storage usage.")
+                Text("DiskMap maps every file and folder on this Mac, then points out what’s worth a second look. Nothing leaves your Mac.")
                     .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 440)
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 440, alignment: .leading)
             }
 
-            HStack(spacing: DiskMapSpace.lg) {
-                reassurance(symbol: "bolt.fill", label: "Fast")
-                reassurance(symbol: "desktopcomputer", label: "Local")
-                reassurance(symbol: "lock.fill", label: "Private")
-            }
-            .padding(.top, DiskMapSpace.xxs)
-
-            HStack(spacing: DiskMapSpace.sm) {
-                Button(action: onScanMac) {
-                    Label("Scan This Mac", systemImage: "internaldrive")
-                }
-                .buttonStyle(InkButtonStyle())
-                .accessibilityLabel("Scan This Mac")
-                .keyboardShortcut(.defaultAction)
-
+            HStack(spacing: DiskMapSpace.xs) {
+                Button("Scan This Mac", action: onScanMac)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
                 Button("Choose Folder…", action: pickFolder)
-                    .buttonStyle(InkButtonStyle(filled: false))
+                    .buttonStyle(SecondaryButtonStyle())
                     .accessibilityLabel("Choose Folder")
             }
             .padding(.top, DiskMapSpace.xs)
 
-            HStack(spacing: 6) {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: DiskMapType.scaled(9)))
-                Text("Nothing is uploaded. Your scan stays on this Mac.")
-                    .font(DiskMapType.caption)
-            }
-            .foregroundStyle(DiskMapTheme.mutedLabel)
-
-            featureHints
+            Hairline(dashed: true)
                 .padding(.top, DiskMapSpace.md)
+            HStack(spacing: DiskMapSpace.lg) {
+                hint("01", "Biggest files")
+                hint("02", "Duplicates")
+                hint("03", "Forgotten files")
+                hint("04", "Safe cleanup")
+            }
         }
-        .frame(maxWidth: 620)
+        .frame(maxWidth: 520, alignment: .leading)
         .padding(.horizontal, DiskMapSpace.xl)
-        .padding(.top, DiskMapSpace.xl)
-        .padding(.bottom, 72)
+        .padding(.bottom, 56)
     }
 
     /// Live scan view (TASK-044/046): what has been found so far, where the
-    /// walk is, and how fast — instead of an indeterminate spinner and a
-    /// count-based headline that said "Almost there…" at 400k items whatever
-    /// the real progress was.
+    /// walk is, and how fast — instead of an indeterminate spinner.
     private var scanningBody: some View {
         VStack(alignment: .leading, spacing: DiskMapSpace.lg) {
-            HStack(alignment: .center, spacing: DiskMapSpace.md) {
-                StorageMapIllustration(mode: .scanning, size: 64)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(scanHeadline)
-                        .font(.system(size: DiskMapType.scaled(20), weight: .semibold))
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Text(scanSubhead)
-                        .font(DiskMapType.body)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-
-            HStack(spacing: DiskMapSpace.xl) {
-                liveStat(value: model.scannedCount.formatted(), label: "items")
+            VStack(alignment: .leading, spacing: DiskMapSpace.xs) {
+                MonoLabel(scanHeadline)
+                Text(model.scannedCount.formatted() + " items")
+                    .font(DiskMapType.display)
+                    .foregroundStyle(DiskMapTheme.ink)
+                    .contentTransition(reduceMotion ? .identity : .numericText())
                     .accessibilityIdentifier("scan-progress")
-                liveStat(value: ByteFormat.string(model.liveProgress?.bytesFound ?? 0), label: "found")
-                liveStat(
-                    value: model.liveProgress.map { Int($0.itemsPerSecond).formatted() } ?? "—",
-                    label: "items / s"
-                )
+                Text(scanSubhead)
+                    .font(DiskMapType.figureSmall)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
 
-            if let folders = model.liveProgress?.topFolders, !folders.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Largest so far")
-                        .font(DiskMapType.captionStrong)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+            FigureStrip(figures: [
+                Figure(label: "Found", value: ByteFormat.string(model.liveProgress?.bytesFound ?? 0)),
+                Figure(label: "Items / s", value: model.liveProgress.map { Int($0.itemsPerSecond).formatted() } ?? "—"),
+            ])
+            .frame(maxWidth: 360, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: DiskMapSpace.xs) {
+                SectionHeader(label: "Largest so far")
+                if let folders = model.liveProgress?.topFolders, !folders.isEmpty {
                     let largest = max(folders.first?.bytes ?? 1, 1)
                     ForEach(folders.prefix(8), id: \.name) { folder in
-                        HStack(spacing: 10) {
+                        HStack(spacing: DiskMapSpace.sm) {
                             Text(folder.name)
-                                .font(DiskMapType.small)
+                                .font(DiskMapType.body)
                                 .foregroundStyle(DiskMapTheme.ink)
                                 .lineLimit(1)
                                 .frame(width: 150, alignment: .leading)
-                            GeometryReader { geo in
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(DiskMapTheme.info.opacity(0.75))
-                                    .frame(width: max(2, geo.size.width * CGFloat(Double(folder.bytes) / Double(largest))))
-                            }
-                            .frame(height: 8)
-                            Text(ByteFormat.string(folder.bytes))
-                                .font(DiskMapType.caption.monospacedDigit())
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .frame(width: 80, alignment: .trailing)
+                            ProportionBar(fraction: Double(folder.bytes) / Double(largest),
+                                          tint: DiskMapTheme.accent.opacity(0.6))
+                            MonoColumn(text: ByteFormat.string(folder.bytes), width: 76)
                         }
+                        .frame(height: 26)
                         .accessibilityElement(children: .combine)
                     }
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: folders)
+                } else {
+                    ProgressView().controlSize(.small).padding(.vertical, DiskMapSpace.xs)
                 }
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: folders)
-            } else {
-                ProgressView().controlSize(.small)
             }
 
-            Button("Cancel Scan") {
-                model.cancelScan()
-            }
-            .buttonStyle(InkButtonStyle(filled: false))
+            Button("Cancel Scan") { model.cancelScan() }
+                .buttonStyle(SecondaryButtonStyle())
         }
         .frame(maxWidth: 560, alignment: .leading)
         .padding(DiskMapSpace.xxl)
-    }
-
-    private func liveStat(value: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.system(size: DiskMapType.scaled(18), weight: .semibold).monospacedDigit())
-                .foregroundStyle(DiskMapTheme.ink)
-                .contentTransition(.numericText())
-            Text(label)
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-        }
-        .accessibilityElement(children: .combine)
     }
 
     private var scanHeadline: String {
@@ -184,35 +140,39 @@ struct FirstScanHero: View {
     }
 
 
-    private func reassurance(symbol: String, label: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbol)
-                .font(DiskMapType.microStrong)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text(label)
-                .font(DiskMapType.captionMedium)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
+    private func hint(_ number: String, _ title: String) -> some View {
+        HStack(spacing: 6) {
+            Text(number)
+                .font(DiskMapType.label)
+                .foregroundStyle(DiskMapTheme.ink3)
+            Text(title)
+                .font(DiskMapType.secondary)
+                .foregroundStyle(DiskMapTheme.ink2)
         }
         .accessibilityElement(children: .combine)
     }
+}
 
-    private var featureHints: some View {
-        HStack(spacing: DiskMapSpace.md) {
-            hint(symbol: "doc.fill", title: "Biggest files")
-            hint(symbol: "doc.on.doc", title: "Duplicates")
-            hint(symbol: "clock", title: "Forgotten files")
-            hint(symbol: "leaf", title: "Safe cleanup")
+/// The launch site's treemap: soft gradient tiles from the data palette.
+private struct TreemapMark: View {
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height, gap: CGFloat = 4
+            ZStack(alignment: .topLeading) {
+                tile(0, x: 0, y: 0, w: w * 0.5 - gap / 2, h: h)
+                tile(1, x: w * 0.5 + gap / 2, y: 0, w: w * 0.5 - gap / 2, h: h * 0.55 - gap / 2)
+                tile(3, x: w * 0.5 + gap / 2, y: h * 0.55 + gap / 2, w: w * 0.28 - gap, h: h * 0.45 - gap / 2)
+                tile(4, x: w * 0.78 + gap / 2, y: h * 0.55 + gap / 2, w: w * 0.22 - gap / 2, h: h * 0.25 - gap / 2)
+                tile(5, x: w * 0.78 + gap / 2, y: h * 0.80 + gap / 2, w: w * 0.22 - gap / 2, h: h * 0.20 - gap / 2)
+            }
         }
-        .opacity(0.85)
     }
 
-    private func hint(symbol: String, title: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbol)
-                .font(DiskMapType.micro)
-            Text(title)
-                .font(DiskMapType.caption)
-        }
-        .foregroundStyle(DiskMapTheme.mutedLabel)
+    private func tile(_ index: Int, x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat) -> some View {
+        let color = DiskMapTheme.data(index)
+        return RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(LinearGradient(colors: [color.opacity(0.75), color.opacity(0.95)], startPoint: .top, endPoint: .bottom))
+            .frame(width: max(0, w), height: max(0, h))
+            .offset(x: x, y: y)
     }
 }

@@ -85,6 +85,17 @@ enum SnapshotHarness {
             model.refreshSavedSearchTotals()
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
+        // `--stage "Downloads/a.zip,Movies"`: paths under the scan root to add
+        // to Cleanup for this run (the queue is in memory until committed).
+        if let list = value(after: "--stage"), let root = model.rootURL {
+            _ = await model.stageForCleanup(list.split(separator: ",").map {
+                CleanupStageRequest(url: root.appendingPathComponent(String($0)), size: 0, reason: "Harness: \($0)")
+            })
+            await model.refreshQueue()
+        }
+        // `--find-duplicates`: run the duplicate search first, so Duplicates
+        // (and Overview's review list) render with groups.
+        if arguments.contains("--find-duplicates") { await model.findDuplicates() }
         // `--start-mode "Mind Map"`: the Visualize mode to open with.
         if let mode = value(after: "--start-mode").flatMap(ExploreViewMode.init(rawValue:)) { model.exploreMode = mode }
 
@@ -103,6 +114,26 @@ enum SnapshotHarness {
             let settle = value(after: "--settle").flatMap(Double.init) ?? 1.5
             try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
             write(window: window, to: dir.appendingPathComponent("\(key(destination))-\(appearanceName).png"))
+            // `--palette`: also open the command palette and capture it.
+            if arguments.contains("--palette") {
+                NotificationCenter.default.post(name: .diskMapOpenPalette, object: nil)
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                if value(after: "--keys") != nil { await sendInput(to: window); try? await Task.sleep(nanoseconds: 500_000_000) }
+                write(window: window, to: dir.appendingPathComponent("palette-\(appearanceName).png"))
+            }
+            // `--sheet cleanup`: also open the Cleanup sheet and capture it
+            // (sheets are their own windows, outside the content view).
+            if let sheetName = value(after: "--sheet"), ["cleanup", "explain"].contains(sheetName) {
+                if sheetName == "cleanup" { model.isCleanupQueuePresented = true }
+                else { NotificationCenter.default.post(name: .diskMapOpenExplain, object: nil) }
+                try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
+                if let sheet = window.attachedSheet {
+                    write(window: sheet, to: dir.appendingPathComponent("\(sheetName)-\(appearanceName).png"))
+                }
+                model.isCleanupQueuePresented = false
+                NotificationCenter.default.post(name: .diskMapOpenExplain, object: false)
+                try? await Task.sleep(nanoseconds: 400_000_000)
+            }
             // `--dump-ax`: the window's accessibility tree as text, read
             // in-process, so checking what VoiceOver gets needs no
             // Accessibility permission for the terminal.
@@ -274,7 +305,7 @@ enum SnapshotHarness {
     }
 
     private static let all: [(String, AppDestination)] = [
-        ("overview", .overview), ("find", .find), ("search", .search), ("regenerableData", .regenerableData), ("biggestFiles", .biggestFiles), ("biggestFolders", .biggestFolders),
+        ("overview", .overview), ("find", .find), ("biggestFiles", .biggestFiles), ("biggestFolders", .biggestFolders),
         ("forgottenFiles", .forgottenFiles), ("duplicates", .duplicates), ("cleanSafe", .cleanSafe),
         ("cleanCaches", .cleanCaches), ("cleanDownloads", .cleanDownloads), ("cleanMedia", .cleanMedia),
         ("fileBrowser", .fileBrowser), ("visualize", .visualize), ("developerStorage", .developerStorage),

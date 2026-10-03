@@ -1492,7 +1492,8 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   `--deterministic`: fixed volume figures (`VolumeStats.fixed`), no scan
   cache, history or saved searches (a plain model), default text size and
   clone accounting, constant scan-timing line. `scripts/render-all.sh`
-  renders 23 screens (15 destinations + 8 Visualize modes; Applications and
+  renders 23 screens (15 destinations + 8 Visualize modes — 19 after
+  Milestone 18; Applications and
   Snapshots left out — they list this Mac's apps and saved snapshots) in
   light, dark, hc-light and hc-dark = 92 PNGs at 1280×820 in ~4 min, then
   compares with `docs/visual-baseline` via the new `ImageDiff` tool
@@ -1524,3 +1525,43 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   `generate_keys` (writes your keychain), an appcast host, and the
   file:// appcast check, which needs a signed update. `docs/RELEASING.md`.
   305 tests green.
+
+## Milestone 18 — Calm UI (2026-10-03)
+
+Branch `feat/calm-ui` from `feat/release`. Plan: every page, every section,
+one grammar (see ARCHITECTURE "Calm UI"). Pilot first, then all pages;
+renders checked after each step in light, dark and both high-contrast modes.
+
+- [x] **P1–P3: Foundations, kit, shell, pilot** — calm tokens and type, the
+  `Kit/` folder, top bar with one search field (⌘K inside), sidebar with
+  mono labels and catalog figures, slim volume footer; Overview as one
+  reading column (free-space hero with a Why? popover, Where it's going,
+  Worth reviewing, growth or biggest files); first-run and scanning
+  screens; Biggest Files and the shared FileInspector.
+- [x] **Brand** — logo mark in the sidebar wordmark and as the default app
+  icon (IconRender variant 4); source in `docs/brand/`.
+- [x] **P4: Find pages** — Find (Search merged in; bare words use the name
+  index; inspector added), Biggest Folders (shared FolderInspector),
+  Forgotten Files (tabs replace cards + pills; excluded files can't be
+  staged), Duplicates (inspector added; the last copy can't be staged from
+  the inspector or ⌘⌫).
+- [x] **P5: Clean pages** — Safe to Review (bar segments are the tabs),
+  Caches (Reveal acts on ticked rows; real sort), Old Downloads (age/type
+  chips), Large Media (one thumbnail strip; preview in the inspector).
+- [x] **P6: Explore pages** — File Browser (the folder is the page; the
+  inspector shows the selected row only), Visualize (launch-site treemap
+  tiles, accent selection on every chart; Open Containing Folder fixed),
+  Age Map (Show in Treemap fixed), Developer Storage (Regenerable Data as
+  "By tool"; doubled consequence text fixed), Applications (one-column
+  inspector; publisher cleaned from the copyright line; "Can I remove it?"
+  colour fixed), Snapshots and Compare (the not-a-backup line once).
+- [x] **P7: Sheets and small surfaces** — Cleanup sheet (grouped by source,
+  Put Back and the receipt merged, removing a queue entry no longer asks),
+  command palette (↑/↓/Return selection; typing in the top field opens it),
+  Explain (every next step opens its page), menu bar panel, Settings.
+- [x] **P8: Cleanup** — dead views removed (QuickWins, CleanReview, the old
+  Explore shell, Top Sizes, Folders, the old illustration), legacy tokens
+  and button styles retired. Harness gained `--find-duplicates`,
+  `--stage`, `--sheet cleanup|explain` and `--palette`. 307 tests green;
+  `scripts/render-all.sh` now renders 19 screens × 4 appearances = 76.
+  No change to `CleanupQueue` or its excluded-paths list; no networking.

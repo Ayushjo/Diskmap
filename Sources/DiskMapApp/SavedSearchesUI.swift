@@ -95,9 +95,9 @@ struct SavedSearchSection: View {
         if !model.savedSearches.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 Text("SAVED")
-                    .font(DiskMapType.microStrong)
+                    .font(DiskMapType.secondary.weight(.medium))
                     .tracking(0.8)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .foregroundStyle(DiskMapTheme.ink2)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 2)
                 ForEach(model.savedSearches) { search in
@@ -121,7 +121,7 @@ struct SavedSearchSection: View {
         return Button { model.openSavedSearch(search) } label: {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass.circle")
-                    .font(DiskMapType.small)
+                    .font(DiskMapType.secondary)
                     .frame(width: 18)
                 Text(search.name)
                     .font(.system(size: DiskMapType.scaled(13), weight: selected ? .semibold : .regular))
@@ -129,14 +129,14 @@ struct SavedSearchSection: View {
                 Spacer(minLength: 4)
                 if let total {
                     Text(total.count == 0 ? "—" : ByteFormat.string(total.bytes))
-                        .font(DiskMapType.micro.monospacedDigit())
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .font(DiskMapType.secondary.monospacedDigit())
+                        .foregroundStyle(DiskMapTheme.ink2)
                 }
             }
-            .foregroundStyle(enabled ? DiskMapTheme.ink : DiskMapTheme.disabledLabel.opacity(0.62))
+            .foregroundStyle(enabled ? DiskMapTheme.ink : DiskMapTheme.ink3.opacity(0.62))
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(selected ? DiskMapTheme.navSelected : Color.clear))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(selected ? DiskMapTheme.hover : Color.clear))
             .padding(.horizontal, 8)
         }
         .buttonStyle(.plain)
@@ -171,17 +171,17 @@ struct SaveSearchSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Save to the Sidebar")
-                .font(DiskMapType.section)
+                .font(DiskMapType.heading)
             Text(model.findQuery)
-                .font(DiskMapType.caption.monospaced())
-                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .font(DiskMapType.secondary.monospaced())
+                .foregroundStyle(DiskMapTheme.ink2)
                 .textSelection(.enabled)
             TextField("Name", text: $name)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 320)
             if model.savedSearches.count >= SavedSearches.limit {
                 Text("The sidebar holds \(SavedSearches.limit) saved searches; remove one first.")
-                    .font(DiskMapType.caption)
+                    .font(DiskMapType.secondary)
                     .foregroundStyle(DiskMapTheme.review)
             }
             HStack {

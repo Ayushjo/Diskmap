@@ -62,7 +62,7 @@ struct AppearanceMenuButton: View {
             // ("circle.lefthalf.filled") as the button's title (TASK-078).
             Label("Appearance", systemImage: choice.symbol)
                 .labelStyle(.iconOnly)
-                .font(DiskMapType.smallMedium)
+                .font(DiskMapType.secondary.weight(.medium))
                 .frame(width: 30, height: 28)
         }
         .menuStyle(.borderlessButton)

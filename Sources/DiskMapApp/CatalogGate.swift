@@ -15,7 +15,7 @@ struct CatalogGate: ViewModifier {
                 if model.tree != nil && !model.isCatalogReady(catalog) {
                     DiskMapLoadingState(title: title, detail: "Working from the scan you already ran — nothing is read from disk again.")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(DiskMapTheme.cream)
+                        .background(DiskMapTheme.canvas)
                         .accessibilityIdentifier("catalog-loading")
                 }
             }

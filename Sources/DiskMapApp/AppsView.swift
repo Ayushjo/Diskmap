@@ -7,7 +7,6 @@ import SwiftUI
 struct AppsView: View {
     @ObservedObject var model: ScanModel
     @Environment(\.diskMapContentWidth) private var contentWidth
-    var onOpenCleanup: () -> Void = {}
 
     @State private var apps: [ApplicationEntry] = []
     @State private var isLoading = true
@@ -16,20 +15,7 @@ struct AppsView: View {
     @State private var filter: ApplicationFilter = .all
     @State private var sort: ApplicationsCatalog.Sort = .sizeDesc
     @State private var query = ""
-    @State private var inspectorTab: InspectorTab = .overview
     @State private var loadTask: Task<Void, Never>?
-
-    private enum InspectorTab: String, CaseIterable, Identifiable {
-        case overview, contents, insights
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .overview: return "Overview"
-            case .contents: return "Contents"
-            case .insights: return "Insights"
-            }
-        }
-    }
 
     private var summary: ApplicationSummary { ApplicationsCatalog.summarize(apps) }
 
@@ -65,416 +51,134 @@ struct AppsView: View {
 
     var body: some View {
         AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID, main: mainColumn, inspector: inspector)
-        .background(DiskMapTheme.cream)
+        .background(DiskMapTheme.canvas)
         .task { await reloadCatalog() }
         .onDisappear { loadTask?.cancel() }
     }
 
     private var mainColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            summaryCards
-                .padding(.horizontal, 20)
-                .padding(.bottom, 12)
-            filterRow
-                .padding(.horizontal, 20)
-                .padding(.bottom, 10)
-            listToolbar
-                .padding(.horizontal, 20)
-                .padding(.bottom, 8)
-            tableHeader
-                .padding(.horizontal, 20)
-            Divider().overlay(DiskMapTheme.cardStroke)
-            Group {
-                if isLoading && apps.isEmpty {
-                    skeletonList
-                } else if visible.isEmpty {
-                    emptyState
-                } else {
-                    appList
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader(eyebrow: "Explore", title: "Applications",
+                           subtitle: "What’s installed, how much space each app and its data use, and which may be worth a look.")
+                FigureStrip(figures: [
+                    Figure(label: "Installed", value: "\(summary.appCount)",
+                           detail: "\(summary.appStoreCount) App Store · \(summary.otherCount) other"),
+                    Figure(label: "Total size", value: isLoading && summary.totalBytes == 0 ? "…" : ByteFormat.string(summary.totalBytes),
+                           detail: volumeShare(summary.totalBytes)),
+                    Figure(label: "Worth reviewing", value: ByteFormat.string(summary.reviewableBytes),
+                           detail: countLabel(summary.reviewCandidateCount, "app")),
+                ])
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        DiskMapSearchField(placeholder: "Search applications", text: $query)
+                            .frame(maxWidth: 300)
+                        Spacer(minLength: 8)
+                        DiskMapMenu(label: "Sort", options: ApplicationsCatalog.Sort.allCases, selection: $sort, title: { $0.title })
+                    }
+                    HStack(spacing: 2) {
+                        chip(.all, summary.appCount)
+                        chip(.large, summary.largeCount)
+                        chip(.notRecentlyUsed, summary.notRecentlyUsedCount)
+                        chip(.appStore, summary.appStoreCount)
+                        chip(.other, summary.otherCount)
+                        chip(.system, summary.systemCount)
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            if !checked.isEmpty {
-                multiSelectBar
+            .padding(.horizontal, 28)
+            .padding(.top, DiskMapSpace.pageTop)
+            .padding(.bottom, 12)
+            Hairline()
+            if isLoading && apps.isEmpty {
+                DiskMapLoadingState(title: "Finding applications", detail: "Reading /Applications and ~/Applications.")
+            } else if visible.isEmpty {
+                DiskMapEmptyState(symbol: "app.dashed", title: "No applications found",
+                                  message: apps.isEmpty ? "DiskMap couldn’t find installed applications in the usual places."
+                                      : "Try another name or filter.")
+            } else {
+                appList
             }
-        }
-    }
-
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Applications")
-                    .font(DiskMapType.title)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("See what’s installed, how much space each app uses, and which ones may be worth reviewing.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 12)
-            if checked.isEmpty {
-                HStack(spacing: 8) {
-                    if let active {
-                        Text(active.name)
-                            .font(DiskMapType.captionStrong)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .lineLimit(1)
-                            .frame(maxWidth: 140)
-                    }
-                    Button("Open") { openSelected() }
-                        .buttonStyle(InkButtonStyle(filled: false))
-                        .disabled(active == nil)
-                    Button("Reveal") { revealSelected() }
-                        .buttonStyle(InkButtonStyle(filled: false))
-                        .disabled(active == nil)
-                    Menu {
-                        Button("Open in File Browser") { openInFileBrowser() }
-                        Button("View in Visualize") { openInVisualize() }
-                        Button("Copy Path") { copyPath() }
-                        if active?.canStageForCleanup == true {
-                            Divider()
-                            Button("Add to Cleanup") { Task { await stageSelected() } }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(DiskMapType.bodyStrong)
-                            .frame(width: 32, height: 32)
-                            .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    .disabled(active == nil)
-                    Button {
-                        Task { await stageSelected() }
-                    } label: {
-                        Text(active.map { model.isStaged(URL(fileURLWithPath: $0.bundlePath)) ? "In Cleanup" : "Add to Cleanup" } ?? "Add to Cleanup")
-                    }
-                    .buttonStyle(PrimaryCTAStyle())
-                    .disabled(active == nil || active?.canStageForCleanup != true)
-                }
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 18)
-        .padding(.bottom, 14)
-    }
-
-    private var summaryCards: some View {
-        HStack(spacing: 12) {
-            summaryCard(
-                value: "\(summary.appCount)",
-                title: "Applications installed",
-                subtitle: "\(summary.appStoreCount) App Store · \(summary.otherCount) other"
+            ReviewFooter(
+                checkedCount: checkedApps.count, checkedBytes: checkedBytes,
+                hint: "Tick apps to remove, or",
+                quickSelectTitle: "Select not recently used",
+                quickSelectEnabled: visible.contains { $0.isNotRecentlyUsed && $0.canStageForCleanup },
+                onQuickSelect: { checked = Set(visible.filter { $0.isNotRecentlyUsed && $0.canStageForCleanup }.map(\.id)) },
+                onStage: { Task { await stageChecked() } },
+                onClear: { checked.removeAll() },
+                onReveal: { NSWorkspace.shared.activateFileViewerSelecting(checkedApps.map { URL(fileURLWithPath: $0.bundlePath) }) },
+                paths: checkedApps.map(\.bundlePath)
             )
-            summaryCard(
-                value: isLoading && summary.totalBytes == 0 ? "…" : ByteFormat.string(summary.totalBytes),
-                title: "Total size",
-                subtitle: volumeShare(summary.totalBytes)
-            )
-            summaryCard(
-                value: ByteFormat.string(summary.reviewableBytes),
-                title: "Potentially reviewable",
-                subtitle: "\(summary.reviewCandidateCount) unused or large apps",
-                tint: DiskMapTheme.review
-            )
-        }
-    }
-
-    private func summaryCard(value: String, title: String, subtitle: String, tint: Color = DiskMapTheme.ink) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(DiskMapType.title.monospacedDigit())
-                .foregroundStyle(tint)
-            Text(title)
-                .font(DiskMapType.smallStrong)
-                .foregroundStyle(DiskMapTheme.ink)
-            Text(subtitle)
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(DiskMapTheme.cardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                )
-        )
-    }
-
-    private var filterRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chip(.all, summary.appCount)
-                chip(.large, summary.largeCount)
-                chip(.notRecentlyUsed, summary.notRecentlyUsedCount)
-                chip(.system, summary.systemCount)
-                chip(.appStore, summary.appStoreCount)
-                chip(.other, summary.otherCount)
-            }
         }
     }
 
     private func chip(_ f: ApplicationFilter, _ count: Int) -> some View {
-        Button {
-            filter = f
-        } label: {
-            Text("\(f.title) (\(count))")
-                .font(.system(size: DiskMapType.scaled(11), weight: filter == f ? .semibold : .regular))
-                .foregroundStyle(filter == f ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(filter == f ? DiskMapTheme.navSelected : DiskMapTheme.cardFill)
-                        .overlay(
-                            Capsule(style: .continuous)
-                                .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                        )
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var listToolbar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                TextField("Search applications…", text: $query)
-                    .textFieldStyle(.plain)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(DiskMapTheme.cardFill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                    )
-            )
-            Spacer(minLength: 0)
-            Menu {
-                ForEach(ApplicationsCatalog.Sort.allCases) { option in
-                    Button(option.title) { sort = option }
-                }
-            } label: {
-                Label("Sort: \(sort.title)", systemImage: "arrow.up.arrow.down")
-                    .font(DiskMapType.captionStrong)
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(DiskMapTheme.cardFill)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                            )
-                    )
-            }
-        }
-    }
-
-    private var tableHeader: some View {
-        HStack(spacing: 8) {
-            Color.clear.frame(width: 22, height: 1)
-            Text("#").frame(width: 28, alignment: .leading)
-            Text("APPLICATION").frame(maxWidth: .infinity, alignment: .leading)
-            Text("SIZE").frame(width: 88, alignment: .trailing)
-            Text("LAST USED").frame(width: 100, alignment: .leading)
-            Text("SOURCE").frame(width: 80, alignment: .leading)
-            Text("STATUS").frame(width: 90, alignment: .leading)
-        }
-        .font(DiskMapType.microStrong)
-        .foregroundStyle(DiskMapTheme.mutedLabel)
-        .padding(.vertical, 8)
+        Chip(title: f.title, count: "\(count)", isOn: filter == f) { filter = f }
     }
 
     private var appList: some View {
-        ScrollView {
+        // Worked out once per draw, not once per row.
+        let items = visible
+        let activeID = active?.id
+        return ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(Array(visible.enumerated()), id: \.element.id) { index, app in
-                    appRow(app, index: index + 1)
-                    Divider().overlay(DiskMapTheme.cardStroke.opacity(0.55))
+                ForEach(items) { app in
+                    appRow(app, activeID: activeID)
+                    RowSeparator(indent: 10 + 18 + 10 + 28 + 12)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 4)
         }
         .listKeyboard(
-            ids: visible.map(\.id), selection: $selectedID,
-            path: { id in visible.first { $0.id == id }?.bundlePath },
+            ids: items.map(\.id), selection: $selectedID,
+            path: { id in items.first { $0.id == id }?.bundlePath },
             stage: { id in
-                if let app = visible.first(where: { $0.id == id }) { Task { await stage(app) } }
+                if let app = items.first(where: { $0.id == id }) { Task { await stage(app) } }
             },
-            selectAll: { checked = Set(visible.map(\.id)) },
+            selectAll: { checked = Set(items.filter(\.canStageForCleanup).map(\.id)) },
             clearSelection: { checked.removeAll() }
         )
     }
 
-    private func appRow(_ app: ApplicationEntry, index: Int) -> some View {
-        let selected = selectedID == app.id
-        return HStack(spacing: 8) {
-            Button {
-                if checked.contains(app.id) {
-                    checked.remove(app.id)
-                } else {
-                    checked.insert(app.id)
-                    selectedID = app.id
-                    inspectorTab = .overview
+    private func appRow(_ app: ApplicationEntry, activeID: String?) -> some View {
+        let isOn = checked.contains(app.id)
+        return CheckRow {
+            KitCheckbox(isOn: Binding(get: { isOn }, set: { on in
+                if on { checked.insert(app.id) } else { checked.remove(app.id) }
+            }), label: isOn ? "Unmark \(app.name)" : "Mark \(app.name)")
+                .disabled(!app.canStageForCleanup)
+            Button { selectedID = app.id } label: {
+                KitRow(title: app.name, subtitle: Self.publisherName(app.publisher), selected: app.id == activeID, path: app.bundlePath,
+                       onStage: app.canStageForCleanup ? { Task { await stage(app) } } : nil) {
+                    AppIconView(path: app.bundlePath, size: 28)
+                } trailing: {
+                    statusLabel(app.status)
+                        .frame(width: DiskMapType.scaled(96), alignment: .leading)
+                    TextColumn(text: app.source.title, width: 76)
+                    MonoColumn(text: lastUsedLabel(app.lastUsed), width: 64)
+                    MonoColumn(text: app.sizePending ? "…" : ByteFormat.string(app.totalBytes), width: 74, emphasis: true)
                 }
-            } label: {
-                Image(systemName: checked.contains(app.id) ? "checkmark.square.fill" : "square")
-                    .font(.system(size: DiskMapType.scaled(16)))
-                    .foregroundStyle(checked.contains(app.id) ? DiskMapTheme.info : DiskMapTheme.mutedLabel)
             }
             .buttonStyle(.plain)
-            .frame(width: 22)
-
-            Button { selectedID = app.id; inspectorTab = .overview } label: {
-                HStack(spacing: 8) {
-                    Text("\(index)")
-                        .font(DiskMapType.caption.monospacedDigit())
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .frame(width: 28, alignment: .leading)
-
-                    HStack(spacing: 10) {
-                        AppIconView(path: app.bundlePath, size: 36)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(app.name)
-                                .font(DiskMapType.bodyStrong)
-                                .foregroundStyle(DiskMapTheme.ink)
-                                .lineLimit(1)
-                            if let publisher = app.publisher, !publisher.isEmpty {
-                                Text(publisher)
-                                    .font(DiskMapType.micro)
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Group {
-                        if app.sizePending {
-                            Text("…")
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                        } else {
-                            Text(ByteFormat.string(app.totalBytes))
-                                .foregroundStyle(DiskMapTheme.ink)
-                        }
-                    }
-                    .font(DiskMapType.smallMedium.monospacedDigit())
-                    .frame(width: 88, alignment: .trailing)
-
-                    Text(lastUsedLabel(app.lastUsed))
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .frame(width: 100, alignment: .leading)
-                        .lineLimit(1)
-
-                    Text(app.source.title)
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .frame(width: 80, alignment: .leading)
-
-                    statusPill(app.status)
-                        .frame(width: 90, alignment: .leading)
-                }
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            .simultaneousGesture(TapGesture(count: 2).onEnded { open(app) })
             .accessibilityLabel("\(app.name), \(app.sizePending ? "size pending" : ByteFormat.string(app.totalBytes)), \(app.status.title)")
-            .accessibilityAddTraits(selected ? .isSelected : [])
+            .rowActions(path: app.bundlePath, stage: app.canStageForCleanup ? { Task { await stage(app) } } : nil)
         }
-        .padding(.horizontal, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(selected ? DiskMapTheme.navSelected : Color.clear)
-        )
-        .contentShape(Rectangle())
     }
 
-    private func statusPill(_ status: ApplicationStatus) -> some View {
-        Text(status.title)
-            .font(DiskMapType.microStrong)
-            .foregroundStyle(statusColor(status))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(statusColor(status).opacity(0.12), in: Capsule())
+    /// Dot + word; "Keep" is neutral, not a colour.
+    private func statusLabel(_ status: ApplicationStatus) -> some View {
+        SafetyLabel(level: nil, title: status.title, tint: statusColor(status))
     }
 
     private func statusColor(_ status: ApplicationStatus) -> Color {
         switch status {
-        case .keep: return DiskMapTheme.info
+        case .keep: return DiskMapTheme.ink3
         case .reviewFirst: return DiskMapTheme.review
-        case .system: return DiskMapTheme.mutedLabel
+        case .system: return DiskMapTheme.ink3.opacity(0.6)
         }
-    }
-
-    private var multiSelectBar: some View {
-        HStack {
-            Text("\(checkedApps.count) applications selected · \(ByteFormat.string(checkedBytes))")
-                .font(DiskMapType.smallStrong)
-                .foregroundStyle(DiskMapTheme.ink)
-            Spacer()
-            Button("Clear Selection") { checked.removeAll() }
-                .buttonStyle(InkButtonStyle(filled: false))
-            Button("Reveal") {
-                let urls = checkedApps.map { URL(fileURLWithPath: $0.bundlePath) }
-                NSWorkspace.shared.activateFileViewerSelecting(urls)
-            }
-            .buttonStyle(InkButtonStyle(filled: false))
-            .disabled(checkedApps.isEmpty)
-            Button("Add to Cleanup") {
-                Task { await stageChecked() }
-            }
-            .buttonStyle(PrimaryCTAStyle())
-            .disabled(checkedApps.isEmpty)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(DiskMapTheme.cardFill)
-        .overlay(alignment: .top) { Divider().overlay(DiskMapTheme.cardStroke) }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Text(apps.isEmpty ? "No applications found" : "No applications found")
-                .font(DiskMapType.callout)
-                .foregroundStyle(DiskMapTheme.ink)
-            Text(apps.isEmpty
-                 ? "DiskMap couldn’t find installed applications in the scanned locations."
-                 : "Try another name or change your filters.")
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
-    }
-
-    private var skeletonList: some View {
-        VStack(spacing: 10) {
-            ForEach(0..<8, id: \.self) { _ in
-                HStack(spacing: 10) {
-                    RoundedRectangle(cornerRadius: 8).fill(DiskMapTheme.navSelected).frame(width: 36, height: 36)
-                    VStack(alignment: .leading, spacing: 6) {
-                        RoundedRectangle(cornerRadius: 3).fill(DiskMapTheme.navSelected).frame(width: 140, height: 10)
-                        RoundedRectangle(cornerRadius: 3).fill(DiskMapTheme.navSelected).frame(width: 90, height: 8)
-                    }
-                    Spacer()
-                    RoundedRectangle(cornerRadius: 3).fill(DiskMapTheme.navSelected).frame(width: 60, height: 10)
-                }
-                .padding(.horizontal, 20)
-            }
-            Spacer()
-        }
-        .padding(.top, 12)
     }
 
     private var inspector: some View {
@@ -482,265 +186,108 @@ struct AppsView: View {
             if let app = active {
                 appInspector(app)
             } else {
-                VStack(spacing: 8) {
-                    Text("Select an application")
-                        .font(DiskMapType.bodyStrong)
-                    Text("Pick an app to see size breakdown, related storage, and cleanup guidance.")
-                        .font(DiskMapType.small)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(24)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                DiskMapEmptyState(symbol: "app.dashed", title: "Select an application",
+                                  message: "See its size, related data and whether it’s safe to remove.")
             }
         }
-        .background(DiskMapTheme.inspectorFill)
+        .background(DiskMapTheme.canvas)
     }
 
     private func appInspector(_ app: ApplicationEntry) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: 12) {
-                        AppIconView(path: app.bundlePath, size: 64)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(app.name)
-                                .font(DiskMapType.headline)
-                                .foregroundStyle(DiskMapTheme.ink)
-                            Text(app.sizePending ? "Measuring…" : ByteFormat.string(app.totalBytes))
-                                .font(.system(size: DiskMapType.scaled(20), weight: .semibold).monospacedDigit())
-                            if let publisher = app.publisher {
-                                Text(publisher)
-                                    .font(DiskMapType.caption)
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                            }
-                            statusPill(app.status)
-                        }
-                        Spacer(minLength: 0)
-                    }
-
-                    HStack(spacing: 8) {
-                        Button("Open") { open(app) }
-                            .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                        Button("Reveal in Finder") { reveal(app) }
-                            .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                    }
-
-                    HStack(spacing: 0) {
-                        ForEach(InspectorTab.allCases) { tab in
-                            Button {
-                                inspectorTab = tab
-                            } label: {
-                                Text(tab.title)
-                                    .font(.system(size: DiskMapType.scaled(11), weight: inspectorTab == tab ? .semibold : .regular))
-                                    .foregroundStyle(inspectorTab == tab ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
-                                    .overlay(alignment: .bottom) {
-                                        Rectangle()
-                                            .fill(inspectorTab == tab ? DiskMapTheme.info : Color.clear)
-                                            .frame(height: 2)
-                                    }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    switch inspectorTab {
-                    case .overview:
-                        overviewSection(app)
-                    case .contents:
-                        contentsSection(app)
-                    case .insights:
-                        insightsSection(app)
-                    }
-                }
-                .padding(16)
-            }
-
-            VStack(spacing: 8) {
-                Button {
-                    Task { await stage(app) }
-                } label: {
-                    Text(model.isStaged(URL(fileURLWithPath: app.bundlePath)) ? "In Cleanup" : "Add to Cleanup")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(PrimaryCTAStyle(fullWidth: true))
-                .disabled(!app.canStageForCleanup)
-            }
-            .padding(16)
-            .background(DiskMapTheme.cardFill)
-            .overlay(alignment: .top) { Divider().overlay(DiskMapTheme.cardStroke) }
-        }
-    }
-
-    private func overviewSection(_ app: ApplicationEntry) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            metaBlock(app)
-            sizeBreakdown(app)
-            explainBlock(title: "What is this?", body: app.blurb)
-            explainBlock(title: "Can I remove it?", body: app.removalGuidance, badge: app.status.title)
-            relatedBlock(app)
-        }
-    }
-
-    private func contentsSection(_ app: ApplicationEntry) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sizeBreakdown(app)
-            ForEach(app.related.prefix(12)) { item in
-                HStack {
-                    Text(item.displayName)
-                        .font(DiskMapType.small)
-                    Spacer()
-                    Text(ByteFormat.string(item.bytes))
-                        .font(DiskMapType.small.monospacedDigit())
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                }
-            }
-            if app.related.isEmpty && !app.sizePending {
-                Text("No related Library files matched this app’s bundle ID or name.")
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
-        }
-    }
-
-    private func insightsSection(_ app: ApplicationEntry) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            explainBlock(title: "Why is it large?", body: app.whyLarge)
-            if app.isLarge {
-                explainBlock(
-                    title: "Large application",
-                    body: "\(app.name) is one of the larger applications on this Mac (\(ByteFormat.string(app.totalBytes)))."
-                )
-            }
-            if app.isNotRecentlyUsed {
-                explainBlock(
-                    title: "Not recently used",
-                    body: "Last activity detected \(lastUsedLabel(app.lastUsed)). If you no longer need this application, you can review it for removal."
-                )
-            }
-            if app.related.contains(where: { $0.kind == .derivedData || $0.kind == .simulators }) {
-                Button("View in Developer Storage →") {
-                    model.destination = .developerStorage
-                }
-                .font(DiskMapType.smallStrong)
-                .foregroundStyle(DiskMapTheme.info)
-                .buttonStyle(.plain)
-            }
-            Button("View what’s inside →") {
-                openInFileBrowser(app)
-            }
-            .font(DiskMapType.smallStrong)
-            .foregroundStyle(DiskMapTheme.info)
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func metaBlock(_ app: ApplicationEntry) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let version = app.version { StatRow(label: "Version", value: version) }
-            StatRow(label: "Source", value: app.source.title)
-            if let installed = app.installed {
-                StatRow(label: "Installed", value: mediumDate(installed))
-            }
-            StatRow(label: "Last Used", value: lastUsedLabel(app.lastUsed))
-            StatRow(label: "Location", value: shorten(app.bundlePath))
-        }
-        .padding(12)
-        .background(cardBG)
-    }
-
-    private func sizeBreakdown(_ app: ApplicationEntry) -> some View {
+        let staged = model.isStaged(URL(fileURLWithPath: app.bundlePath))
         let total = max(1, app.totalBytes)
-        let bundleFrac = Double(app.bundleBytes) / Double(total)
-        let relatedFrac = Double(app.relatedBytes) / Double(total)
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Size breakdown")
-                .font(DiskMapType.captionStrong)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            GeometryReader { geo in
-                HStack(spacing: 2) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color(red: 0.30, green: 0.55, blue: 0.95))
-                        .frame(width: max(app.bundleBytes > 0 ? 4 : 0, geo.size.width * bundleFrac))
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(DiskMapTheme.review)
-                        .frame(width: max(app.relatedBytes > 0 ? 4 : 0, geo.size.width * relatedFrac))
-                }
+        return InspectorColumn {
+            InspectorHeader(name: app.name, size: app.sizePending ? "Measuring…" : ByteFormat.string(app.totalBytes),
+                            detail: [Self.publisherName(app.publisher), app.version.map { "v\($0)" }].compactMap { $0 }.joined(separator: " · ")) {
+                AppIconView(path: app.bundlePath, size: 44)
             }
-            .frame(height: 10)
-            StatRow(label: "App bundle", value: ByteFormat.string(app.bundleBytes))
-            StatRow(label: "Related data", value: ByteFormat.string(app.relatedBytes), emphasize: app.relatedBytes > 0)
-        }
-        .padding(12)
-        .background(cardBG)
-    }
-
-    private func relatedBlock(_ app: ApplicationEntry) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Related files")
-                .font(DiskMapType.captionStrong)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            if app.related.isEmpty {
-                Text(app.sizePending ? "Measuring related storage…" : "No confident related files found.")
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            } else {
-                ForEach(ApplicationsCatalog.relatedRollups(from: app.related).prefix(6), id: \.kind) { roll in
-                    HStack {
-                        Text(roll.kind.title)
-                            .font(DiskMapType.small)
-                        Spacer()
-                        Text(ByteFormat.string(roll.bytes))
-                            .font(DiskMapType.small.monospacedDigit())
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
+            Hairline()
+            VStack(alignment: .leading, spacing: 8) {
+                MonoLabel("Size")
+                SegmentedStorageBar(segments: [
+                    (DiskMapTheme.data(0), Double(app.bundleBytes) / Double(total)),
+                    (DiskMapTheme.data(4), Double(app.relatedBytes) / Double(total)),
+                ])
+                breakdownRow("App bundle", app.bundleBytes, DiskMapTheme.data(0))
+                breakdownRow("Related data", app.relatedBytes, DiskMapTheme.data(4))
+            }
+            FactRow(label: "Last used", value: lastUsedLabel(app.lastUsed))
+            FactRow(label: "Source", value: app.source.title + (app.installed.map { " · installed \(mediumDate($0))" } ?? ""))
+            FactRow(label: "Location", value: shorten(app.bundlePath))
+            if !app.related.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    MonoLabel("Related files")
+                    ForEach(ApplicationsCatalog.relatedRollups(from: app.related).prefix(6), id: \.kind) { roll in
+                        HStack {
+                            Text(roll.kind.title)
+                                .font(DiskMapType.secondary)
+                                .foregroundStyle(DiskMapTheme.ink)
+                            Spacer()
+                            Text(ByteFormat.string(roll.bytes))
+                                .font(DiskMapType.figureSmall)
+                                .foregroundStyle(DiskMapTheme.ink2)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                    if app.related.contains(where: { $0.kind == .derivedData || $0.kind == .simulators || $0.kind == .archives }) {
+                        Button("Developer Storage →") { model.destination = .developerStorage }
+                            .buttonStyle(LinkButtonStyle())
+                            .font(DiskMapType.secondary)
                     }
                 }
-                if app.related.contains(where: { $0.kind == .derivedData || $0.kind == .simulators || $0.kind == .archives }) {
-                    Button("View in Developer Storage →") {
-                        model.destination = .developerStorage
-                    }
-                    .font(DiskMapType.smallStrong)
-                    .foregroundStyle(DiskMapTheme.info)
-                    .buttonStyle(.plain)
-                    .padding(.top, 4)
-                }
+            } else if app.sizePending {
+                Note(label: "Related files", text: "Measuring related storage…")
             }
+            Hairline()
+            Note(label: "What it is", text: app.blurb)
+            if app.totalBytes > 0 { Note(label: "Why it's large", text: app.whyLarge) }
+            VStack(alignment: .leading, spacing: 4) {
+                statusLabel(app.status)
+                Text(app.removalGuidance)
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            InspectorActions(
+                primaryTitle: staged ? "In Cleanup" : "Add to Cleanup",
+                primaryDone: staged,
+                primaryEnabled: app.canStageForCleanup,
+                primary: { if staged { model.isCleanupQueuePresented = true } else { Task { await stage(app) } } },
+                path: app.bundlePath
+            ) {
+                Button("Open \(app.name)") { open(app) }
+            }
+            .padding(.top, 4)
         }
-        .padding(12)
-        .background(cardBG)
     }
 
-    private func explainBlock(title: String, body: String, badge: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title)
-                    .font(DiskMapType.captionStrong)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                if let badge {
-                    Text(badge)
-                        .font(DiskMapType.microStrong)
-                        .foregroundStyle(DiskMapTheme.review)
-                }
-            }
-            Text(body)
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.ink.opacity(0.88))
-                .fixedSize(horizontal: false, vertical: true)
+    /// Bundles carry a copyright line, not a publisher: "© 2026 Docker Inc.
+    /// All rights reserved." → "Docker Inc."
+    static func publisherName(_ raw: String?) -> String? {
+        guard var text = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        for marker in ["all rights reserved", "alle rechte vorbehalten", "tous droits réservés"] {
+            if let range = text.range(of: marker, options: .caseInsensitive) { text = String(text[..<range.lowerBound]) }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBG)
+        text = text.replacingOccurrences(of: "copyright", with: "", options: .caseInsensitive)
+        let junk = CharacterSet(charactersIn: "©()–—-,.;: ").union(.decimalDigits).union(.whitespaces)
+        text = String(text.drop { $0.unicodeScalars.allSatisfy(junk.contains) })
+        text = text.trimmingCharacters(in: CharacterSet(charactersIn: " ,;:–—-"))
+        // Keep the full stop of "Inc." / "Ltd." / "Co.", drop any other.
+        if text.hasSuffix("."), !["Inc.", "Ltd.", "Co.", "Corp."].contains(where: { text.hasSuffix($0) }) {
+            text.removeLast()
+        }
+        return text.isEmpty ? nil : text
     }
 
-    private var cardBG: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(DiskMapTheme.cardFill)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-            )
+    private func breakdownRow(_ title: String, _ bytes: Int64, _ color: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(title).font(DiskMapType.secondary).foregroundStyle(DiskMapTheme.ink)
+            Spacer()
+            Text(ByteFormat.string(bytes)).font(DiskMapType.figureSmall).foregroundStyle(DiskMapTheme.ink2)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Load / enrich
@@ -844,57 +391,17 @@ struct AppsView: View {
 
     // MARK: - Actions
 
-    private func openSelected() {
-        guard let active else { return }
-        open(active)
-    }
-
-    private func revealSelected() {
-        guard let active else { return }
-        reveal(active)
-    }
-
     private func open(_ app: ApplicationEntry) {
         NSWorkspace.shared.open(URL(fileURLWithPath: app.bundlePath))
     }
 
-    private func reveal(_ app: ApplicationEntry) {
-        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: app.bundlePath)])
-    }
-
-    private func copyPath() {
-        guard let active else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(active.bundlePath, forType: .string)
-        model.showToast("Path copied")
-    }
-
-    private func openInFileBrowser(_ app: ApplicationEntry? = nil) {
-        let target = app ?? active
-        guard let target else { return }
-        // Prefer navigating to Applications folder parent; node may not be in scan tree.
-        model.destination = .fileBrowser
-        model.showToast("Open \(target.name) path in Finder if it’s outside the scan root")
-        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: target.bundlePath)])
-    }
-
-    private func openInVisualize() {
-        model.destination = .visualize
-    }
-
-    private func stageSelected() async {
-        guard let active else { return }
-        await stage(active)
-    }
-
     private func stage(_ app: ApplicationEntry) async {
         guard app.canStageForCleanup else { return }
-        let url = URL(fileURLWithPath: app.bundlePath)
         let result = await model.stageForCleanup([
-            CleanupStageRequest(url: url, size: app.bundleBytes, reason: "Application: \(app.name)")
+            CleanupStageRequest(url: URL(fileURLWithPath: app.bundlePath), size: app.bundleBytes, reason: "Application: \(app.name)")
         ])
-        model.showToast(result.added > 0 ? "Added to Cleanup" : (result.rejected > 0 ? "Blocked by safety rules" : "Already in Cleanup"))
-        if result.added > 0 || result.alreadyPresent > 0 { onOpenCleanup() }
+        model.showToast(result.added > 0 ? "Added \(app.name) to Cleanup — ⇧⌘⌫ to review"
+                        : result.rejected > 0 ? "Blocked by safety rules" : "Already in Cleanup")
     }
 
     private func stageChecked() async {
@@ -904,21 +411,19 @@ struct AppsView: View {
         })
         let rejected = Set(result.rejectedURLs.map(\.path))
         checked = Set(apps.filter { rejected.contains(URL(fileURLWithPath: $0.bundlePath).standardizedFileURL.path) }.map(\.id))
-        model.showToast(result.added > 0 ? "Added \(result.added) apps to Cleanup" : "Nothing new added")
-        if result.added > 0 { onOpenCleanup() }
+        model.showToast(result.added > 0 ? "Added \(countLabel(result.added, "app")) to Cleanup — ⇧⌘⌫ to review" : "Nothing new added")
     }
 
     // MARK: - Formatting
 
     private func lastUsedLabel(_ date: Date?) -> String {
-        guard let date else { return "Unknown" }
+        guard let date else { return "—" }
         let days = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0
         if days <= 0 { return "Today" }
         if days == 1 { return "Yesterday" }
-        if days < 7 { return "\(days) days ago" }
-        if days < 30 { return "\(days / 7) wk ago" }
-        if days < 365 { return "\(days / 30) mo ago" }
-        return "\(days / 365) yr ago"
+        if days < 31 { return "\(days) d" }
+        if days < 365 { return "\(days / 30) mo" }
+        return "\(days / 365) y"
     }
 
     private func mediumDate(_ date: Date) -> String {

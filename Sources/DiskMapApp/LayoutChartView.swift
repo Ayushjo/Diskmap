@@ -33,11 +33,11 @@ struct LayoutChartView: View {
                 if isPreparing {
                     ProgressView("Preparing visualization…")
                         .controlSize(.small)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .foregroundStyle(DiskMapTheme.ink2)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if preparedSlices.isEmpty {
                     Text("Nothing with a size in this folder")
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .foregroundStyle(DiskMapTheme.ink2)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     chart(preparedSlices, in: proxy.size)
@@ -57,9 +57,9 @@ struct LayoutChartView: View {
                         )
                 }
             }
-            .background(DiskMapTheme.cream)
+            .background(DiskMapTheme.canvas)
         }
-        .background(DiskMapTheme.cream)
+        .background(DiskMapTheme.canvas)
         .task(id: preparationID) {
             await prepareSlices()
         }
@@ -115,7 +115,7 @@ struct LayoutChartView: View {
     }
 
     private func color(_ id: Int32?) -> Color {
-        guard let id, id >= 0, Int(id) < tree.count else { return DiskMapTheme.mutedLabel.opacity(0.4) }
+        guard let id, id >= 0, Int(id) < tree.count else { return DiskMapTheme.ink2.opacity(0.4) }
         return ExploreColoring.color(for: id, in: tree, mode: colorMode, categories: categories)
     }
 
@@ -161,7 +161,9 @@ private struct SunburstChart: View {
                 let path = wedgePath(wedge)
                 let isSel = wedge.nodeID == selected || wedge.nodeID.map(multi.contains) == true
                 context.fill(path, with: .color(color(wedge.nodeID)))
-                context.stroke(path, with: .color(isSel ? DiskMapTheme.tileLabel : .black.opacity(0.25)), lineWidth: isSel ? 2 : 1)
+                // Canvas-coloured seams instead of dark outlines; accent for selection.
+                context.stroke(path, with: .color(DiskMapTheme.canvas), lineWidth: 1.5)
+                if isSel { context.stroke(path, with: .color(DiskMapTheme.accent), lineWidth: 2) }
                 let sweep = wedge.end - wedge.start
                 if sweep > 0.14, wedge.outer - wedge.inner > 22 {
                     let mid = (wedge.start + wedge.end) / 2
@@ -169,7 +171,7 @@ private struct SunburstChart: View {
                     let capacity = min(18, max(3, Int(min(sweep * radius, wedge.outer - wedge.inner) / 6)))
                     let short = wedge.label.count > capacity ? String(wedge.label.prefix(capacity - 1)) + "…" : wedge.label
                     context.draw(
-                        Text(short).font(DiskMapType.micro.weight(.semibold)).foregroundStyle(DiskMapTheme.tileLabel),
+                        Text(short).font(.system(size: DiskMapType.scaled(11), weight: .medium)).foregroundStyle(DiskMapTheme.tileLabel.opacity(0.85)),
                         at: polarPoint(center: wedge.center, angle: mid, radius: radius)
                     )
                 }
@@ -207,15 +209,16 @@ private struct FlameChart: View {
         let bars = flameBars(slices, in: size)
         Canvas { context, _ in
             for bar in bars {
-                let path = Path(bar.rect.insetBy(dx: 0.5, dy: 0.5))
+                let inset = bar.rect.insetBy(dx: 1.5, dy: 1.5)
+                let path = Path(roundedRect: inset, cornerRadius: min(4, min(inset.width, inset.height) / 3), style: .continuous)
                 let isSel = bar.nodeID == selected || bar.nodeID.map(multi.contains) == true
                 context.fill(path, with: .color(color(bar.nodeID)))
-                context.stroke(path, with: .color(isSel ? DiskMapTheme.tileLabel : .black.opacity(0.25)), lineWidth: isSel ? 2 : 1)
+                if isSel { context.stroke(path, with: .color(DiskMapTheme.accent), lineWidth: 2) }
                 if bar.rect.width > 56 && bar.rect.height > 18 {
                     let capacity = max(3, Int((bar.rect.width - 14) / 6))
                     let short = bar.label.count > capacity ? String(bar.label.prefix(capacity - 1)) + "…" : bar.label
                     context.draw(
-                        Text(short).font(DiskMapType.micro.weight(.semibold)).foregroundStyle(DiskMapTheme.tileLabel),
+                        Text(short).font(.system(size: DiskMapType.scaled(11), weight: .medium)).foregroundStyle(DiskMapTheme.tileLabel.opacity(0.85)),
                         at: CGPoint(x: bar.rect.minX + 6, y: bar.rect.midY),
                         anchor: .leading
                     )
@@ -268,8 +271,8 @@ private struct BubbleChart: View {
                 context.fill(path, with: .color(fill))
                 context.stroke(
                     path,
-                    with: .color(isSel ? DiskMapTheme.tileLabel : DiskMapTheme.tileLabel.opacity(0.18)),
-                    lineWidth: isSel ? 2.5 : 1
+                    with: .color(isSel ? DiskMapTheme.accent : DiskMapTheme.tileLabel.opacity(0.08)),
+                    lineWidth: isSel ? 2 : 1
                 )
                 if circle.radius > (circle.isContainer ? 60 : 28) {
                     let maxChars = max(4, Int(circle.radius / 4.5))
@@ -279,7 +282,7 @@ private struct BubbleChart: View {
                     let fontSize: CGFloat = circle.radius > 48 ? 11 : 9
                     context.draw(
                         Text(short)
-                            .font(.system(size: fontSize, weight: .semibold))
+                            .font(.system(size: fontSize, weight: .medium))
                             .foregroundStyle(DiskMapTheme.tileLabel.opacity(0.9)),
                         at: CGPoint(x: circle.center.x, y: circle.center.y - (circle.isContainer ? circle.radius * 0.72 : 0))
                     )
@@ -376,16 +379,16 @@ private struct MindMapChart: View {
     private var centerCard: some View {
         VStack(spacing: 5) {
             Label(tree.name(of: center), systemImage: "folder.fill")
-                .font(DiskMapType.section)
+                .font(DiskMapType.heading)
                 .lineLimit(1).help(tree.name(of: center))
             Text("\(ByteFormat.string(centerTotal)) · \(slices.reduce(0) { $0 + $1.collapsedCount }.formatted()) items")
-                .font(DiskMapType.small).monospacedDigit()
-                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .font(DiskMapType.secondary).monospacedDigit()
+                .foregroundStyle(DiskMapTheme.ink2)
         }
         .padding(14)
         .frame(maxWidth: 300)
-        .background(DiskMapTheme.cardFill, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(DiskMapTheme.cardStroke))
+        .background(DiskMapTheme.raised, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(DiskMapTheme.line))
     }
 
     private func branchCard(_ slice: ChartSlice) -> some View {
@@ -398,7 +401,7 @@ private struct MindMapChart: View {
                 ForEach(shown) { child in
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.turn.down.right")
-                            .font(DiskMapType.micro).foregroundStyle(DiskMapTheme.mutedLabel)
+                            .font(DiskMapType.secondary).foregroundStyle(DiskMapTheme.ink2)
                             .accessibilityHidden(true)
                         nodeRow(child, primary: false, parentSize: slice.size)
                     }
@@ -408,8 +411,8 @@ private struct MindMapChart: View {
                     let bytes = hidden.reduce(Int64(0)) { $0 + $1.size }
                     Button { drill(slice.nodeID) } label: {
                         Text("+ \(count.formatted()) more · \(ByteFormat.string(bytes)) — open \(slice.label)")
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.info)
+                            .font(DiskMapType.secondary)
+                            .foregroundStyle(DiskMapTheme.accent)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -420,7 +423,7 @@ private struct MindMapChart: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DiskMapTheme.cardFill, in: RoundedRectangle(cornerRadius: 10))
+        .background(DiskMapTheme.raised, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(color(slice.nodeID).opacity(isSelected(slice.nodeID) ? 0.9 : 0.45),
                                                           lineWidth: isSelected(slice.nodeID) ? 2 : 1))
     }
@@ -432,18 +435,18 @@ private struct MindMapChart: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "square.stack.3d.down.right")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .foregroundStyle(DiskMapTheme.ink2)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(Self.smallerItems(slice.collapsedCount))
                         .font(.system(size: DiskMapType.scaled(13), weight: .medium))
                     Text("\(ByteFormat.string(slice.size)) · \(percent(slice.size, of: centerTotal)) · each under 0.5%")
-                        .font(DiskMapType.caption).monospacedDigit()
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .font(DiskMapType.secondary).monospacedDigit()
+                        .foregroundStyle(DiskMapTheme.ink2)
                 }
                 Spacer(minLength: 0)
                 Button(showSmaller ? "Hide" : "Show") { showSmaller.toggle() }
                     .buttonStyle(.link)
-                    .font(DiskMapType.captionStrong)
+                    .font(DiskMapType.secondary.weight(.semibold))
             }
             if showSmaller {
                 Divider()
@@ -457,15 +460,15 @@ private struct MindMapChart: View {
                 }
                 if items.count > 12 {
                     Text("and \((items.count - 12).formatted()) more · \(ByteFormat.string(items.dropFirst(12).reduce(0) { $0 + $1.size }))")
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .font(DiskMapType.secondary)
+                        .foregroundStyle(DiskMapTheme.ink2)
                 }
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DiskMapTheme.cardFill.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(DiskMapTheme.cardStroke, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+        .background(DiskMapTheme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(DiskMapTheme.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
     }
 
     static func smallerItems(_ count: Int) -> String {
@@ -486,13 +489,13 @@ private struct MindMapChart: View {
             Button { select(slice.nodeID) } label: {
                 HStack(spacing: 8) {
                     Image(systemName: isGroup ? "square.stack.3d.down.right" : slice.drillable ? "folder.fill" : "doc.fill")
-                        .foregroundStyle(isGroup ? DiskMapTheme.mutedLabel : color(slice.nodeID))
+                        .foregroundStyle(isGroup ? DiskMapTheme.ink2 : color(slice.nodeID))
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title).font(.system(size: DiskMapType.scaled(primary ? 13 : 12), weight: .medium))
                             .lineLimit(1).truncationMode(.middle)
                         Text("\(ByteFormat.string(slice.size)) · \(percent(slice.size, of: parentSize))")
-                            .font(DiskMapType.caption).monospacedDigit()
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                            .font(DiskMapType.secondary).monospacedDigit()
+                            .foregroundStyle(DiskMapTheme.ink2)
                     }
                     Spacer(minLength: 0)
                 }
@@ -503,7 +506,7 @@ private struct MindMapChart: View {
             .accessibilityLabel("\(title), \(ByteFormat.string(slice.size)), \(percent(slice.size, of: parentSize)) of its folder")
             if slice.drillable {
                 Button { drill(slice.nodeID) } label: {
-                    Image(systemName: "chevron.right").font(DiskMapType.captionStrong)
+                    Image(systemName: "chevron.right").font(DiskMapType.secondary.weight(.semibold))
                         .frame(width: 24, height: 28).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).help("Explore \(slice.label)")
@@ -528,7 +531,7 @@ private struct MindMapChart: View {
         let trunkX = (cards.map(\.rect.minX).min() ?? 0) - 12
         return Canvas { context, _ in
             guard let centerRect, let firstRow = rows.first else { return }
-            let stroke = DiskMapTheme.cardStroke
+            let stroke = DiskMapTheme.line
             let busY = { (row: [(slice: ChartSlice, rect: CGRect)]) in (row.first?.rect.minY ?? 0) - 11 }
             var spine = Path()
             spine.move(to: CGPoint(x: centerRect.midX, y: centerRect.maxY))

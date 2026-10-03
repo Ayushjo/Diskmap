@@ -29,14 +29,14 @@
   Developer Storage, Applications, File Browser — moves with ↑↓ or j/k once a
   row is selected, Space opens Quick Look, Return reveals in Finder (opens a
   folder in File Browser), ⌘⌫ adds the row to Cleanup (the queue, never the
-  Trash). Menu: ⌘1–⌘9 go to the first nine sidebar items in order (Overview, Find, Search, Biggest Files, Biggest Folders, Forgotten Files, Duplicates, Safe to Review, Caches — Search moved the rest down one when PR #16 was merged), ⌘↑/⌘↓ enclosing /
+  Trash). Menu: ⌘1–⌘9 go to the first nine sidebar items in order (Overview, Find, Biggest Files, Biggest Folders, Forgotten Files, Duplicates, Safe to Review, Caches, Old Downloads — Search folded into Find in the calm-UI pass), ⌘↑/⌘↓ enclosing /
   open folder in Visualize and File Browser, ⌘R quick rescan, ⇧⌘R full
   rescan, ⇧⌘⌫ cleanup queue, ⇧⌘E export. Checked by sending real key events
   to the app's window through the snapshot harness (`--click`, `--keys`).
 
 ## Done on `feat/a11y-rows` (TASK-078, 2026-10-03)
 
-- **Rows are buttons.** File Browser, Find, Search, Visualize's table,
+- **Rows are buttons.** File Browser, Find, Visualize's table,
   Applications, Large Media and Old Downloads selected a row with a tap
   gesture, which VoiceOver does not see as a control and synthetic clicks
   never reached (checked: a harness click left File Browser's render
@@ -77,7 +77,7 @@
   to the selection. Verified with key events through the harness (treemap:
   → → selects Dune, then The Holdovers; sunburst: → → ↓ ends on the largest
   child of the second-largest folder), repeated runs identical.
-- **VoiceOver row actions.** File Browser, Find, Search, Biggest Files,
+- **VoiceOver row actions.** File Browser, Find, Biggest Files,
   Biggest Folders, Large Media and Old Downloads rows offer Add to Cleanup
   (the queue, never the Trash), Reveal in Finder and Quick Look (checked in
   the `--dump-ax` tree). The Appearance button now reads "Appearance, Match

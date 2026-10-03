@@ -6,7 +6,6 @@ import SwiftUI
 struct OldDownloadsView: View {
     @ObservedObject var model: ScanModel
     @Environment(\.diskMapContentWidth) private var contentWidth
-    var onOpenCleanup: () -> Void
     var pickFolder: () -> Void
 
     @State private var selectedID: Int32?
@@ -51,504 +50,159 @@ struct OldDownloadsView: View {
         OldDownloadsCatalog.filter(catalog.candidates, age: ageFilter, size: .any, type: .all, query: "")
     }
 
+    private var shown: [OldDownloadsCandidate] { Array(visible.prefix(200)) }
+
     var body: some View {
         Group {
             if model.tree == nil {
-                emptyScan
+                DiskMapEmptyState(symbol: "arrow.down.circle", title: "Scan to find older downloads",
+                                  message: "DiskMap looks through Downloads after a scan.",
+                                  primaryTitle: "Choose Folder…", primaryAction: pickFolder)
             } else {
                 AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init), main: mainColumn, inspector: inspector)
             }
         }
-        .background(DiskMapTheme.cream)
+        .background(DiskMapTheme.canvas)
         .catalogGate(.oldDownloads, model: model, title: "Looking through Downloads…")
-    }
-
-    private var emptyScan: some View {
-        VStack(spacing: 12) {
-            Text("Scan to find older files in Downloads.")
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Button("Choose Folder…", action: pickFolder).buttonStyle(InkButtonStyle())
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var mainColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-                    summaryCards
-                    insightRow
-                    filters
-                    tableHeader
-                    if visible.isEmpty {
-                        emptyResults
-                    } else {
-                        fileRows
-                    }
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader(eyebrow: "Clean", title: "Old Downloads",
+                           subtitle: "Large or older files in Downloads you may no longer need. Age is the last-modified date.") {
+                    Button("Reveal Downloads", action: revealDownloads)
+                        .buttonStyle(QuietButtonStyle())
                 }
-                .padding(20)
+                FigureStrip(figures: [
+                    Figure(label: "In Downloads", value: ByteFormat.string(summary.totalBytes), detail: countLabel(summary.totalCount, "file")),
+                    Figure(label: ageFilter == .all ? "Any age" : "Older than \(ageFilter.title.replacingOccurrences(of: "+", with: ""))",
+                           value: ByteFormat.string(thresholdItems.reduce(0) { $0 + $1.bytes }),
+                           detail: countLabel(thresholdItems.count, "file")),
+                ])
+                .frame(maxWidth: 520, alignment: .leading)
+                filterBar
             }
-            .listKeyboard(
-                ids: visible.prefix(200).map(\.nodeID), selection: $selectedID,
-                path: { id in visible.first { $0.nodeID == id }?.absolutePath },
-                stage: { id in
-                    if let item = visible.first(where: { $0.nodeID == id }) { Task { await stage([item]) } }
-                },
-                selectAll: { checked = Set(visible.prefix(200).map(\.nodeID)) },
-                clearSelection: { checked.removeAll() }
-            )
-            if !checked.isEmpty {
-                selectionBar
+            .padding(.horizontal, 28)
+            .padding(.top, DiskMapSpace.pageTop)
+            .padding(.bottom, 12)
+            Hairline()
+            if visible.isEmpty {
+                DiskMapEmptyState(
+                    symbol: "arrow.down.circle",
+                    title: catalog.candidates.isEmpty ? "Nothing old enough to review" : "No files match these filters",
+                    message: catalog.candidates.isEmpty ? "Downloads has nothing matching this view. That’s a good thing."
+                        : "Try another age, size or type."
+                )
             } else {
-                footerBar
+                list
             }
+            ReviewFooter(
+                checkedCount: checkedItems.count, checkedBytes: checkedBytes,
+                hint: visible.count > shown.count ? "Showing the largest 200 of \(visible.count.formatted()). Tick files to clean, or"
+                    : "Tick files to clean, or",
+                quickSelectTitle: "Select all shown",
+                onQuickSelect: { checked = Set(shown.map(\.nodeID)) },
+                onStage: { Task { await stage(checkedItems) } },
+                onClear: { checked.removeAll() },
+                onReveal: { NSWorkspace.shared.activateFileViewerSelecting(checkedItems.map { URL(fileURLWithPath: $0.absolutePath) }) },
+                paths: checkedItems.map(\.absolutePath)
+            )
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: "arrow.down.circle.fill")
-                .font(.system(size: DiskMapType.scaled(28)))
-                .foregroundStyle(DiskMapTheme.info)
-                .frame(width: 48, height: 48)
-                .background(DiskMapTheme.info.opacity(0.12), in: Circle())
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Old Downloads")
-                    .font(DiskMapType.title)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("Large or older files in Downloads that may no longer be needed. Review them before deciding what to do. Nothing is deleted automatically.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var summaryCards: some View {
-        HStack(spacing: 10) {
-            metricCard(icon: "folder.fill", tint: DiskMapTheme.info,
-                       value: ByteFormat.string(summary.totalBytes),
-                       title: "Downloads represented",
-                       subtitle: "\(summary.totalCount.formatted()) files")
-            metricCard(icon: "calendar", tint: DiskMapTheme.danger,
-                       value: ByteFormat.string(thresholdItems.reduce(0) { $0 + $1.bytes }),
-                       title: "Older than \(ageFilter.title)",
-                       subtitle: "\(thresholdItems.count.formatted()) files")
-            metricCard(icon: "doc.text", tint: DiskMapTheme.developer,
-                       value: "\(thresholdItems.count.formatted())",
-                       title: "Worth reviewing",
-                       subtitle: "Review before removing")
-        }
-    }
-
-    private func metricCard(icon: String, tint: Color, value: String, title: String, subtitle: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon)
-                .font(DiskMapType.callout)
-                .foregroundStyle(tint)
-                .frame(width: 28, height: 28)
-                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(value)
-                    .font(DiskMapType.headline.monospacedDigit())
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text(title)
-                    .font(DiskMapType.captionStrong)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text(subtitle)
-                    .font(DiskMapType.micro)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardBG)
-    }
-
-    private var insightRow: some View {
+    private var filterBar: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("At a glance")
-                .font(DiskMapType.section)
-                .foregroundStyle(DiskMapTheme.ink)
-            HStack(alignment: .top, spacing: 24) {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 8) {
-                    Image(systemName: "leaf.fill")
-                        .foregroundStyle(DiskMapTheme.safe)
-                    Text("Insights")
-                        .font(DiskMapType.smallStrong)
-                }
-                ForEach(summary.insightLines, id: \.self) { line in
-                    Text(line)
-                        .font(DiskMapType.small)
-                        .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                HStack(spacing: 8) {
-                    Button("Review files (\(visible.count))") {
-                        checked = Set(visible.prefix(24).map(\.nodeID))
-                    }
-                    .buttonStyle(PrimaryCTAStyle())
-                    Button("Reveal Downloads in Finder") {
-                        revealDownloads()
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false))
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Age distribution")
-                    .font(DiskMapType.captionStrong)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                distributionBars(summary.ageBuckets.map { ($0.title, $0.bytes) })
-                Text("File type breakdown")
-                    .font(DiskMapType.captionStrong)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .padding(.top, 4)
-                ForEach(summary.typeBuckets.prefix(5)) { bucket in
-                    Button {
-                        typeFilter = typeFilterFor(bucket.kind)
-                    } label: {
-                        HStack {
-                            Text(bucket.kind.title)
-                                .font(DiskMapType.caption)
-                                .foregroundStyle(DiskMapTheme.ink)
-                            Spacer()
-                            Text(ByteFormat.string(bucket.bytes))
-                                .font(DiskMapType.caption.monospacedDigit())
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .frame(maxWidth: 300, alignment: .leading)
-            }
-        }
-        .padding(14)
-        .background(cardBG)
-    }
-
-    private func distributionBars(_ items: [(String, Int64)]) -> some View {
-        let maxB = max(1, items.map(\.1).max() ?? 1)
-        return VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                HStack(spacing: 8) {
-                    Text(item.0)
-                        .font(DiskMapType.micro)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .frame(width: 72, alignment: .leading)
-                    GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(DiskMapTheme.info.opacity(0.75))
-                            .frame(width: max(item.1 > 0 ? 4 : 0, geo.size.width * CGFloat(item.1) / CGFloat(maxB)))
-                    }
-                    .frame(height: 8)
-                    Text(ByteFormat.string(item.1))
-                        .font(DiskMapType.micro.monospacedDigit())
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .frame(width: 56, alignment: .trailing)
-                }
-            }
-        }
-    }
-
-    private var filters: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                DiskMapSearchField(placeholder: "Search Downloads…", text: $query)
-                Spacer(minLength: 0)
-            }
-            HStack(spacing: 8) {
-                DiskMapMenu(label: "Age", options: OldDownloadsAgeFilter.allCases, selection: $ageFilter, title: { $0.title })
+            HStack(spacing: 10) {
+                DiskMapSearchField(placeholder: "Search Downloads", text: $query)
+                    .frame(maxWidth: 300)
+                Spacer(minLength: 8)
                 DiskMapMenu(label: "Size", options: OldDownloadsSizeFilter.allCases, selection: $sizeFilter, title: { $0.title })
-                DiskMapMenu(label: "Type", options: OldDownloadsTypeFilter.allCases, selection: $typeFilter, title: { $0.title })
                 DiskMapMenu(label: "Sort", options: OldDownloadsSort.allCases, selection: $sort, title: { $0.title })
-                Spacer()
-                Image(systemName: "info.circle")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .help("Age is based on the file’s last-modified date.")
             }
-        }
-    }
-
-    private var tableHeader: some View {
-        HStack(spacing: 8) {
-            Button {
-                let allOn = !visible.isEmpty && visible.allSatisfy { checked.contains($0.nodeID) }
-                if allOn { checked.subtract(visible.map(\.nodeID)) }
-                else { checked.formUnion(visible.map(\.nodeID)) }
-            } label: {
-                let allOn = !visible.isEmpty && visible.allSatisfy { checked.contains($0.nodeID) }
-                Image(systemName: allOn ? "checkmark.square.fill" : "square")
-                    .font(.system(size: DiskMapType.scaled(16)))
-                    .foregroundStyle(allOn ? DiskMapTheme.info : DiskMapTheme.mutedLabel)
-            }
-            .buttonStyle(.plain)
-            .frame(width: 22)
-            Text("NAME").frame(maxWidth: .infinity, alignment: .leading)
-            Text("SIZE").frame(width: 80, alignment: .trailing)
-            Text("AGE").frame(width: 64, alignment: .leading)
-            Text("TYPE").frame(width: 72, alignment: .leading)
-            Text("STATUS").frame(width: 100, alignment: .leading)
-        }
-        .font(DiskMapType.microStrong)
-        .foregroundStyle(DiskMapTheme.mutedLabel)
-        .padding(.horizontal, 4)
-    }
-
-    private var fileRows: some View {
-        VStack(spacing: 0) {
-            ForEach(visible.prefix(200)) { item in
-                row(item)
-                Divider().overlay(DiskMapTheme.cardStroke.opacity(0.55))
-            }
-        }
-        .padding(10)
-        .background(cardBG)
-    }
-
-    private func row(_ item: OldDownloadsCandidate) -> some View {
-        let selected = selectedID == item.nodeID
-        return HStack(spacing: 8) {
-            Button {
-                if checked.contains(item.nodeID) {
-                    checked.remove(item.nodeID)
-                } else {
-                    checked.insert(item.nodeID)
-                    selectedID = item.nodeID
+            HStack(spacing: DiskMapSpace.md) {
+                HStack(spacing: 2) {
+                    ForEach(OldDownloadsAgeFilter.allCases) { age in
+                        Chip(title: age.title, isOn: ageFilter == age) { ageFilter = age }
+                            .help("Modified more than \(age.title.replacingOccurrences(of: "+", with: "")) ago")
+                    }
                 }
-            } label: {
-                Image(systemName: checked.contains(item.nodeID) ? "checkmark.square.fill" : "square")
-                    .font(.system(size: DiskMapType.scaled(16)))
-                    .foregroundStyle(checked.contains(item.nodeID) ? DiskMapTheme.info : DiskMapTheme.mutedLabel)
-            }
-            .buttonStyle(.plain)
-            .frame(width: 22)
-            .contentShape(Rectangle())
-
-            Button { selectedID = item.nodeID } label: {
-                HStack(spacing: 8) {
-                    HStack(spacing: 10) {
-                        Image(systemName: item.kind.symbolName)
-                            .font(.system(size: DiskMapType.scaled(14)))
-                            .foregroundStyle(DiskMapTheme.info)
-                            .frame(width: 28, height: 28)
-                            .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.name)
-                                .font(DiskMapType.smallStrong)
-                                .foregroundStyle(DiskMapTheme.ink)
-                                .lineLimit(1)
-                            Text(parentDisplay(item.displayPath))
-                                .font(DiskMapType.micro)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .lineLimit(1)
+                Rectangle().fill(DiskMapTheme.line).frame(width: 1, height: 16)
+                HStack(spacing: 2) {
+                    ForEach(OldDownloadsTypeFilter.allCases) { type in
+                        let count = OldDownloadsCatalog.filter(catalog.candidates, age: ageFilter, size: sizeFilter, type: type, query: "").count
+                        if type == .all || count > 0 {
+                            Chip(title: type.title, count: "\(count)", isOn: typeFilter == type) { typeFilter = type }
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Text(ByteFormat.string(item.bytes))
-                        .font(DiskMapType.smallMedium.monospacedDigit())
-                        .frame(width: 80, alignment: .trailing)
-
-                    Text(OldDownloadsCatalog.ageLabel(item.ageDays))
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .frame(width: 64, alignment: .leading)
-
-                    Text(item.kind.title)
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .frame(width: 72, alignment: .leading)
-                        .lineLimit(1)
-
-                    statusPill(item.status)
-                        .frame(width: 100, alignment: .leading)
                 }
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())
+            }
+        }
+    }
+
+    private var list: some View {
+        // Worked out once per draw, not once per row.
+        let items = shown
+        let activeID = active?.nodeID
+        return ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(items) { item in
+                    row(item, activeID: activeID)
+                    RowSeparator(indent: 10 + 18 + 10 + 24 + 12)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 4)
+        }
+        .listKeyboard(
+            ids: items.map(\.nodeID), selection: $selectedID,
+            path: { id in visible.first { $0.nodeID == id }?.absolutePath },
+            stage: { id in
+                if let item = visible.first(where: { $0.nodeID == id }) { Task { await stage([item]) } }
+            },
+            selectAll: { checked = Set(items.map(\.nodeID)) },
+            clearSelection: { checked.removeAll() }
+        )
+        .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
+    }
+
+    private func row(_ item: OldDownloadsCandidate, activeID: Int32?) -> some View {
+        let isChecked = checked.contains(item.nodeID)
+        let stageItem = { Task { await stage([item]) } }
+        return CheckRow {
+            KitCheckbox(isOn: Binding(get: { isChecked }, set: { on in
+                if on { checked.insert(item.nodeID) } else { checked.remove(item.nodeID) }
+            }), label: isChecked ? "Unmark \(item.name)" : "Mark \(item.name)")
+            Button { selectedID = item.nodeID } label: {
+                KitRow(title: item.name, subtitle: model.rootURL.map { relativeParent(of: item.absolutePath, root: $0) } ?? parentDisplay(item.displayPath),
+                       selected: item.nodeID == activeID, path: item.absolutePath, onStage: { _ = stageItem() }) {
+                    FileIdentityIcon(url: URL(fileURLWithPath: item.absolutePath), kind: item.kind, size: 24)
+                } trailing: {
+                    SafetyLabel(level: item.status == .reviewFirst ? .review : .safe)
+                        .frame(width: DiskMapType.scaled(96), alignment: .leading)
+                    TextColumn(text: item.kind.title, width: 80)
+                    MonoColumn(text: RelativeAge.short(ageDays: item.ageDays), width: 64)
+                    MonoColumn(text: ByteFormat.string(item.bytes), width: 74, emphasis: true)
+                }
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(item.name), \(ByteFormat.string(item.bytes)), \(OldDownloadsCatalog.ageLabel(item.ageDays))")
-            .accessibilityAddTraits(selected ? .isSelected : [])
-            .rowActions(path: item.absolutePath, stage: { Task { await stage([item]) } })
-
-            Menu {
-                Button("Reveal in Finder") { reveal(item) }
-                Button("Add to Cleanup") { Task { await stage([item]) } }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(DiskMapType.smallStrong)
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .frame(width: 30, height: 30)
-                    .background(DiskMapTheme.cardFill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(DiskMapTheme.cardStroke, lineWidth: 1))
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .rowActions(path: item.absolutePath, stage: { _ = stageItem() })
         }
-        .padding(.horizontal, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(selected ? DiskMapTheme.navSelected : Color.clear)
-        )
-        .contentShape(Rectangle())
-    }
-
-    private func statusPill(_ status: OldDownloadsStatus) -> some View {
-        ClassificationBadge(kind: status == .reviewFirst ? .review : .safe)
-    }
-
-
-    private var emptyResults: some View {
-        VStack(spacing: 8) {
-            Text(catalog.candidates.isEmpty ? "Nothing old enough to review" : "No files match these filters")
-                .font(DiskMapType.callout)
-            Text(catalog.candidates.isEmpty
-                 ? "Your Downloads folder doesn’t currently contain files matching this view. That’s a good thing."
-                 : "Try another age, size, or type filter.")
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .multilineTextAlignment(.center)
-            if catalog.candidates.isEmpty {
-                Button("Reveal Downloads in Finder") { revealDownloads() }
-                    .buttonStyle(InkButtonStyle(filled: false))
-                    .padding(.top, 6)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(28)
-        .background(cardBG)
-    }
-
-    private var selectionBar: some View {
-        SelectionToolbar(
-            selectedCount: checkedItems.count,
-            selectedBytes: checkedBytes,
-            onPrimary: { Task { await stage(checkedItems) } },
-            onClear: { checked.removeAll() },
-            onReveal: {
-                NSWorkspace.shared.activateFileViewerSelecting(checkedItems.map { URL(fileURLWithPath: $0.absolutePath) })
-            },
-            paths: checkedItems.map(\.absolutePath)
-        )
-    }
-
-    private var footerBar: some View {
-        HStack {
-            Group {
-                if checked.isEmpty {
-                    if active != nil {
-                        Text("Inspecting · check boxes to multi-select")
-                    } else {
-                        Text("Check boxes to select for Cleanup")
-                    }
-                } else {
-                    Text("\(checkedItems.count) selected · \(ByteFormat.string(checkedBytes))")
-                }
-            }
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Spacer()
-            Text("Showing \(visible.count) of \(catalog.candidates.count) · \(ByteFormat.string(visible.reduce(Int64(0)) { $0 + $1.bytes }))")
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Button("Rescan") {
-                Task { await model.rebuildCatalog(.oldDownloads) }
-            }
-            .font(DiskMapType.captionStrong)
-            .foregroundStyle(DiskMapTheme.info)
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 20)
-        .frame(height: DiskMapMetric.statusBarHeight)
-        .background(DiskMapTheme.cardFill.opacity(0.8))
-        .overlay(alignment: .top) { Divider().overlay(DiskMapTheme.cardStroke) }
     }
 
     private var inspector: some View {
         Group {
-            if let item = active {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(spacing: 12) {
-                            Image(systemName: item.kind.symbolName)
-                                .font(.system(size: DiskMapType.scaled(28)))
-                                .foregroundStyle(DiskMapTheme.info)
-                                .frame(width: 64, height: 64)
-                                .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.name)
-                                    .font(DiskMapType.section)
-                                    .foregroundStyle(DiskMapTheme.ink)
-                                Text(ByteFormat.string(item.bytes))
-                                    .font(.system(size: DiskMapType.scaled(20), weight: .semibold).monospacedDigit())
-                                Text("\(item.kind.title)")
-                                    .font(DiskMapType.caption)
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                                statusPill(item.status)
-                            }
-                        }
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            StatRow(label: "Path", value: parentDisplay(item.displayPath))
-                            StatRow(label: "Modified", value: OldDownloadsCatalog.ageLabel(item.ageDays))
-                            StatRow(label: "Age (days)", value: "\(item.ageDays)")
-                        }
-
-                        WhyCard(title: "Why is this here?", bodyText: item.whyHere)
-
-                        SafetyCard(assessment: item.safety)
-
-                        VStack(spacing: 8) {
-                            let staged = model.isStaged(URL(fileURLWithPath: item.absolutePath))
-                            Button(staged ? "In Cleanup" : "Add to Cleanup") {
-                                if staged { onOpenCleanup() }
-                                else { Task { await stage([item]) } }
-                            }
-                            .buttonStyle(PrimaryCTAStyle(fullWidth: true))
-                            Button("Reveal in Finder") { reveal(item) }
-                                .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                            Button("Open containing folder") {
-                                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: (item.absolutePath as NSString).deletingLastPathComponent)
-                            }
-                            .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                            Button("View in Visualize") {
-                                model.destination = .visualize
-                            }
-                            .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                        }
-                    }
-                    .padding(DiskMapMetric.inspectorPadding)
-                }
+            if let item = active, let tree = model.tree, let root = model.rootURL {
+                FileInspector(model: model, tree: tree, rootURL: root, id: item.nodeID, size: item.bytes,
+                              reason: "Old Downloads: \(item.name)",
+                              note: (label: "Why it’s here", text: item.whyHere))
             } else {
-                VStack(spacing: 8) {
-                    Text("Select a file")
-                        .font(DiskMapType.bodyStrong)
-                    Text("Pick a Downloads file to see why it’s here and what you can do.")
-                        .font(DiskMapType.small)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(24)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                DiskMapEmptyState(symbol: "arrow.down.circle", title: "Select a file",
+                                  message: "See why it’s here and what you can do.")
             }
         }
-        .background(DiskMapTheme.inspectorFill)
-    }
-
-    private var cardBG: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(DiskMapTheme.cardFill)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-            )
+        .background(DiskMapTheme.canvas)
     }
 
     private func parentDisplay(_ path: String) -> String {
@@ -587,7 +241,7 @@ struct OldDownloadsView: View {
         })
         let rejected = Set(result.rejectedURLs.map(\.path))
         checked = Set(items.filter { rejected.contains($0.absolutePath) }.map(\.nodeID))
-        model.showToast(result.added > 0 ? "Added \(result.added) to Cleanup" : "Nothing new added")
-        if result.added > 0 { onOpenCleanup() }
+        model.showToast(result.added > 0 ? "Added \(countLabel(result.added, "file")) to Cleanup — ⇧⌘⌫ to review"
+                        : result.alreadyPresent > 0 ? "Already in Cleanup" : "Nothing new added")
     }
 }

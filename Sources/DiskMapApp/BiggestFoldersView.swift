@@ -72,7 +72,7 @@ struct BiggestFoldersView: View {
 
     var body: some View {
         AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init), main: mainColumn, inspector: inspector)
-        .background(DiskMapTheme.cream)
+        .background(DiskMapTheme.canvas)
         .onChange(of: model.currentNode) { _, newValue in
             selectedID = newValue
             model.selectedNode = newValue
@@ -81,12 +81,24 @@ struct BiggestFoldersView: View {
 
     private var mainColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            controls
-            navBar
-            Divider().overlay(DiskMapTheme.cardStroke)
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader(eyebrow: "Find", title: "Biggest Folders",
+                           subtitle: "Click to inspect, double-click or › to open.") {
+                    HeaderSummary(parts: [countLabel(rows.count, "folder"), ByteFormat.string(parentTotal) + " here"])
+                }
+                navBar
+                filterBar
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, DiskMapSpace.pageTop)
+            .padding(.bottom, 12)
+            Hairline()
             if rows.isEmpty {
-                emptyState
+                DiskMapEmptyState(
+                    symbol: "folder",
+                    title: rawRows.isEmpty ? "Nothing with a size in this folder" : "No folders match",
+                    message: rawRows.isEmpty ? "Try another folder, or go back up." : "Clear the search or show technical folders."
+                )
             } else {
                 list
             }
@@ -94,88 +106,35 @@ struct BiggestFoldersView: View {
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Biggest Folders")
-                    .font(DiskMapType.title)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("Investigate where storage goes by folder. Click to select; open a folder to drill in.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .fixedSize(horizontal: false, vertical: true)
-                MultiSelectHint()
-            }
-            Spacer(minLength: 16)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("\(rows.count.formatted()) folders here")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                Text(ByteFormat.string(parentTotal))
-                    .font(DiskMapType.bodyStrong.monospacedDigit())
-                    .foregroundStyle(DiskMapTheme.ink)
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 18)
-        .padding(.bottom, 14)
+    private var atScannedVolumeRoot: Bool {
+        model.currentNode == 0 && (rootURL.path == "/" || rootURL.standardizedFileURL.path == "/")
     }
 
-    private var controls: some View {
+    private var filterBar: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(DiskMapType.bodyMedium)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                TextField("Search folders by name or path…", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(DiskMapType.body)
+            DiskMapSearchField(placeholder: "Search folders by name or path", text: $query)
+                .frame(maxWidth: 340)
+            if atScannedVolumeRoot {
+                Chip(title: "Show technical", isOn: showTechnical) { showTechnical.toggle() }
+                    .help("Show zero-size and technical system stubs at the volume root")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(DiskMapTheme.cardFill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                    )
-            )
-
-            if model.currentNode == 0, rootURL.path == "/" || rootURL.standardizedFileURL.path == "/" {
-                Toggle(isOn: $showTechnical) {
-                    Text("Show technical")
-                        .font(DiskMapType.captionStrong)
-                }
-                .toggleStyle(.checkbox)
-                .help("Show zero-size and technical system stubs at the volume root")
-            }
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 10)
     }
 
     private var navBar: some View {
-        HStack(spacing: 10) {
-            Button {
-                goBack()
-            } label: {
-                Label("Back", systemImage: "chevron.left")
-                    .font(DiskMapType.smallStrong)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(canGoBack ? DiskMapTheme.ink : DiskMapTheme.mutedLabel.opacity(0.5))
-            .disabled(!canGoBack)
-            .accessibilityLabel("Back to parent folder")
-
+        HStack(spacing: 8) {
+            Button(action: goBack) { Label("Back", systemImage: "chevron.left") }
+                .buttonStyle(IconButtonStyle())
+                .disabled(!canGoBack)
+                .help("Back to parent folder")
+                .accessibilityLabel("Back to parent folder")
             BreadcrumbBar(tree: tree, currentNode: model.currentNode) { id in
                 model.currentNode = id
                 selectedID = id
                 model.selectedNode = id
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 12)
     }
 
     private var canGoBack: Bool {
@@ -191,148 +150,81 @@ struct BiggestFoldersView: View {
         model.selectedNode = p
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "folder")
-                .font(.system(size: DiskMapType.scaled(28), weight: .light))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text(rawRows.isEmpty ? "Nothing with a size in this folder" : "No folders match this filter")
-                .font(DiskMapType.section)
-                .foregroundStyle(DiskMapTheme.ink)
-            Text(
-                rawRows.isEmpty
-                    ? "Try another folder, or go back up."
-                    : "Clear search or show technical folders."
-            )
-            .font(DiskMapType.body)
-            .foregroundStyle(DiskMapTheme.mutedLabel)
-            .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
-    }
-
     private var list: some View {
-        ScrollView {
+        let ordered = rows.map(\.id)
+        return ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(rows, id: \.id) { row in
-                    folderRow(row)
-                    Rectangle()
-                        .fill(DiskMapTheme.cardStroke.opacity(0.65))
-                        .frame(height: 1)
-                        .padding(.leading, 56)
+                    folderRow(row, ordered: ordered)
+                    RowSeparator(indent: 10 + 14 + 12 + 24 + 12)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 18)
             .padding(.vertical, 4)
         }
         .listKeyboard(
-            ids: rows.map(\.id), selection: $selectedID,
+            ids: ordered, selection: $selectedID,
             path: { tree.path(of: $0, root: rootURL).path },
             stage: { id in
                 model.stageRow(path: tree.path(of: id, root: rootURL).path, size: model.selectedTotals[Int(id)],
                                reason: "Biggest folder: " + tree.name(of: id))
             },
-            selectAll: { model.multiSelection = Set(rows.map(\.id)) },
+            selectAll: { model.multiSelection = Set(ordered) },
             clearSelection: { model.clearMultiSelection() }
         )
     }
 
-    private func folderRow(_ row: (id: Int32, size: Int64)) -> some View {
-        let isDir = tree.isDirectory[Int(row.id)]
+    private func folderRow(_ row: (id: Int32, size: Int64), ordered: [Int32]) -> some View {
+        let i = Int(row.id)
+        let isDir = tree.isDirectory[i]
         let name = tree.name(of: row.id)
-        let selected = row.id == (selectedID ?? activeSelection) || model.multiSelection.contains(row.id)
+        let inMulti = model.multiSelection.contains(row.id)
+        let selected = row.id == (selectedID ?? activeSelection) || inMulti
         let frac = Double(row.size) / Double(parentTotal)
-        let fileCount = model.descendantFileCounts.indices.contains(Int(row.id))
-            ? model.descendantFileCounts[Int(row.id)] : 0
-        let folderCount = model.descendantFolderCounts.indices.contains(Int(row.id))
-            ? model.descendantFolderCounts[Int(row.id)] : 0
+        let fileCount = model.descendantFileCounts.indices.contains(i) ? model.descendantFileCounts[i] : 0
+        let folderCount = model.descendantFolderCounts.indices.contains(i) ? model.descendantFolderCounts[i] : 0
         let abs = tree.path(of: row.id, root: rootURL).path
         let safety = SafetyClassifier.assess(path: abs, name: name, isDirectory: isDir)
-
+        let stage: (() -> Void)? = safety.level == .protected ? nil : {
+            model.stageRow(path: abs, size: row.size, reason: "Biggest folder: " + name)
+        }
+        let subtitle = isDir ? countLabel(fileCount, "file") + " · " + countLabel(folderCount, "folder")
+            : FileKind.classify(fileName: name, path: abs).title
         return HStack(spacing: 0) {
             Button {
                 selectedID = row.id
-                model.select(row.id, ordered: rows.map(\.id))
+                model.select(row.id, ordered: ordered)
             } label: {
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(selected ? DiskMapTheme.ink : DiskMapTheme.cardFill)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                            )
-                        Image(systemName: isDir ? "folder.fill" : "doc")
-                            .font(DiskMapType.bodyStrong)
-                            .foregroundStyle(selected ? DiskMapTheme.onInk : DiskMapTheme.mutedLabel)
-                    }
-                    .frame(width: 32, height: 32)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(name)
-                                .font(DiskMapType.bodyStrong)
-                                .foregroundStyle(DiskMapTheme.ink)
-                                .lineLimit(1)
-                            if safety.level == .protected {
-                                Text("Protected")
-                                    .font(DiskMapType.microStrong)
-                                    .foregroundStyle(DiskMapTheme.danger)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Capsule().fill(DiskMapTheme.danger.opacity(0.12)))
-                            }
-                            Spacer(minLength: 8)
-                            Text(ByteFormat.string(row.size))
-                                .font(DiskMapType.smallStrong.monospacedDigit())
-                                .foregroundStyle(DiskMapTheme.ink)
+                KitRow(title: name, subtitle: subtitle, selected: selected, path: abs, onStage: stage) {
+                    MultiSelectMark(on: inMulti)
+                    Group {
+                        if isDir {
+                            Image(systemName: "folder")
+                                .font(.system(size: DiskMapType.scaled(14)))
+                                .foregroundStyle(DiskMapTheme.ink2)
+                                .frame(width: 24, height: 24)
+                        } else {
+                            FileIdentityIcon(url: URL(fileURLWithPath: abs), size: 24)
                         }
-                        HStack(spacing: 8) {
-                            if isDir {
-                                Text("\(fileCount.formatted()) files · \(folderCount.formatted()) folders")
-                                    .font(DiskMapType.caption)
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                                    .lineLimit(1)
-                            }
-                            Spacer(minLength: 4)
-                        }
-                        ProportionBar(fraction: frac, tint: DiskMapTheme.ink.opacity(0.28))
-                            .frame(height: 3)
                     }
+                } trailing: {
+                    if safety.level == .protected {
+                        SafetyLabel(level: .protected)
+                    }
+                    ProportionBar(fraction: frac)
+                        .frame(width: 90)
+                    MonoColumn(text: ByteFormat.string(row.size), width: 74, emphasis: true)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: DiskMapType.scaled(10), weight: .semibold))
+                        .foregroundStyle(isDir ? DiskMapTheme.ink3 : .clear)
+                        .frame(width: 12)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(selected ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
-                )
-                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .simultaneousGesture(
-                TapGesture(count: 2).onEnded {
-                    if isDir { drill(into: row.id) }
-                }
-            )
-            .accessibilityLabel("\(name), \(ByteFormat.string(row.size))")
-            .rowActions(path: abs, stage: safety.level == .protected ? nil : {
-                model.stageRow(path: abs, size: row.size, reason: "Biggest folder: " + name)
-            })
-
-            if isDir {
-                Button {
-                    drill(into: row.id)
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(DiskMapType.smallStrong)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .frame(width: 36, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open \(name)")
-            }
+            .simultaneousGesture(TapGesture(count: 2).onEnded { if isDir { drill(into: row.id) } })
+            .accessibilityLabel("\(name), \(ByteFormat.string(row.size))\(isDir ? ", \(subtitle)" : "")")
+            .accessibilityAction(named: "Open") { if isDir { drill(into: row.id) } }
+            .rowActions(path: abs, stage: stage)
         }
     }
 
@@ -345,235 +237,13 @@ struct BiggestFoldersView: View {
 
     private var inspector: some View {
         Group {
-            if let id = activeSelection,
-               tree.isDirectory[Int(id)],
-               let insight = FolderInsight.build(
-                    nodeID: id,
-                    tree: tree,
-                    root: rootURL,
-                    totals: totals,
-                    fileCounts: model.descendantFileCounts,
-                    folderCounts: model.descendantFolderCounts,
-                    categories: model.fileTypeCategories
-               ) {
-                FolderInspectorPanel(
-                    model: model,
-                    insight: insight,
-                    usedDenominator: usedDenominator,
-                    onOpenCleanup: onOpenCleanup
-                )
+            if let id = activeSelection, tree.isDirectory[Int(id)] {
+                FolderInspector(model: model, tree: tree, rootURL: rootURL, id: id,
+                                reason: "Biggest folder: " + tree.name(of: id))
             } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "folder")
-                        .font(.system(size: DiskMapType.scaled(28), weight: .light))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    Text("Select a folder")
-                        .font(DiskMapType.body)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                DiskMapEmptyState(symbol: "folder", title: "Select a folder", message: "Its details and actions appear here.")
             }
         }
-        .background(DiskMapTheme.cardFill)
-    }
-}
-
-private struct FolderInspectorPanel: View {
-    @ObservedObject var model: ScanModel
-    let insight: FolderInsight
-    let usedDenominator: Int64
-    var onOpenCleanup: () -> Void = {}
-
-    var body: some View {
-        let pct = Double(insight.bytes) / Double(max(1, usedDenominator))
-        let allowStage = insight.safety.level != .protected
-
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: DiskMapType.scaled(26), weight: .medium))
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .frame(width: 56, height: 56)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(DiskMapTheme.ink.opacity(0.08))
-                        )
-                        .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(insight.name)
-                            .font(DiskMapType.callout)
-                            .foregroundStyle(DiskMapTheme.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                        Text(ByteFormat.string(insight.bytes))
-                            .font(.system(size: DiskMapType.scaled(26), weight: .semibold).monospacedDigit())
-                            .foregroundStyle(DiskMapTheme.ink)
-                        Text(String(format: "%.1f%% of used storage", min(100, pct * 100)))
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    metaBlock(label: "Location", value: insight.displayPath)
-                    metaBlock(
-                        label: "Contents",
-                        value: "\(insight.fileCount.formatted()) files · \(insight.folderCount.formatted()) folders"
-                    )
-                }
-
-                if !insight.composition.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Composition")
-                            .font(DiskMapType.smallStrong)
-                            .foregroundStyle(DiskMapTheme.ink)
-                        ForEach(Array(insight.composition.prefix(5).enumerated()), id: \.element.categoryID) { _, row in
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(DiskMapTheme.hex(row.colorHex))
-                                    .frame(width: 8, height: 8)
-                                Text(row.label)
-                                    .font(DiskMapType.small)
-                                    .foregroundStyle(DiskMapTheme.ink)
-                                    .lineLimit(1)
-                                Spacer(minLength: 4)
-                                Text(ByteFormat.string(row.bytes))
-                                    .font(DiskMapType.captionMedium.monospacedDigit())
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                            }
-                            ProportionBar(
-                                fraction: Double(row.bytes) / Double(max(1, insight.bytes)),
-                                tint: DiskMapTheme.hex(row.colorHex)
-                            )
-                            .frame(height: 3)
-                        }
-                    }
-                }
-
-                WhyCard(title: "Why is it large?", bodyText: insight.whyLarge)
-
-                if insight.reviewableBytes > 0 {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Potentially reviewable")
-                            .font(DiskMapType.smallStrong)
-                            .foregroundStyle(DiskMapTheme.ink)
-                        Text(ByteFormat.string(insight.reviewableBytes))
-                            .font(DiskMapType.headline.monospacedDigit())
-                            .foregroundStyle(DiskMapTheme.ink)
-                        Text(
-                            insight.safety.level == .safe
-                                ? "This folder looks like regenerable cache or temp data."
-                                : "Old files (not modified in over a year) under this folder. Review before removing."
-                        )
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                SafetyCard(assessment: insight.safety)
-
-                if !insight.largestFiles.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Largest files")
-                            .font(DiskMapType.smallStrong)
-                            .foregroundStyle(DiskMapTheme.ink)
-                        ForEach(insight.largestFiles, id: \.id) { file in
-                            HStack {
-                                Text(file.name)
-                                    .font(DiskMapType.small)
-                                    .foregroundStyle(DiskMapTheme.ink)
-                                    .lineLimit(1)
-                                Spacer(minLength: 6)
-                                Text(ByteFormat.string(file.bytes))
-                                    .font(DiskMapType.captionMedium.monospacedDigit())
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                            }
-                        }
-                        Button("View all files in this folder") {
-                            model.folderFilterPath = insight.absolutePath
-                            model.destination = .biggestFiles
-                        }
-                        .buttonStyle(.plain)
-                        .font(DiskMapType.smallStrong)
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .padding(.top, 2)
-                    }
-                }
-
-                VStack(spacing: 8) {
-                    if allowStage {
-                        Button(model.isStaged(URL(fileURLWithPath: insight.absolutePath, isDirectory: true))
-                               ? "Open Cleanup Queue"
-                               : "Add to Cleanup") {
-                            Task { await stageFolder() }
-                        }
-                        .buttonStyle(PrimaryCTAStyle(fullWidth: true))
-                    }
-
-                    Button("Reveal in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: insight.absolutePath)])
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-
-                    Button("Copy Path") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(insight.displayPath, forType: .string)
-                        model.showToast("Path copied")
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-
-                    if !allowStage {
-                        Text("Cleanup staging is disabled for protected system folders.")
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(.top, 4)
-            }
-            .padding(18)
-        }
-    }
-
-    private func stageFolder() async {
-        let url = URL(fileURLWithPath: insight.absolutePath, isDirectory: true).standardizedFileURL
-        let result = await model.stageForCleanup([
-            CleanupStageRequest(url: url, size: insight.bytes, reason: "Biggest folder: " + insight.name)
-        ])
-        if result.added > 0 {
-            model.showToast("Added to Cleanup")
-            onOpenCleanup()
-        } else if result.alreadyPresent > 0 {
-            model.showToast("Already in Cleanup")
-            onOpenCleanup()
-        } else {
-            model.showToast("Blocked by safety rules")
-        }
-    }
-
-    private func metaBlock(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text(value)
-                .font(DiskMapType.bodyMedium)
-                .foregroundStyle(DiskMapTheme.ink)
-                .textSelection(.enabled)
-                .lineLimit(3)
-                .truncationMode(.middle)
-        }
-    }
-
-    private func safetyColor(_ level: SafetyLevel) -> Color {
-        switch level {
-        case .safe: return DiskMapTheme.safe
-        case .review: return DiskMapTheme.review
-        case .protected: return DiskMapTheme.danger
-        }
+        .background(DiskMapTheme.canvas)
     }
 }

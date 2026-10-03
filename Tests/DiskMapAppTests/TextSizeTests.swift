@@ -18,8 +18,8 @@ struct TextSizeTests {
         defer { DiskMapType.scale = saved }
         DiskMapType.scale = TextSize.largest.scale
         #expect(DiskMapType.scaled(13) == 13 * 1.3)
-        #expect(DiskMapMetric.sidebarWidth == 260)
+        #expect(DiskMapMetric.sidebarWidth == 276)
         DiskMapType.scale = TextSize.smaller.scale
-        #expect(DiskMapMetric.sidebarWidth == 200, "the sidebar never gets narrower than the default")
+        #expect(DiskMapMetric.sidebarWidth == 212, "the sidebar never gets narrower than the default")
     }
 }

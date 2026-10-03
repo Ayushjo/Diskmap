@@ -28,85 +28,92 @@ struct BiggestFilesView: View {
     @State private var kindFilter: FileKind? = nil
     @State private var sortMode: SortMode = .largest
     @State private var selectedID: Int32?
-    @State private var rankedFileIDs: [Int32] = []
     @State private var isPreparingRanking = true
+    /// Everything a row needs, worked out once per ranking off the main thread.
+    @State private var entries: [Entry] = []
+    /// `entries` narrowed and sorted — recomputed only when a filter changes,
+    /// never while drawing (it used to rebuild 2,000 paths once per row).
+    @State private var visible: [Entry] = []
+    @State private var kindCounts: [FileKind: Int] = [:]
+
+    struct Entry: Identifiable, Sendable {
+        var id: Int32
+        var name: String
+        var absolutePath: String
+        var parent: String
+        var kind: FileKind
+        var size: Int64
+        var modifiedDay: Int32
+        /// Lowercased name + display path, for the search box.
+        var searchText: String
+    }
+
+    nonisolated private static let kinds: [FileKind] = [.video, .diskImage, .archive, .application, .document, .other]
 
     private var totals: [Int64] { model.selectedTotals }
 
-    private var usedDenominator: Int64 {
-        if let vol = model.analysis.volume { return max(1, Int64(vol.usedBytes)) }
-        return max(1, model.analysis.scannedBytes)
+    private var filterKey: String {
+        "\(query)|\(kindFilter?.rawValue ?? "")|\(sortMode.rawValue)|\(model.folderFilterPath ?? "")|\(entries.count)"
     }
 
-    private var allFileIDs: [Int32] {
-        rankedFileIDs
-    }
-
-    private var filtered: [Int32] {
+    private func refilter() {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let pathPrefix = model.folderFilterPath
-        var ids = allFileIDs.filter { id in
-            let name = tree.name(of: id)
-            let abs = tree.path(of: id, root: rootURL).path
-            if let pathPrefix {
-                let prefix = pathPrefix.hasSuffix("/") ? pathPrefix : pathPrefix + "/"
-                if abs != pathPrefix && !abs.hasPrefix(prefix) { return false }
-            }
-            let kind = FileKind.classify(fileName: name, path: abs)
-            if let kindFilter, kind != kindFilter { return false }
-            if q.isEmpty { return true }
-            let display = CanonicalPath.displayPath(absolutePath: abs).lowercased()
-            return name.lowercased().contains(q) || display.contains(q)
+        let prefix = pathPrefix.map { $0.hasSuffix("/") ? $0 : $0 + "/" }
+        var list = entries.filter { entry in
+            if let pathPrefix, let prefix, entry.absolutePath != pathPrefix, !entry.absolutePath.hasPrefix(prefix) { return false }
+            // "Other" holds every kind without its own chip.
+            if let kindFilter, (Self.kinds.contains(entry.kind) ? entry.kind : .other) != kindFilter { return false }
+            return q.isEmpty || entry.searchText.contains(q)
         }
         switch sortMode {
-        case .largest:
-            ids.sort { totals[Int($0)] > totals[Int($1)] }
-        case .smallest:
-            ids.sort { totals[Int($0)] < totals[Int($1)] }
-        case .newest:
-            ids.sort { tree.modifiedDay[Int($0)] > tree.modifiedDay[Int($1)] }
+        case .largest: list.sort { $0.size > $1.size }
+        case .smallest: list.sort { $0.size < $1.size }
+        case .newest: list.sort { $0.modifiedDay > $1.modifiedDay }
         case .oldest:
-            ids.sort { a, b in
-                let da = tree.modifiedDay[Int(a)]
-                let db = tree.modifiedDay[Int(b)]
-                if da == 0 { return false }
-                if db == 0 { return true }
-                return da < db
+            list.sort { a, b in
+                if a.modifiedDay == 0 { return false }
+                if b.modifiedDay == 0 { return true }
+                return a.modifiedDay < b.modifiedDay
             }
-        case .name:
-            ids.sort {
-                tree.name(of: $0).localizedCaseInsensitiveCompare(tree.name(of: $1)) == .orderedAscending
-            }
+        case .name: list.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         }
-        return ids
-    }
-
-    private var totalBytes: Int64 {
-        filtered.reduce(Int64(0)) { $0 + totals[Int($1)] }
-    }
-
-    private var activeSelection: Int32? {
-        if let selectedID, filtered.contains(selectedID) { return selectedID }
-        return filtered.first
+        visible = list
     }
 
     var body: some View {
-        AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init), main: mainColumn, inspector: inspector)
-        .background(DiskMapTheme.cream)
+        // Worked out once per draw and handed to every row.
+        let active = selectedID.flatMap { id in visible.first(where: { $0.id == id }) } ?? visible.first
+        return AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init),
+                                      main: mainColumn(active: active?.id), inspector: inspector(active))
+        .background(DiskMapTheme.canvas)
         .task(id: rankingID) { await prepareRanking() }
+        .onChange(of: filterKey) { _, _ in refilter() }
     }
 
-    private var mainColumn: some View {
+    private func mainColumn(active: Int32?) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            controls
-            Divider().overlay(DiskMapTheme.cardStroke)
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader(eyebrow: "Find", title: "Biggest Files",
+                           subtitle: "Files only, largest first. ⌘-click to select several, ⇧-click for a range.") {
+                    HeaderSummary(parts: [countLabel(visible.count, "file"), ByteFormat.string(visible.reduce(0) { $0 + $1.size })])
+                }
+                filterBar
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, DiskMapSpace.pageTop)
+            .padding(.bottom, 12)
             if isPreparingRanking {
-                DiskMapLoadingState(title: "Finding biggest files", detail: "Ranking the scan without blocking the interface.")
-            } else if filtered.isEmpty {
-                emptyState
+                DiskMapLoadingState(title: "Finding biggest files", detail: "Ranking the scan without blocking the window.")
+            } else if visible.isEmpty {
+                DiskMapEmptyState(
+                    symbol: "doc",
+                    title: entries.isEmpty ? "No large files" : "No files match",
+                    message: entries.isEmpty ? "The scan found no files of note." : "Try another type or clear the search."
+                )
             } else {
-                list
+                columnHeader
+                list(active: active)
             }
             NodeSelectionToolbar(model: model)
         }
@@ -120,155 +127,104 @@ struct BiggestFilesView: View {
     @MainActor
     private func prepareRanking() async {
         guard totals.count == tree.count else {
-            rankedFileIDs = []
+            entries = []
+            visible = []
             isPreparingRanking = false
             return
         }
         isPreparingRanking = true
         let sourceTree = tree
         let sourceTotals = totals
-        let result = await Task.detached(priority: .userInitiated) {
-            TopSizes.rankedFiles(tree: sourceTree, totals: sourceTotals, limit: 2_000)
+        let root = rootURL
+        let (built, counts) = await Task.detached(priority: .userInitiated) { () -> ([Entry], [FileKind: Int]) in
+            let ids = TopSizes.rankedFiles(tree: sourceTree, totals: sourceTotals, limit: 2_000)
+            var counts: [FileKind: Int] = [:]
+            var built: [Entry] = []
+            built.reserveCapacity(ids.count)
+            for id in ids {
+                let name = sourceTree.name(of: id)
+                let abs = sourceTree.path(of: id, root: root).path
+                let kind = FileKind.classify(fileName: name, path: abs)
+                counts[Self.kinds.contains(kind) ? kind : .other, default: 0] += 1
+                built.append(Entry(
+                    id: id, name: name, absolutePath: abs, parent: relativeParent(of: abs, root: root),
+                    kind: kind, size: sourceTotals[Int(id)], modifiedDay: sourceTree.modifiedDay[Int(id)],
+                    searchText: name.lowercased() + "\n" + CanonicalPath.displayPath(absolutePath: abs).lowercased()
+                ))
+            }
+            return (built, counts)
         }.value
         guard !Task.isCancelled else { return }
-        rankedFileIDs = result
+        entries = built
+        kindCounts = counts
+        refilter()
         isPreparingRanking = false
     }
 
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Biggest Files")
-                    .font(DiskMapType.title)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("The largest individual files using storage on your Mac. Folders are not shown here.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .fixedSize(horizontal: false, vertical: true)
-                MultiSelectHint()
-            }
-            Spacer(minLength: 16)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("Showing \(filtered.count.formatted()) files")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                Text("Total \(ByteFormat.string(totalBytes))")
-                    .font(DiskMapType.bodyStrong.monospacedDigit())
-                    .foregroundStyle(DiskMapTheme.ink)
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 18)
-        .padding(.bottom, 14)
-    }
-
-    private var controls: some View {
+    private var filterBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                searchField
-                sortControl
-                    .frame(width: 172)
-            }
-            if let pathPrefix = model.folderFilterPath {
-                HStack(spacing: 8) {
-                    Text("In " + CanonicalPath.displayPath(absolutePath: pathPrefix))
-                        .font(DiskMapType.captionStrong)
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Button("Clear") {
+                DiskMapSearchField(placeholder: "Search by name or path", text: $query)
+                    .frame(maxWidth: 340)
+                if let pathPrefix = model.folderFilterPath {
+                    Chip(title: "In " + CanonicalPath.displayPath(absolutePath: pathPrefix), symbol: "xmark", isOn: true) {
                         model.folderFilterPath = nil
                     }
-                    .buttonStyle(.plain)
-                    .font(DiskMapType.captionStrong)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .help("Show files from everywhere")
                 }
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(DiskMapTheme.navSelected))
+                Spacer(minLength: 8)
+                DiskMapMenu(label: "Sort", options: SortMode.allCases, selection: $sortMode, title: { $0.title })
+                    .accessibilityLabel("Sort by " + sortMode.title)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    filterChip(title: "All Files", selected: kindFilter == nil) {
-                        kindFilter = nil
-                    }
-                    ForEach([FileKind.video, .diskImage, .archive, .application, .document, .other], id: \.self) { kind in
-                        filterChip(title: kind.title, selected: kindFilter == kind) {
+            HStack(spacing: 2) {
+                Chip(title: "All", count: "\(entries.count)", isOn: kindFilter == nil) { kindFilter = nil }
+                ForEach(Self.kinds, id: \.self) { kind in
+                    if let count = kindCounts[kind], count > 0 {
+                        Chip(title: kind.title, count: "\(count)", isOn: kindFilter == kind) {
                             kindFilter = (kindFilter == kind) ? nil : kind
                         }
                     }
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 12)
     }
 
-    private var searchField: some View {
-        DiskMapSearchField(placeholder: "Search files by name or path…", text: $query)
-    }
-
-    private var sortControl: some View {
-        DiskMapMenu(label: "Sort", options: SortMode.allCases, selection: $sortMode, title: { $0.title })
-        .accessibilityLabel("Sort by " + sortMode.title)
-    }
-
-    private func filterChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(DiskMapType.captionStrong)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .foregroundStyle(selected ? DiskMapTheme.onInk : DiskMapTheme.ink)
-                .background(Capsule().fill(selected ? DiskMapTheme.ink : DiskMapTheme.navSelected))
+    private var columnHeader: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Color.clear.frame(width: 14 + 12 + 24, height: 1)
+                ColumnHeaderLabel(title: "Name")
+                ColumnHeaderLabel(title: "Kind", width: 92)
+                ColumnHeaderLabel(title: "Modified", alignment: .trailing, width: 74)
+                ColumnHeaderLabel(title: "Size", alignment: .trailing, width: 74)
+            }
+            .padding(.horizontal, 10 + 18)
+            .frame(height: DiskMapMetric.tableHeaderHeight)
+            Hairline()
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "doc")
-                .font(.system(size: DiskMapType.scaled(28), weight: .light))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text(allFileIDs.isEmpty ? "No unusually large files" : "No files match this filter")
-                .font(DiskMapType.section)
-                .foregroundStyle(DiskMapTheme.ink)
-            Text(
-                allFileIDs.isEmpty
-                    ? "Your largest files are all relatively small, or the scan found no files."
-                    : "Try another type filter or clear the search."
-            )
-            .font(DiskMapType.body)
-            .foregroundStyle(DiskMapTheme.mutedLabel)
-            .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
-    }
-
-    private var list: some View {
-        let ids = Array(filtered.prefix(500))
+    private func list(active: Int32?) -> some View {
+        let rows = Array(visible.prefix(500))
+        let ids = rows.map(\.id)
+        let multi = model.multiSelection
         return ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(Array(ids.enumerated()), id: \.element) { index, id in
-                    fileRow(rank: index + 1, id: id, ordered: ids)
-                    Rectangle()
-                        .fill(DiskMapTheme.cardStroke.opacity(0.65))
-                        .frame(height: 1)
-                        .padding(.leading, 56)
+                ForEach(rows) { entry in
+                    fileRow(entry, selected: entry.id == active || multi.contains(entry.id), inMulti: multi.contains(entry.id), ordered: ids)
+                    RowSeparator(indent: 10 + 14 + 12 + 24 + 12)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 18)
             .padding(.vertical, 4)
         }
         .listKeyboard(
             ids: ids, selection: $selectedID,
-            path: { tree.path(of: $0, root: rootURL).path },
+            path: { id in rows.first { $0.id == id }?.absolutePath },
             stage: { id in
-                model.stageRow(path: tree.path(of: id, root: rootURL).path, size: totals[Int(id)],
-                               reason: "Biggest file: " + tree.name(of: id))
+                if let entry = rows.first(where: { $0.id == id }) {
+                    model.stageRow(path: entry.absolutePath, size: entry.size, reason: "Biggest file: " + entry.name)
+                }
             },
             selectAll: { model.multiSelection = Set(ids) },
             clearSelection: { model.clearMultiSelection() }
@@ -276,267 +232,36 @@ struct BiggestFilesView: View {
         .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
     }
 
-    private func fileRow(rank: Int, id: Int32, ordered: [Int32]) -> some View {
-        let i = Int(id)
-        let name = tree.name(of: id)
-        let abs = tree.path(of: id, root: rootURL).path
-        let kind = FileKind.classify(fileName: name, path: abs)
-        let size = totals[i]
-        let inMulti = model.multiSelection.contains(id)
-        let selected = id == selectedID || inMulti
-        let parent = CanonicalPath.parentDisplay(of: abs)
-        let modified = relativeModified(tree.modifiedDay[i])
+    private func fileRow(_ entry: Entry, selected: Bool, inMulti: Bool, ordered: [Int32]) -> some View {
+        let stage = { model.stageRow(path: entry.absolutePath, size: entry.size, reason: "Biggest file: " + entry.name) }
         return Button {
-            selectedID = id
-            model.select(id, ordered: ordered)
+            selectedID = entry.id
+            model.select(entry.id, ordered: ordered)
         } label: {
-            HStack(alignment: .center, spacing: 12) {
-                Group {
-                    if inMulti {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(DiskMapTheme.info)
-                    } else {
-                        Text("\(rank)")
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                    }
-                }
-                .font(.system(size: DiskMapType.scaled(12), weight: .bold).monospacedDigit())
-                .frame(width: 28, alignment: .center)
-                FileIdentityIcon(url: URL(fileURLWithPath: abs), kind: kind, size: 34)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(name)
-                        .font(DiskMapType.bodyStrong)
-                        .foregroundStyle(DiskMapTheme.ink)
-                        .lineLimit(1)
-                    Text(parent)
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
-                kindPill(kind)
-                Text(modified)
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .frame(width: 88, alignment: .trailing)
-                Text(ByteFormat.string(size))
-                    .font(DiskMapType.bodyStrong.monospacedDigit())
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .frame(width: 84, alignment: .trailing)
+            KitRow(title: entry.name, subtitle: entry.parent, selected: selected,
+                   path: entry.absolutePath, onStage: stage) {
+                MultiSelectMark(on: inMulti)
+                FileIdentityIcon(url: URL(fileURLWithPath: entry.absolutePath), kind: entry.kind, size: 24)
+            } trailing: {
+                TextColumn(text: entry.kind.title, width: 92)
+                MonoColumn(text: RelativeAge.short(day: entry.modifiedDay), width: 74)
+                MonoColumn(text: ByteFormat.string(entry.size), width: 74, emphasis: true)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? DiskMapTheme.ink.opacity(0.06) : Color.clear)
-            )
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(name), \(kind.title), \(ByteFormat.string(size))")
-        .rowActions(path: abs, stage: { model.stageRow(path: abs, size: size, reason: "Biggest file: " + name) })
+        .accessibilityLabel("\(entry.name), \(entry.kind.title), \(ByteFormat.string(entry.size)), modified \(RelativeAge.long(day: entry.modifiedDay))")
+        .rowActions(path: entry.absolutePath, stage: stage)
     }
 
-    private func kindPill(_ kind: FileKind) -> some View {
-        Text(kind.title)
-            .font(DiskMapType.microStrong)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .foregroundStyle(kindTint(kind))
-            .background(Capsule().fill(kindTint(kind).opacity(0.14)))
-            .frame(width: 92, alignment: .leading)
-    }
-
-    private func kindTint(_ kind: FileKind) -> Color {
-        DiskMapTheme.kindColor(kind)
-    }
-
-    private var inspector: some View {
+    private func inspector(_ active: Entry?) -> some View {
         Group {
-            if let id = activeSelection {
-                FileInspectorPanel(
-                    model: model,
-                    tree: tree,
-                    rootURL: rootURL,
-                    id: id,
-                    size: totals[Int(id)],
-                    usedDenominator: usedDenominator,
-                    onOpenCleanup: onOpenCleanup
-                )
+            if let active {
+                FileInspector(model: model, tree: tree, rootURL: rootURL, id: active.id, size: active.size,
+                              reason: "Biggest file: " + active.name)
             } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "doc")
-                        .font(.system(size: DiskMapType.scaled(28), weight: .light))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    Text("Select a file")
-                        .font(DiskMapType.body)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                DiskMapEmptyState(symbol: "doc", title: "Select a file", message: "Its details and actions appear here.")
             }
         }
-        .background(DiskMapTheme.cardFill)
-    }
-
-    private func relativeModified(_ day: Int32) -> String {
-        guard day > 0 else { return "Unknown" }
-        let today = AgeMap.today()
-        let age = today - day
-        if age <= 0 { return "Today" }
-        if age == 1 { return "Yesterday" }
-        if age < 30 { return "\(age) days ago" }
-        if age < 365 {
-            let months = max(1, age / 30)
-            return months == 1 ? "1 month ago" : "\(months) months ago"
-        }
-        let years = max(1, age / 365)
-        return years == 1 ? "1 year ago" : "\(years) years ago"
-    }
-}
-
-/// Separated so escaping Task closures capture a stable ObservedObject cleanly.
-private struct FileInspectorPanel: View {
-    @ObservedObject var model: ScanModel
-    let tree: FileTree
-    let rootURL: URL
-    let id: Int32
-    let size: Int64
-    let usedDenominator: Int64
-    var onOpenCleanup: () -> Void = {}
-
-    var body: some View {
-        let name = tree.name(of: id)
-        let abs = tree.path(of: id, root: rootURL).path
-        let kind = FileKind.classify(fileName: name, path: abs)
-        let display = CanonicalPath.displayPath(absolutePath: abs)
-        let safety = SafetyClassifier.assess(path: abs, name: name, isDirectory: false)
-        let pct = Double(size) / Double(usedDenominator)
-        let allowTrash = safety.level != SafetyLevel.protected && kind != FileKind.virtualDisk
-        let modified = relativeModified(tree.modifiedDay[Int(id)])
-
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 12) {
-                    FileIdentityIcon(url: URL(fileURLWithPath: abs), kind: kind, size: 56)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(name)
-                            .font(DiskMapType.callout)
-                            .foregroundStyle(DiskMapTheme.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                        Text(ByteFormat.string(size))
-                            .font(.system(size: DiskMapType.scaled(26), weight: .semibold).monospacedDigit())
-                            .foregroundStyle(DiskMapTheme.ink)
-                        Text(kind.title + " · " + String(format: "%.1f%% of used storage", min(100, pct * 100)))
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    metaBlock(label: "Location", value: CanonicalPath.parentDisplay(of: abs))
-                    metaBlock(label: "Modified", value: modified)
-                }
-
-                WhyCard(title: "Why is it large?", bodyText: FileKind.whyLarge(kind: kind, name: name))
-
-                SafetyCard(assessment: safety)
-                if kind == FileKind.virtualDisk || name.lowercased().hasSuffix(".raw") {
-                    Text("Do not delete this file directly — manage storage in the owning app.")
-                        .font(DiskMapType.smallMedium)
-                        .foregroundStyle(DiskMapTheme.danger)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                VStack(spacing: 8) {
-                    if allowTrash {
-                        Button(model.isStaged(URL(fileURLWithPath: abs)) ? "Open Cleanup Queue" : "Add to Cleanup") {
-                            Task { await stageForTrash(url: URL(fileURLWithPath: abs), name: name) }
-                        }
-                        .buttonStyle(PrimaryCTAStyle(fullWidth: true))
-                    }
-
-                    Button("Reveal in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: abs)])
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-
-                    Button("Open Containing Folder") {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: abs).deletingLastPathComponent())
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-
-                    Button("Copy Path") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(display, forType: .string)
-                        model.showToast("Path copied")
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-
-                }
-                .padding(.top, 4)
-            }
-            .padding(18)
-        }
-    }
-
-    private func stageForTrash(url: URL, name: String) async {
-        let url = url.standardizedFileURL
-        let result = await model.stageForCleanup([
-            CleanupStageRequest(url: url, size: size, reason: "Biggest file: " + name)
-        ])
-        if result.added > 0 {
-            model.showToast("Added to Cleanup")
-            onOpenCleanup()
-        } else if result.alreadyPresent > 0 {
-            model.showToast("Already in Cleanup")
-            onOpenCleanup()
-        } else {
-            model.showToast("Blocked by safety rules")
-        }
-    }
-
-    private func metaBlock(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text(value)
-                .font(DiskMapType.bodyMedium)
-                .foregroundStyle(DiskMapTheme.ink)
-                .textSelection(.enabled)
-                .lineLimit(2)
-                .truncationMode(.middle)
-        }
-    }
-
-    private func safetyColor(_ level: SafetyLevel) -> Color {
-        switch level {
-        case .safe: return DiskMapTheme.safe
-        case .review: return DiskMapTheme.review
-        case .protected: return DiskMapTheme.danger
-        }
-    }
-
-    private func tint(_ kind: FileKind) -> Color {
-        DiskMapTheme.kindColor(kind)
-    }
-
-    private func relativeModified(_ day: Int32) -> String {
-        guard day > 0 else { return "Unknown" }
-        let today = AgeMap.today()
-        let age = today - day
-        if age <= 0 { return "Today" }
-        if age == 1 { return "Yesterday" }
-        if age < 30 { return "\(age) days ago" }
-        if age < 365 {
-            let months = max(1, age / 30)
-            return months == 1 ? "1 month ago" : "\(months) months ago"
-        }
-        let years = max(1, age / 365)
-        return years == 1 ? "1 year ago" : "\(years) years ago"
+        .background(DiskMapTheme.canvas)
     }
 }

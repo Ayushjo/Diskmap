@@ -12,12 +12,14 @@ import SwiftUI
 struct DiskMapSearchField: View {
     var placeholder: String
     @Binding var text: String
+    var shortcutHint: String? = nil
     @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: DiskMapSpace.xs) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .font(.system(size: DiskMapType.scaled(11.5), weight: .medium))
+                .foregroundStyle(DiskMapTheme.ink3)
                 .accessibilityHidden(true)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
@@ -26,23 +28,24 @@ struct DiskMapSearchField: View {
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .foregroundStyle(DiskMapTheme.ink3)
                 }
                 .buttonStyle(.plain)
                 .help("Clear search")
+            } else if let shortcutHint, !focused {
+                Kbd(shortcutHint)
             }
         }
         .padding(.horizontal, 10)
         .frame(height: DiskMapMetric.searchHeight)
         .background(
             RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
-                .fill(DiskMapTheme.cardFill)
+                .fill(DiskMapTheme.raised.opacity(focused ? 1 : 0.55))
                 .overlay(
                     RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
-                        .stroke(focused ? DiskMapTheme.focus.opacity(0.75) : DiskMapTheme.cardStroke, lineWidth: 1)
+                        .stroke(focused ? DiskMapTheme.accent.opacity(0.6) : DiskMapTheme.line, lineWidth: 1)
                 )
         )
-        .shadow(color: focused ? DiskMapTheme.focus.opacity(0.10) : .clear, radius: 3)
     }
 }
 
@@ -67,26 +70,20 @@ struct DiskMapMenu<Option: Hashable>: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
-                Text(label.isEmpty ? title(selection) : "\(label): \(title(selection))")
+            HStack(spacing: 5) {
+                // One Text: a borderless menu keeps only the first Text of its label.
+                (Text(label.isEmpty ? "" : label + "  ").foregroundColor(DiskMapTheme.ink3)
+                    + Text(title(selection)).foregroundColor(DiskMapTheme.ink))
                     .lineLimit(1)
                 Spacer(minLength: 2)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: DiskMapType.scaled(9), weight: .semibold))
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: DiskMapType.scaled(8.5), weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.ink3)
             }
-            .font(DiskMapType.smallMedium)
-            .foregroundStyle(DiskMapTheme.ink)
-            .padding(.horizontal, 10)
+            .font(DiskMapType.bodyEmphasis)
+            .padding(.horizontal, 9)
             .frame(width: width, height: DiskMapMetric.controlHeight)
-            .background(
-                RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
-                    .fill(DiskMapTheme.cardFill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
-                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                    )
-            )
+            .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -94,62 +91,9 @@ struct DiskMapMenu<Option: Hashable>: View {
     }
 }
 
-struct DiskMapColumnSpacer: View {
-    var width: CGFloat = DiskMapMetric.checkboxColumnWidth
-    var body: some View { Color.clear.frame(width: width, height: 1) }
-}
 
 // MARK: - Classification badge (color + text — never color alone)
 
-struct ClassificationBadge: View {
-    enum Kind {
-        case safe
-        case review
-        case protected
-        case unknown
-        case custom(title: String, tint: Color)
-
-        var title: String {
-            switch self {
-            case .safe: return "Generally safe"
-            case .review: return "Review first"
-            case .protected: return "Protected"
-            case .unknown: return "Unknown"
-            case .custom(let title, _): return title
-            }
-        }
-
-        var tint: Color {
-            switch self {
-            case .safe: return DiskMapTheme.safe
-            case .review: return DiskMapTheme.review
-            case .protected: return DiskMapTheme.danger
-            case .unknown: return DiskMapTheme.mutedLabel
-            case .custom(_, let tint): return tint
-            }
-        }
-
-        static func from(safety: SafetyLevel) -> Kind {
-            switch safety {
-            case .safe: return .safe
-            case .review: return .review
-            case .protected: return .protected
-            }
-        }
-    }
-
-    var kind: Kind
-
-    var body: some View {
-        Text(kind.title)
-            .font(DiskMapType.microStrong)
-            .foregroundStyle(kind.tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(kind.tint.opacity(0.14)))
-            .accessibilityLabel(kind.title)
-    }
-}
 
 // MARK: - Empty state
 
@@ -165,25 +109,25 @@ struct DiskMapEmptyState: View {
     var body: some View {
         VStack(spacing: DiskMapSpace.sm) {
             Image(systemName: symbol)
-                .font(.system(size: DiskMapType.scaled(28), weight: .light))
-                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .font(.system(size: DiskMapType.scaled(20), weight: .regular))
+                .foregroundStyle(DiskMapTheme.ink3)
                 .accessibilityHidden(true)
             Text(title)
-                .font(DiskMapType.callout)
+                .font(DiskMapType.bodyEmphasis)
                 .foregroundStyle(DiskMapTheme.ink)
             Text(message)
-                .font(DiskMapType.body)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .font(DiskMapType.secondary)
+                .foregroundStyle(DiskMapTheme.ink2)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
             HStack(spacing: DiskMapSpace.xs) {
                 if let primaryTitle, let primaryAction {
                     Button(primaryTitle, action: primaryAction)
-                        .buttonStyle(InkButtonStyle())
+                        .buttonStyle(PrimaryButtonStyle())
                 }
                 if let secondaryTitle, let secondaryAction {
                     Button(secondaryTitle, action: secondaryAction)
-                        .buttonStyle(InkButtonStyle(filled: false))
+                        .buttonStyle(SecondaryButtonStyle())
                 }
             }
             .padding(.top, DiskMapSpace.xs)
@@ -214,23 +158,23 @@ struct DiskMapLoadingState: View {
                     .controlSize(.regular)
             }
             Text(title)
-                .font(DiskMapType.callout)
+                .font(DiskMapType.bodyEmphasis)
                 .foregroundStyle(DiskMapTheme.ink)
             if let detail {
                 Text(detail)
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink2)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 420)
             }
             if let processed, let total, total > 0 {
                 Text("\(processed.formatted()) of \(total.formatted()) size groups")
-                    .font(DiskMapType.small.monospacedDigit())
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .font(DiskMapType.figureSmall)
+                    .foregroundStyle(DiskMapTheme.ink2)
             }
             if let onCancel {
                 Button("Cancel", action: onCancel)
-                    .buttonStyle(InkButtonStyle(filled: false))
+                    .buttonStyle(SecondaryButtonStyle())
                     .padding(.top, DiskMapSpace.xs)
             }
         }
@@ -256,29 +200,35 @@ struct SelectionToolbar: View {
 
     var body: some View {
         HStack(spacing: DiskMapSpace.xs) {
-            Text("\(selectedCount) selected · \(ByteFormat.string(selectedBytes))")
-                .font(DiskMapType.smallStrong)
+            Text("\(selectedCount.formatted()) selected")
+                .font(DiskMapType.bodyEmphasis)
                 .foregroundStyle(DiskMapTheme.ink)
-            Spacer()
+            Text(ByteFormat.string(selectedBytes))
+                .font(DiskMapType.figure)
+                .foregroundStyle(DiskMapTheme.ink2)
             Button("Clear", action: onClear)
-                .buttonStyle(InkButtonStyle(filled: false))
-            if let onReveal {
-                Button("Reveal", action: onReveal)
-                    .buttonStyle(InkButtonStyle(filled: false))
+                .buttonStyle(QuietButtonStyle())
+                .keyboardShortcut(.cancelAction)
+            Spacer()
+            HStack(spacing: 2) {
+                if let onReveal {
+                    Button(action: onReveal) { Label("Reveal in Finder", systemImage: "arrow.up.forward.app") }
+                        .help("Reveal in Finder")
+                }
+                if let paths, !paths.isEmpty {
+                    Button { copyPaths(paths) } label: { Label("Copy Paths", systemImage: "doc.on.doc") }
+                        .help("Copy the selected paths, one per line")
+                }
             }
-            if let paths, !paths.isEmpty {
-                Button("Copy Paths") { copyPaths(paths) }
-                    .buttonStyle(InkButtonStyle(filled: false))
-                    .help("Copy the selected paths, one per line")
-            }
+            .buttonStyle(IconButtonStyle())
             Button(primaryTitle, action: onPrimary)
-                .buttonStyle(PrimaryCTAStyle())
+                .buttonStyle(PrimaryButtonStyle())
                 .disabled(!primaryEnabled || selectedCount == 0)
         }
-        .padding(.horizontal, DiskMapSpace.lg)
-        .padding(.vertical, DiskMapSpace.sm)
-        .background(DiskMapTheme.cardFill)
-        .overlay(alignment: .top) { Divider().overlay(DiskMapTheme.cardStroke) }
+        .padding(.horizontal, DiskMapSpace.md)
+        .frame(height: 48)
+        .background(DiskMapTheme.canvas)
+        .overlay(alignment: .top) { Hairline() }
     }
 }
 
@@ -297,110 +247,44 @@ struct DiskMapNoticeBanner: View {
     var action: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: DiskMapSpace.sm) {
+        HStack(alignment: .firstTextBaseline, spacing: DiskMapSpace.sm) {
             Image(systemName: symbol)
-                .font(DiskMapType.section)
+                .font(.system(size: DiskMapType.scaled(11.5), weight: .medium))
                 .foregroundStyle(tint)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(DiskMapType.bodyStrong)
+                    .font(DiskMapType.bodyEmphasis)
                     .foregroundStyle(DiskMapTheme.ink)
                 Text(detail)
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink2)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(examples, id: \.self) { example in
                     Text(example)
-                        .font(DiskMapType.caption.monospaced())
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .font(DiskMapType.figureSmall)
+                        .foregroundStyle(DiskMapTheme.ink3)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                if let actionTitle, let action {
-                    Button(actionTitle, action: action)
-                        .buttonStyle(.bordered)
-                        .tint(DiskMapTheme.ink)
-                        .padding(.top, 4)
-                }
             }
             Spacer(minLength: 0)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(LinkButtonStyle())
+            }
         }
-        .padding(DiskMapSpace.sm)
+        .padding(.horizontal, DiskMapSpace.sm)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(tint.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(tint.opacity(0.25), lineWidth: 1)
-                )
+            RoundedRectangle(cornerRadius: DiskMapRadius.card, style: .continuous)
+                .stroke(DiskMapTheme.line, lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
     }
 }
 
-struct WhyCard: View {
-    var title: String = "Why is this large?"
-    var bodyText: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DiskMapSpace.xs) {
-            Text(title)
-                .font(DiskMapType.captionStrong)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text(bodyText)
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.ink.opacity(0.9))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(DiskMapSpace.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(DiskMapTheme.info.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(DiskMapTheme.info.opacity(0.2), lineWidth: 1)
-                )
-        )
-    }
-}
-
-struct SafetyCard: View {
-    var assessment: SafetyAssessment
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DiskMapSpace.xs) {
-            HStack {
-                Text("Classification")
-                    .font(DiskMapType.captionStrong)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                Spacer()
-                ClassificationBadge(kind: .from(safety: assessment.level))
-            }
-            Text(assessment.reason)
-                .font(DiskMapType.small)
-                .fixedSize(horizontal: false, vertical: true)
-            if !assessment.consequences.isEmpty {
-                Text(assessment.consequences)
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(DiskMapSpace.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(DiskMapTheme.cardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                )
-        )
-    }
-}
 
 
 // MARK: - Layout helpers
@@ -418,7 +302,7 @@ extension EnvironmentValues {
 
 enum DiskMapLayout {
     static func inspectorWidth(for windowWidth: CGFloat) -> CGFloat {
-        windowWidth >= 1450 ? 310 : 280
+        windowWidth >= 1450 ? 320 : 290
     }
 
     static func showsSideInspector(for windowWidth: CGFloat) -> Bool {
@@ -446,9 +330,10 @@ struct AdaptiveInspectorSplit<Main: View, Inspector: View>: View {
             if DiskMapLayout.showsSideInspector(for: windowWidth) {
                 HStack(spacing: 0) {
                     mainContent
-                    Divider().overlay(DiskMapTheme.cardStroke)
+                    Rectangle().fill(DiskMapTheme.line).frame(width: 1)
                     inspectorContent
                         .frame(width: DiskMapLayout.inspectorWidth(for: windowWidth))
+                        .background(DiskMapTheme.canvas)
                 }
             } else {
                 ZStack(alignment: .trailing) {
@@ -460,16 +345,15 @@ struct AdaptiveInspectorSplit<Main: View, Inspector: View>: View {
                                     showsDrawer = true
                                 } label: {
                                     Label("Inspector", systemImage: "sidebar.right")
-                                        .font(DiskMapType.captionStrong)
                                 }
-                                .buttonStyle(InkButtonStyle(filled: false))
+                                .buttonStyle(QuietButtonStyle())
                                 .help("Show Inspector")
                             }
                         }
                         .padding(.horizontal, 14)
-                        .frame(height: 42)
-                        .background(DiskMapTheme.cream)
-                        Divider().overlay(DiskMapTheme.cardStroke)
+                        .frame(height: 38)
+                        .background(DiskMapTheme.canvas)
+                        Hairline()
                         mainContent
                     }
                     if showsDrawer {
@@ -478,10 +362,10 @@ struct AdaptiveInspectorSplit<Main: View, Inspector: View>: View {
                             .onTapGesture { showsDrawer = false }
                         HStack(spacing: 0) {
                             Spacer(minLength: 0)
-                            Divider().overlay(DiskMapTheme.cardStroke)
+                            Rectangle().fill(DiskMapTheme.line).frame(width: 1)
                             inspectorContent
-                                .frame(width: min(310, max(270, windowWidth * 0.34)))
-                                .background(DiskMapTheme.inspectorFill)
+                                .frame(width: min(320, max(280, windowWidth * 0.34)))
+                                .background(DiskMapTheme.canvas)
                         }
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
@@ -500,35 +384,6 @@ struct AdaptiveInspectorSplit<Main: View, Inspector: View>: View {
 
 // MARK: - Page header
 
-struct DiskMapPageHeader: View {
-    var title: String
-    var subtitle: String
-    var symbol: String? = nil
-    var symbolTint: Color = DiskMapTheme.info
-
-    var body: some View {
-        HStack(alignment: .top, spacing: DiskMapSpace.sm) {
-            if let symbol {
-                Image(systemName: symbol)
-                    .font(.system(size: DiskMapType.scaled(18), weight: .semibold))
-                    .foregroundStyle(symbolTint)
-                    .frame(width: 36, height: 36)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(symbolTint.opacity(0.10)))
-                    .accessibilityHidden(true)
-            }
-            VStack(alignment: .leading, spacing: DiskMapSpace.xxs) {
-                Text(title)
-                    .font(DiskMapType.title)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text(subtitle)
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: DiskMapSpace.xs)
-        }
-    }
-}
 
 // MARK: - File identity
 
@@ -547,7 +402,8 @@ struct FileIdentityIcon: View {
                 MediaThumbnailView(
                     url: url,
                     size: CGSize(width: size, height: size),
-                    fallbackSymbol: resolvedKind.symbolName
+                    fallbackSymbol: resolvedKind.symbolName,
+                    fallsBackToFileIcon: false
                 )
             } else if resolvedKind == .application || url.pathExtension.lowercased() == "app" {
                 Image(nsImage: WorkspaceIconCache.icon(for: url.path))
@@ -556,14 +412,14 @@ struct FileIdentityIcon: View {
                     .padding(2)
             } else {
                 Image(systemName: resolvedKind.symbolName)
-                    .font(.system(size: size * 0.46, weight: .medium))
-                    .foregroundStyle(identityTint)
+                    .font(.system(size: size * 0.44, weight: .regular))
+                    .foregroundStyle(resolvedKind == .other ? DiskMapTheme.ink2 : identityTint)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(identityTint.opacity(0.10))
+                    .background(resolvedKind == .other ? DiskMapTheme.hover : identityTint.opacity(0.16))
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: max(7, size * 0.23), style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: max(5, size * 0.24), style: .continuous))
         .accessibilityHidden(true)
     }
 
@@ -575,17 +431,7 @@ struct FileIdentityIcon: View {
     }
 
     private var identityTint: Color {
-        switch resolvedKind {
-        case .video: return DiskMapTheme.developer
-        case .diskImage: return DiskMapTheme.info
-        case .archive: return DiskMapTheme.review
-        case .application: return DiskMapTheme.folderPastels[4]
-        case .document: return DiskMapTheme.folderPastels[5]
-        case .virtualDisk: return DiskMapTheme.developer
-        case .deviceBackup: return DiskMapTheme.safe
-        case .database: return DiskMapTheme.folderPastels[5]
-        case .other: return DiskMapTheme.mutedLabel
-        }
+        DiskMapTheme.kindColor(resolvedKind)
     }
 }
 
@@ -611,6 +457,9 @@ struct MediaThumbnailView: View {
     var fallbackSymbol: String = "doc"
     var showPlayBadge: Bool = false
     var allowsPreview: Bool = true
+    /// When the thumbnail can't be made: the Finder icon (large previews) or
+    /// the quiet kind glyph (small row icons, where a white page glares).
+    var fallsBackToFileIcon: Bool = true
 
     @State private var image: NSImage?
     @State private var failed = false
@@ -618,7 +467,7 @@ struct MediaThumbnailView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(DiskMapTheme.navSelected)
+                .fill(DiskMapTheme.hover)
             if let image {
                 Image(nsImage: image)
                     .resizable()
@@ -628,8 +477,8 @@ struct MediaThumbnailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             } else {
                 Image(systemName: fallbackSymbol)
-                    .font(.system(size: min(size.height, size.width) * 0.28))
-                    .foregroundStyle(DiskMapTheme.info)
+                    .font(.system(size: min(size.height, size.width) * (min(size.height, size.width) <= 48 ? 0.44 : 0.28)))
+                    .foregroundStyle(DiskMapTheme.ink3)
             }
             if showPlayBadge {
                 Image(systemName: "play.circle.fill")
@@ -672,8 +521,7 @@ struct MediaThumbnailView: View {
         } catch {
             guard !Task.isCancelled else { return }
             failed = true
-            // Fallback: NSWorkspace icon
-            image = NSWorkspace.shared.icon(forFile: url.path)
+            image = fallsBackToFileIcon ? NSWorkspace.shared.icon(forFile: url.path) : nil
         }
     }
 }

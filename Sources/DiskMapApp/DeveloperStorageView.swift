@@ -2,35 +2,41 @@ import AppKit
 import DiskMapCore
 import SwiftUI
 
-/// Explore → Developer Storage: taxonomy, ecosystems, projects, reclaimability.
+/// Explore → Developer Storage: dependencies, caches and build output, by
+/// project, item, opportunity and tool (the former Regenerable Data page).
 struct DeveloperStorageView: View {
     @ObservedObject var model: ScanModel
     @Environment(\.diskMapContentWidth) private var contentWidth
     var pickFolder: () -> Void
-    var onOpenCleanup: () -> Void
 
     @State private var selectedID: String?
     @State private var tableTab: TableTab = .projects
     @State private var query = ""
     @State private var categoryFilter: DeveloperCategory?
+    @State private var checked: Set<String> = []
+    /// The By tool tab (TASK-002 quick wins), built when first opened.
+    @State private var toolHits: [QuickWins.Hit]?
+    @State private var checkedTools: Set<Int32> = []
+    @State private var selectedTool: Int32?
 
-    private enum TableTab: String, CaseIterable, Identifiable {
-        case projects, allItems, opportunities
+    private let toolCategories = QuickWins.bundledCategories()
+
+    enum TableTab: String, CaseIterable, Identifiable {
+        case projects, allItems, opportunities, byTool
         var id: String { rawValue }
         var title: String {
             switch self {
             case .projects: return "Projects"
-            case .allItems: return "All Items"
+            case .allItems: return "Items"
             case .opportunities: return "Opportunities"
+            case .byTool: return "By tool"
             }
         }
     }
 
-    private var catalog: DeveloperCatalogResult {
-        model.cachedDeveloper
-    }
-
+    private var catalog: DeveloperCatalogResult { model.cachedDeveloper }
     private var summary: DeveloperSummary { catalog.summary }
+    private var totals: [Int64] { model.selectedTotals }
 
     private var activeItem: DeveloperItem? {
         if let selectedID {
@@ -46,92 +52,91 @@ struct DeveloperStorageView: View {
     var body: some View {
         Group {
             if model.tree == nil {
-                emptyScan
+                DiskMapEmptyState(symbol: "chevron.left.forwardslash.chevron.right", title: "Scan to see developer storage",
+                                  message: "Dependencies, caches and build output, after a scan.",
+                                  primaryTitle: "Choose Folder…", primaryAction: pickFolder)
             } else {
-                AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID, main: mainColumn, inspector: inspector)
+                AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: tableTab == .byTool ? selectedTool.map(String.init) : selectedID,
+                                       main: mainColumn, inspector: inspector)
             }
         }
-        .background(DiskMapTheme.cream)
+        .background(DiskMapTheme.canvas)
         .catalogGate(.developer, model: model, title: "Sorting developer storage…")
-    }
-
-    private var emptyScan: some View {
-        VStack(spacing: 12) {
-            Text("Scan to analyze developer storage.")
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Button("Choose Folder…", action: pickFolder).buttonStyle(InkButtonStyle())
+        .task(id: tableTab == .byTool ? model.scanID : nil) {
+            guard tableTab == .byTool, let tree = model.tree, let root = model.rootURL else { return }
+            toolHits = nil
+            checkedTools = []
+            let categories = toolCategories
+            let found = await Task.detached(priority: .userInitiated) {
+                QuickWins.findCategorized(in: tree, root: root, categories: categories)
+            }.value
+            guard !Task.isCancelled else { return }
+            toolHits = found
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var mainColumn: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                headlineCard
-                summaryRow
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader(eyebrow: "Explore", title: "Developer Storage",
+                           subtitle: "Dependencies, caches and build output — what each costs to rebuild, and whether the project is backed up.") {
+                    HeaderSummary(parts: [countLabel(summary.toolCount, "tool"), countLabel(summary.projectCount, "project")])
+                }
+                notice
+                FigureStrip(figures: [
+                    Figure(label: "Developer storage", value: ByteFormat.string(summary.totalBytes)),
+                    Figure(label: "Reclaimable", value: ByteFormat.string(summary.reclaimableBytes), detail: percent(summary.reclaimableBytes)),
+                    Figure(label: "Likely keep", value: ByteFormat.string(summary.keepBytes), detail: percent(summary.keepBytes)),
+                ])
                 categoryBar
-                ecosystemsRow
-                opportunitiesRow
-                tableSection
-            }
-            .padding(20)
-        }
-        .listKeyboard(
-            ids: keyboardItemIDs, selection: $selectedID,
-            path: { id in catalog.items.first { $0.id == id }?.absolutePath },
-            stage: { id in
-                guard let item = catalog.items.first(where: { $0.id == id }) else { return }
-                if let recipe = item.recipe, recipe.trashIsUnsafe {
-                    // Same rule as the inspector: Trash would damage the tool's own state.
-                    model.showToast("Use the tool instead: \(recipe.command)")
-                } else {
-                    model.stageRow(path: item.absolutePath, size: item.bytes, reason: "Developer: \(item.displayName)")
+                KitTabs(tabs: TableTab.allCases.map { tab in
+                    .init(id: tab, title: tab.title, count: tabCount(tab).map { "\($0)" })
+                }, selection: $tableTab)
+                HStack(spacing: 10) {
+                    DiskMapSearchField(placeholder: "Filter by name, path or ecosystem", text: $query)
+                        .frame(maxWidth: 320)
+                    if let categoryFilter, tableTab == .allItems {
+                        Chip(title: categoryFilter.title, symbol: "xmark", isOn: true) { self.categoryFilter = nil }
+                    }
+                    Spacer()
                 }
             }
-        )
-    }
-
-    /// Rows of the table tab on screen, in order, as item ids.
-    private var keyboardItemIDs: [String] {
-        switch tableTab {
-        case .projects:
-            return filteredProjects.prefix(40).compactMap { project in
-                catalog.items.first(where: { project.nodeIDs.contains($0.nodeID) })?.id
+            .padding(.horizontal, 28)
+            .padding(.top, DiskMapSpace.pageTop)
+            .padding(.bottom, 12)
+            Hairline()
+            switch tableTab {
+            case .projects: projectsList
+            case .allItems: itemsList(filteredItems)
+            case .opportunities: itemsList(catalog.opportunities)
+            case .byTool: toolsList
             }
-        case .allItems:
-            return filteredItems.map(\.id)
-        case .opportunities:
-            return catalog.opportunities.map(\.id)
+            footer
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Developer Storage")
-                .font(DiskMapType.title)
-                .foregroundStyle(DiskMapTheme.ink)
-            Text("Tooling, dependencies, and build products — with reclaimability and safety. Nothing is deleted here; stage into Cleanup to confirm.")
-                .font(DiskMapType.body)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .fixedSize(horizontal: false, vertical: true)
+    private func tabCount(_ tab: TableTab) -> Int? {
+        switch tab {
+        case .projects: return catalog.projects.count
+        case .allItems: return filteredItems.count
+        case .opportunities: return catalog.opportunities.count
+        case .byTool: return toolHits?.count
         }
     }
 
-    /// The decision-grade headline (TASK-056/052): what is safe to drop because
-    /// nobody works on it, and what could not be reproduced if dropped.
+    /// One notice: stale projects, unpinned dependencies, or both.
     @ViewBuilder
-    private var headlineCard: some View {
+    private var notice: some View {
         if summary.staleProjectCount > 0 {
             DiskMapNoticeBanner(
                 symbol: "clock.arrow.circlepath",
-                tint: DiskMapTheme.developer,
+                tint: DiskMapTheme.ink2,
                 title: "\(countLabel(summary.staleProjectCount, "project")) untouched for 6+ months "
                     + "\(summary.staleProjectCount == 1 ? "holds" : "hold") \(ByteFormat.string(summary.staleReclaimableBytes)) of dependencies and build output",
-                detail: "Measured from the newest source file in each project — reinstalled dependencies and fresh build output don’t count as activity. Check the Git column before removing a whole project."
+                detail: "Measured from each project’s newest source file. Check Git before removing a whole project."
+                    + (summary.unpinnedBytes > 0 ? " \(ByteFormat.string(summary.unpinnedBytes)) of dependencies have no lockfile." : "")
             )
-        }
-        if summary.unpinnedBytes > 0 {
+        } else if summary.unpinnedBytes > 0 {
             DiskMapNoticeBanner(
                 symbol: "exclamationmark.triangle",
                 tint: DiskMapTheme.review,
@@ -141,268 +146,50 @@ struct DeveloperStorageView: View {
         }
     }
 
-    private var summaryRow: some View {
-        HStack(alignment: .top, spacing: 12) {
-            summaryCard(
-                title: "Developer Storage",
-                value: ByteFormat.string(summary.totalBytes),
-                subtitle: "\(countLabel(summary.toolCount, "tool")) · \(countLabel(summary.projectCount, "project"))",
-                tint: DiskMapTheme.developer
-            )
-            summaryCard(
-                title: "Potentially reclaimable",
-                value: ByteFormat.string(summary.reclaimableBytes),
-                subtitle: percent(summary.reclaimableBytes, of: summary.totalBytes),
-                tint: DiskMapTheme.safe
-            )
-            summaryCard(
-                title: "Likely active / keep",
-                value: ByteFormat.string(summary.keepBytes),
-                subtitle: percent(summary.keepBytes, of: summary.totalBytes),
-                tint: DiskMapTheme.review
-            )
-        }
-    }
-
-    private func summaryCard(title: String, value: String, subtitle: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(DiskMapType.captionStrong)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text(value)
-                .font(DiskMapType.title.monospacedDigit())
-                .foregroundStyle(tint)
-            Text(subtitle)
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(DiskMapTheme.cardFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                )
-        )
-    }
-
+    /// One stacked bar; its legend entries filter the Items tab.
     private var categoryBar: some View {
         let total = max(1, summary.totalBytes)
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Storage breakdown")
-                .font(DiskMapType.smallStrong)
-                .foregroundStyle(DiskMapTheme.ink)
-            GeometryReader { geo in
-                HStack(spacing: 2) {
-                    ForEach(summary.categories) { roll in
-                        let w = geo.size.width * CGFloat(Double(roll.bytes) / Double(total))
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(color(for: roll.category))
-                            .frame(width: max(roll.bytes > 0 ? 4 : 0, w))
-                            .help("\(roll.category.title): \(ByteFormat.string(roll.bytes))")
-                    }
-                }
-            }
-            .frame(height: 14)
-            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-
-            // 200 pt: at 140 a label like "Dependencies 14.7 MB 39%" wrapped
-            // mid-word ("Dependenci / es").
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 8)], alignment: .leading, spacing: 6) {
+            SegmentedStorageBar(segments: summary.categories.map {
+                (color(for: $0.category).opacity(categoryFilter == nil || categoryFilter == $0.category ? 1 : 0.3),
+                 Double($0.bytes) / Double(total))
+            })
+            .accessibilityHidden(true)
+            HStack(spacing: 14) {
                 ForEach(summary.categories) { roll in
+                    let on = categoryFilter == roll.category
                     Button {
-                        categoryFilter = categoryFilter == roll.category ? nil : roll.category
+                        categoryFilter = on ? nil : roll.category
                         tableTab = .allItems
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 5) {
                             Circle().fill(color(for: roll.category)).frame(width: 7, height: 7)
                             Text(roll.category.title)
-                                .foregroundStyle(DiskMapTheme.ink)
-                                .lineLimit(1)
-                                .fixedSize()
+                                .font(on ? DiskMapType.bodyEmphasis : DiskMapType.secondary)
+                                .foregroundStyle(on ? DiskMapTheme.ink : DiskMapTheme.ink2)
                             Text(ByteFormat.string(roll.bytes))
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .monospacedDigit()
-                            if let pct = Optional(Double(roll.bytes) / Double(total)) {
-                                Text(String(format: "%.0f%%", pct * 100))
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                            }
+                                .font(DiskMapType.figureSmall)
+                                .foregroundStyle(DiskMapTheme.ink3)
                         }
-                        .font(DiskMapType.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(categoryFilter == roll.category ? DiskMapTheme.navSelected : Color.clear)
-                        )
+                        .fixedSize()
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("\(roll.category.title), \(ByteFormat.string(roll.bytes))")
+                    .accessibilityAddTraits(on ? .isSelected : [])
                 }
+                Spacer(minLength: 0)
             }
         }
-        .padding(14)
-        .background(cardBackground)
-    }
-
-    private var ecosystemsRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Developer ecosystems")
-                .font(DiskMapType.smallStrong)
-                .foregroundStyle(DiskMapTheme.ink)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(summary.ecosystems.prefix(8)) { eco in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 6) {
-                                Image(systemName: eco.ecosystem.symbolName)
-                                    .font(DiskMapType.smallStrong)
-                                    .foregroundStyle(DiskMapTheme.developer)
-                                Text(eco.ecosystem.title)
-                                    .font(DiskMapType.smallStrong)
-                                    .foregroundStyle(DiskMapTheme.ink)
-                            }
-                            Text(ByteFormat.string(eco.bytes))
-                                .font(DiskMapType.headline.monospacedDigit())
-                                .foregroundStyle(DiskMapTheme.ink)
-                            Text(countLabel(eco.itemCount, "item"))
-                                .font(DiskMapType.micro)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                        }
-                        .padding(12)
-                        .frame(width: 140, alignment: .leading)
-                        .background(cardBackground)
-                    }
-                }
-            }
-        }
-    }
-
-    private var opportunitiesRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Best opportunities")
-                    .font(DiskMapType.smallStrong)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Spacer()
-                Button("Review all") {
-                    tableTab = .opportunities
-                }
-                .font(DiskMapType.captionStrong)
-                .foregroundStyle(DiskMapTheme.developer)
-                .buttonStyle(.plain)
-            }
-            if catalog.opportunities.isEmpty {
-                Text("No clear reclaim opportunities in this scan root.")
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-            } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 10)], spacing: 10) {
-                    ForEach(catalog.opportunities.prefix(4)) { item in
-                        Button {
-                            selectedID = item.id
-                        } label: {
-                            HStack(alignment: .top, spacing: 10) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.displayName)
-                                        .font(DiskMapType.bodyStrong)
-                                        .foregroundStyle(DiskMapTheme.ink)
-                                        .lineLimit(1)
-                                    Text(item.safety.level.title)
-                                        .font(DiskMapType.microStrong)
-                                        .foregroundStyle(safetyColor(item.safety.level))
-                                }
-                                Spacer(minLength: 0)
-                                Text(ByteFormat.string(item.bytes))
-                                    .font(DiskMapType.smallStrong.monospacedDigit())
-                                    .foregroundStyle(DiskMapTheme.ink)
-                            }
-                            .padding(12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(selectedID == item.id ? DiskMapTheme.navSelected : DiskMapTheme.cardFill)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                                    )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-    }
-
-    private var tableSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                ForEach(TableTab.allCases) { tab in
-                    let count: Int = {
-                        switch tab {
-                        case .projects: return catalog.projects.count
-                        case .allItems: return filteredItems.count
-                        case .opportunities: return catalog.opportunities.count
-                        }
-                    }()
-                    Button {
-                        tableTab = tab
-                    } label: {
-                        Text("\(tab.title) (\(count))")
-                            .font(.system(size: DiskMapType.scaled(12), weight: tableTab == tab ? .semibold : .regular))
-                            .foregroundStyle(tableTab == tab ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
-                            .padding(.bottom, 8)
-                            .overlay(alignment: .bottom) {
-                                Rectangle()
-                                    .fill(tableTab == tab ? DiskMapTheme.developer : Color.clear)
-                                    .frame(height: 2)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                }
-                Spacer()
-                TextField("Filter…", text: $query)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .frame(width: 180)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(DiskMapTheme.cardFill)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                            )
-                    )
-            }
-            .padding(.bottom, 8)
-
-            Divider().overlay(DiskMapTheme.cardStroke)
-
-            switch tableTab {
-            case .projects:
-                projectsTable
-            case .allItems:
-                itemsTable(filteredItems)
-            case .opportunities:
-                itemsTable(catalog.opportunities)
-            }
-        }
-        .padding(14)
-        .background(cardBackground)
     }
 
     private var filteredItems: [DeveloperItem] {
         var list = catalog.items
-        if let categoryFilter {
-            list = list.filter { $0.category == categoryFilter }
-        }
+        if let categoryFilter { list = list.filter { $0.category == categoryFilter } }
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !q.isEmpty {
             list = list.filter {
-                $0.displayName.lowercased().contains(q)
-                    || $0.displayPath.lowercased().contains(q)
+                $0.displayName.lowercased().contains(q) || $0.displayPath.lowercased().contains(q)
                     || $0.ecosystem.title.lowercased().contains(q)
             }
         }
@@ -413,439 +200,410 @@ struct DeveloperStorageView: View {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return catalog.projects }
         return catalog.projects.filter {
-            $0.name.lowercased().contains(q)
-                || $0.displayPath.lowercased().contains(q)
+            $0.name.lowercased().contains(q) || $0.displayPath.lowercased().contains(q)
                 || $0.ecosystem.title.lowercased().contains(q)
         }
     }
 
-    private var projectsTable: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Text("Project").frame(maxWidth: .infinity, alignment: .leading)
-                Text("Size").frame(width: 72, alignment: .trailing)
-                Text("Reclaimable").frame(width: 80, alignment: .trailing)
-                Text("Rebuild").frame(width: 92, alignment: .leading)
-                Text("Last change").frame(width: 84, alignment: .leading)
-                Text("Git").frame(width: 84, alignment: .leading)
-            }
-            .font(DiskMapType.microStrong)
-            .foregroundStyle(DiskMapTheme.mutedLabel)
-            .padding(.vertical, 8)
+    // MARK: Lists
 
-            if filteredProjects.isEmpty {
-                Text("No project-scoped developer folders found (e.g. node_modules, Pods, .venv).")
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: .infinity)
+    private var projectsList: some View {
+        let projects = Array(filteredProjects.prefix(60))
+        return Group {
+            if projects.isEmpty {
+                DiskMapEmptyState(symbol: "folder", title: "No projects found",
+                                  message: "No project-scoped folders such as node_modules, Pods or .venv in this scan.")
             } else {
-                ForEach(filteredProjects.prefix(40)) { proj in
-                    Button {
-                        selectedID = catalog.items.first(where: { proj.nodeIDs.contains($0.nodeID) })?.id ?? proj.id
-                    } label: {
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(proj.name)
-                                    .font(DiskMapType.smallStrong)
-                                    .foregroundStyle(DiskMapTheme.ink)
-                                    .lineLimit(1)
-                                Text("\(proj.ecosystem.title) · \(proj.displayPath)")
-                                    .font(DiskMapType.micro)
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(projects) { proj in
+                            let itemID = catalog.items.first(where: { proj.nodeIDs.contains($0.nodeID) })?.id ?? proj.id
+                            Button { selectedID = itemID } label: {
+                                KitRow(title: proj.name, subtitle: "\(proj.ecosystem.title) · " + (model.rootURL.map { relativeParent(of: proj.absolutePath, root: $0) } ?? proj.displayPath),
+                                       selected: isProjectSelected(proj), path: proj.absolutePath, onStage: nil) {
+                                    Image(systemName: proj.ecosystem.symbolName)
+                                        .font(.system(size: DiskMapType.scaled(13)))
+                                        .foregroundStyle(DiskMapTheme.ink2)
+                                        .frame(width: 24, height: 24)
+                                } trailing: {
+                                    SafetyLabel(level: nil, title: DeveloperLabels.gitShort(proj.git), tint: DeveloperLabels.gitTint(proj.git))
+                                        .frame(width: DiskMapType.scaled(92), alignment: .leading)
+                                        .help(proj.git.detail)
+                                    TextColumn(text: DeveloperLabels.rebuildShort(proj.rebuildCost), width: 92)
+                                    MonoColumn(text: RelativeAge.short(day: proj.lastSourceDay), width: 56)
+                                    MonoColumn(text: ByteFormat.string(proj.reclaimableBytes), width: 74)
+                                        .help("Reclaimable")
+                                    MonoColumn(text: ByteFormat.string(proj.bytes), width: 74, emphasis: true)
+                                }
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(ByteFormat.string(proj.bytes))
-                                .font(DiskMapType.caption.monospacedDigit())
-                                .frame(width: 72, alignment: .trailing)
-                            Text(ByteFormat.string(proj.reclaimableBytes))
-                                .font(DiskMapType.caption.monospacedDigit())
-                                .foregroundStyle(DiskMapTheme.safe)
-                                .frame(width: 80, alignment: .trailing)
-                            Text(DeveloperLabels.rebuildShort(proj.rebuildCost))
-                                .font(DiskMapType.caption)
-                                .foregroundStyle(DeveloperLabels.rebuildTint(proj.rebuildCost))
-                                .frame(width: 92, alignment: .leading)
-                                .lineLimit(1)
-                            Text(DeveloperLabels.lastChange(proj.lastSourceDay))
-                                .font(DiskMapType.caption)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .frame(width: 84, alignment: .leading)
-                                .lineLimit(1)
-                            Text(DeveloperLabels.gitShort(proj.git))
-                                .font(DiskMapType.captionMedium)
-                                .foregroundStyle(DeveloperLabels.gitTint(proj.git))
-                                .frame(width: 84, alignment: .leading)
-                                .lineLimit(1)
-                                .help(proj.git.detail)
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(proj.name), \(ByteFormat.string(proj.bytes)), \(ByteFormat.string(proj.reclaimableBytes)) reclaimable, \(DeveloperLabels.gitShort(proj.git))")
+                            RowSeparator(indent: 10 + 24 + 12)
                         }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(isProjectSelected(proj) ? DiskMapTheme.navSelected : Color.clear)
-                        )
                     }
-                    .buttonStyle(.plain)
-                    Divider().overlay(DiskMapTheme.cardStroke.opacity(0.6))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 4)
                 }
+                .listKeyboard(
+                    ids: projects.compactMap { p in catalog.items.first(where: { p.nodeIDs.contains($0.nodeID) })?.id },
+                    selection: $selectedID,
+                    path: { id in catalog.items.first { $0.id == id }?.absolutePath },
+                    stage: { id in if let item = catalog.items.first(where: { $0.id == id }) { stage([item]) } }
+                )
             }
         }
     }
 
-    private func itemsTable(_ items: [DeveloperItem]) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Text("Item").frame(maxWidth: .infinity, alignment: .leading)
-                Text("Category").frame(width: 100, alignment: .leading)
-                Text("Eco").frame(width: 72, alignment: .leading)
-                Text("Size").frame(width: 72, alignment: .trailing)
-                Text("Safety").frame(width: 100, alignment: .leading)
-            }
-            .font(DiskMapType.microStrong)
-            .foregroundStyle(DiskMapTheme.mutedLabel)
-            .padding(.vertical, 8)
-
-            if items.isEmpty {
-                Text("No matching developer items.")
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: .infinity)
+    private func itemsList(_ items: [DeveloperItem]) -> some View {
+        let shown = Array(items.prefix(120))
+        return Group {
+            if shown.isEmpty {
+                DiskMapEmptyState(symbol: "shippingbox", title: "Nothing here", message: "No matching developer items.")
             } else {
-                ForEach(items.prefix(60)) { item in
-                    Button {
-                        selectedID = item.id
-                    } label: {
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.displayName)
-                                    .font(DiskMapType.smallStrong)
-                                    .foregroundStyle(DiskMapTheme.ink)
-                                    .lineLimit(1)
-                                Text(item.displayPath)
-                                    .font(DiskMapType.micro)
-                                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                                    .lineLimit(1)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(item.category.shortTitle)
-                                .font(DiskMapType.caption)
-                                .frame(width: 100, alignment: .leading)
-                                .lineLimit(1)
-                            Text(item.ecosystem.title)
-                                .font(DiskMapType.caption)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .frame(width: 72, alignment: .leading)
-                                .lineLimit(1)
-                            Text(ByteFormat.string(item.bytes))
-                                .font(DiskMapType.caption.monospacedDigit())
-                                .frame(width: 72, alignment: .trailing)
-                            Text(item.safety.level.title)
-                                .font(DiskMapType.captionStrong)
-                                .foregroundStyle(safetyColor(item.safety.level))
-                                .frame(width: 100, alignment: .leading)
-                                .lineLimit(1)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(shown) { item in
+                            itemRow(item)
+                            RowSeparator(indent: 10 + 18 + 10 + 24 + 12)
                         }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(selectedID == item.id ? DiskMapTheme.navSelected : Color.clear)
-                        )
                     }
-                    .buttonStyle(.plain)
-                    Divider().overlay(DiskMapTheme.cardStroke.opacity(0.6))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 4)
+                }
+                .listKeyboard(
+                    ids: shown.map(\.id), selection: $selectedID,
+                    path: { id in catalog.items.first { $0.id == id }?.absolutePath },
+                    stage: { id in if let item = catalog.items.first(where: { $0.id == id }) { stage([item]) } },
+                    selectAll: { checked = Set(shown.filter(canStage).map(\.id)) },
+                    clearSelection: { checked.removeAll() }
+                )
+            }
+        }
+    }
+
+    private func canStage(_ item: DeveloperItem) -> Bool {
+        !item.isProtected && item.recipe?.trashIsUnsafe != true
+    }
+
+    private func itemRow(_ item: DeveloperItem) -> some View {
+        let isOn = checked.contains(item.id)
+        return CheckRow {
+            KitCheckbox(isOn: Binding(get: { isOn }, set: { on in
+                if on { checked.insert(item.id) } else { checked.remove(item.id) }
+            }), label: isOn ? "Unmark \(item.displayName)" : "Mark \(item.displayName)")
+                .disabled(!canStage(item))
+            Button { selectedID = item.id } label: {
+                KitRow(title: item.displayName, subtitle: "\(item.category.shortTitle) · " + (model.rootURL.map { relativeParent(of: item.absolutePath, root: $0) } ?? item.displayPath),
+                       selected: item.id == activeItem?.id, path: item.absolutePath,
+                       onStage: canStage(item) ? { stage([item]) } : nil) {
+                    Image(systemName: item.ecosystem.symbolName)
+                        .font(.system(size: DiskMapType.scaled(13)))
+                        .foregroundStyle(DiskMapTheme.ink2)
+                        .frame(width: 24, height: 24)
+                } trailing: {
+                    TextColumn(text: item.ecosystem.title, width: 84)
+                    SafetyLabel(level: item.safety.level)
+                        .frame(width: DiskMapType.scaled(104), alignment: .leading)
+                    MonoColumn(text: ByteFormat.string(item.bytes), width: 74, emphasis: true)
                 }
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(item.displayName), \(ByteFormat.string(item.bytes)), \(item.safety.level.title)")
+            .rowActions(path: item.absolutePath, stage: canStage(item) ? { stage([item]) } : nil)
+        }
+    }
+
+    // MARK: By tool (former Regenerable Data)
+
+    private var toolsList: some View {
+        Group {
+            if let hits = toolHits {
+                if hits.isEmpty {
+                    DiskMapEmptyState(symbol: "leaf", title: "Nothing regenerable found", message: "No dependency folders, build output or tool caches in this scan.")
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(toolCategories) { category in
+                                let group = toolGroup(category, hits: hits)
+                                if !group.isEmpty { toolSection(category, group: group) }
+                            }
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.bottom, 8)
+                    }
+                }
+            } else {
+                DiskMapLoadingState(title: "Grouping by tool", detail: "Matching folders against the known patterns.")
+            }
+        }
+    }
+
+    private func toolGroup(_ category: QuickWins.Category, hits: [QuickWins.Hit]) -> [QuickWins.Hit] {
+        hits.filter { $0.categoryID == category.id }.sorted { toolSize($0.id) > toolSize($1.id) }
+    }
+
+    private func toolSize(_ id: Int32) -> Int64 { Int(id) < totals.count ? totals[Int(id)] : 0 }
+
+    private func toolSection(_ category: QuickWins.Category, group: [QuickWins.Hit]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHeader(label: category.title,
+                          detail: "\(countLabel(group.count, "item")) · \(ByteFormat.string(group.reduce(0) { $0 + toolSize($1.id) }))") {
+                Button("Add all to Cleanup") { stageTools(group.map(\.id), category: category.id) }
+                    .buttonStyle(LinkButtonStyle())
+                    .font(DiskMapType.secondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 18)
+            if !category.note.isEmpty {
+                Text(category.note)
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+            }
+            ForEach(group) { hit in
+                toolRow(hit, category: category.id)
+            }
+        }
+    }
+
+    private func toolRow(_ hit: QuickWins.Hit, category: String) -> some View {
+        let abs = model.tree.flatMap { tree in model.rootURL.map { tree.path(of: hit.id, root: $0).path } } ?? hit.name
+        let isOn = checkedTools.contains(hit.id)
+        return CheckRow {
+            KitCheckbox(isOn: Binding(get: { isOn }, set: { on in
+                if on { checkedTools.insert(hit.id) } else { checkedTools.remove(hit.id) }
+            }), label: isOn ? "Unmark \(hit.name)" : "Mark \(hit.name)")
+            Button { selectedTool = hit.id } label: {
+                KitRow(title: hit.name, subtitle: model.rootURL.map { relativeParent(of: abs, root: $0) },
+                       selected: selectedTool == hit.id, path: abs,
+                       onStage: { stageTools([hit.id], category: category) }, height: DiskMapSpace.rowTwoLine) {
+                    Image(systemName: "folder")
+                        .font(.system(size: DiskMapType.scaled(13)))
+                        .foregroundStyle(DiskMapTheme.ink2)
+                        .frame(width: 24, height: 24)
+                } trailing: {
+                    MonoColumn(text: ByteFormat.string(toolSize(hit.id)), width: 74, emphasis: true)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(hit.name), \(ByteFormat.string(toolSize(hit.id)))")
+            .rowActions(path: abs, stage: { stageTools([hit.id], category: category) })
+        }
+    }
+
+    // MARK: Footer, inspector, staging
+
+    @ViewBuilder
+    private var footer: some View {
+        if tableTab == .byTool {
+            if toolHits?.isEmpty == false {
+                ReviewFooter(
+                    checkedCount: checkedTools.count,
+                    checkedBytes: checkedTools.reduce(0) { $0 + toolSize($1) },
+                    hint: "Tick folders to clean, or use Add all on a group.",
+                    quickSelectTitle: "",
+                    quickSelectEnabled: false,
+                    onQuickSelect: {},
+                    onStage: { stageTools(Array(checkedTools), category: nil) },
+                    onClear: { checkedTools.removeAll() },
+                    onReveal: { revealNodes(Array(checkedTools)) },
+                    paths: checkedTools.compactMap(path(of:))
+                )
+            }
+        } else if tableTab != .projects {
+            let items = catalog.items.filter { checked.contains($0.id) }
+            ReviewFooter(
+                checkedCount: items.count,
+                checkedBytes: items.reduce(0) { $0 + $1.bytes },
+                hint: "Tick items to clean, or",
+                quickSelectTitle: "Select reclaimable",
+                onQuickSelect: {
+                    let source = tableTab == .opportunities ? catalog.opportunities : filteredItems
+                    checked = Set(source.filter { canStage($0) && $0.reclaimability == .reclaimable }.map(\.id))
+                },
+                onStage: { stage(items) },
+                onClear: { checked.removeAll() },
+                onReveal: { NSWorkspace.shared.activateFileViewerSelecting(items.map { URL(fileURLWithPath: $0.absolutePath) }) },
+                paths: items.map(\.absolutePath)
+            )
         }
     }
 
     private var inspector: some View {
         Group {
-            if let item = activeItem {
-                DeveloperInspector(
-                    model: model,
-                    item: item,
-                    project: catalog.projects.first { $0.id == item.projectKey },
-                    onOpenCleanup: onOpenCleanup
-                )
-            } else {
-                VStack(spacing: 8) {
-                    Text("Select an item")
-                        .font(DiskMapType.bodyStrong)
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Text("Pick an opportunity, project, or developer folder to see why it’s large and whether it’s safe to clear.")
-                        .font(DiskMapType.small)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .multilineTextAlignment(.center)
+            if tableTab == .byTool {
+                if let id = selectedTool, let tree = model.tree, let root = model.rootURL {
+                    FolderInspector(model: model, tree: tree, rootURL: root, id: id, reason: "Developer: " + tree.name(of: id))
+                } else {
+                    DiskMapEmptyState(symbol: "folder", title: "Select a folder", message: "Its details and actions appear here.")
                 }
-                .padding(24)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let item = activeItem {
+                DeveloperInspector(model: model, item: item, project: catalog.projects.first { $0.id == item.projectKey }) {
+                    stage([item])
+                }
+            } else {
+                DiskMapEmptyState(symbol: "shippingbox", title: "Select an item",
+                                  message: "See why it’s large and what removing it costs.")
             }
         }
-        .background(DiskMapTheme.cardFill.opacity(0.5))
+        .background(DiskMapTheme.canvas)
     }
-
-    private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(DiskMapTheme.cardFill)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-            )
-    }
-
 
     private func isProjectSelected(_ proj: DeveloperProject) -> Bool {
-        guard let selectedID,
-              let item = catalog.items.first(where: { $0.id == selectedID }) else {
-            return false
-        }
+        guard let item = activeItem else { return false }
         return proj.nodeIDs.contains(item.nodeID)
     }
 
-    private func percent(_ part: Int64, of total: Int64) -> String {
-        guard total > 0 else { return "—" }
-        return String(format: "%.0f%% of developer storage", Double(part) / Double(total) * 100)
+    private func percent(_ part: Int64) -> String {
+        guard summary.totalBytes > 0 else { return "—" }
+        return String(format: "%.0f%%", Double(part) / Double(summary.totalBytes) * 100)
     }
 
+    /// The data palette, in a fixed order per category.
     private func color(for category: DeveloperCategory) -> Color {
         switch category {
-        case .dependencies: return Color(red: 0.30, green: 0.55, blue: 0.95)
-        case .caches: return DiskMapTheme.safe
-        case .buildArtifacts: return DiskMapTheme.review
-        case .containers: return DiskMapTheme.developer
-        case .sdksSimulators: return Color(red: 0.90, green: 0.40, blue: 0.55)
-        case .other: return DiskMapTheme.mutedLabel.opacity(0.55)
+        case .dependencies: return DiskMapTheme.data(0)
+        case .caches: return DiskMapTheme.data(3)
+        case .buildArtifacts: return DiskMapTheme.data(4)
+        case .containers: return DiskMapTheme.data(1)
+        case .sdksSimulators: return DiskMapTheme.data(2)
+        case .other: return DiskMapTheme.data(6)
         }
     }
 
-    private func safetyColor(_ level: SafetyLevel) -> Color {
-        switch level {
-        case .safe: return DiskMapTheme.safe
-        case .review: return DiskMapTheme.review
-        case .protected: return DiskMapTheme.danger
+    private func path(of id: Int32) -> String? {
+        guard let tree = model.tree, let root = model.rootURL else { return nil }
+        return tree.path(of: id, root: root).path
+    }
+
+    private func revealNodes(_ ids: [Int32]) {
+        NSWorkspace.shared.activateFileViewerSelecting(ids.compactMap(path(of:)).map { URL(fileURLWithPath: $0) })
+    }
+
+    /// Items whose recipe says Trash would damage the tool are never staged.
+    private func stage(_ items: [DeveloperItem]) {
+        let allowed = items.filter(canStage)
+        if allowed.isEmpty, let recipe = items.first?.recipe, recipe.trashIsUnsafe {
+            model.showToast("Use the tool instead: \(recipe.command)")
+            return
+        }
+        Task {
+            let summary = await model.stageForCleanup(allowed.map {
+                CleanupStageRequest(url: URL(fileURLWithPath: $0.absolutePath), size: $0.bytes, reason: "Developer: \($0.displayName)")
+            })
+            model.showToast(summary.added > 0 ? "Added \(countLabel(summary.added, "item")) to Cleanup — ⇧⌘⌫ to review"
+                            : summary.alreadyPresent > 0 ? "Already in Cleanup" : "Blocked by safety rules")
+            checked.subtract(allowed.map(\.id))
+        }
+    }
+
+    private func stageTools(_ ids: [Int32], category: String?) {
+        guard let tree = model.tree, let root = model.rootURL else { return }
+        Task {
+            let summary = await model.stageForCleanup(ids.map { id in
+                let cat = category ?? toolHits?.first { $0.id == id }?.categoryID ?? "dev"
+                return CleanupStageRequest(url: tree.path(of: id, root: root), size: toolSize(id), reason: "dev: \(cat)")
+            })
+            model.showToast(summary.added > 0 ? "Added \(countLabel(summary.added, "folder")) to Cleanup — ⇧⌘⌫ to review"
+                            : summary.alreadyPresent > 0 ? "Already in Cleanup" : "Nothing could be added")
+            checkedTools.subtract(ids)
         }
     }
 }
 
+/// Inspector for one developer item: facts, the tool's own command when
+/// Trash is unsafe, why, what removing costs, safety, actions.
 private struct DeveloperInspector: View {
     @ObservedObject var model: ScanModel
     let item: DeveloperItem
     let project: DeveloperProject?
-    var onOpenCleanup: () -> Void
+    var onStage: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top) {
-                    Image(systemName: item.ecosystem.symbolName)
-                        .font(DiskMapType.title)
-                        .foregroundStyle(DiskMapTheme.developer)
-                        .frame(width: 40, height: 40)
-                        .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.displayName)
-                            .font(DiskMapType.headline)
-                            .foregroundStyle(DiskMapTheme.ink)
-                        Text(ByteFormat.string(item.bytes))
-                            .font(.system(size: DiskMapType.scaled(20), weight: .semibold).monospacedDigit())
-                            .foregroundStyle(DiskMapTheme.ink)
-                        Text(item.safety.level.title)
-                            .font(DiskMapType.captionStrong)
-                            .foregroundStyle(badgeColor)
-                    }
-                    Spacer(minLength: 0)
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    StatRow(label: "Path", value: item.displayPath)
-                    StatRow(label: "Category", value: item.category.title)
-                    StatRow(label: "Ecosystem", value: item.ecosystem.title)
-                    if let project = item.projectName {
-                        StatRow(label: "Project", value: project)
-                    }
-                    StatRow(label: "Reclaimability", value: reclaimTitle)
-                    StatRow(label: "Rebuild", value: item.rebuildCost.title)
-                    if let lockfile = item.lockfile {
-                        StatRow(label: "Lockfile", value: lockfile)
-                    }
-                }
-
-                if let recipe = item.recipe {
-                    recipeCard(recipe)
-                }
-
-                WhyCard(title: "If you remove it", bodyText: item.rebuildCost.explanation)
-                if let project {
-                    projectCard(project)
-                }
-                WhyCard(title: "Why is it large?", bodyText: item.whyLarge)
-                SafetyCard(assessment: item.safety)
-
-                section("What happens if I remove it?") {
-                    Text(item.safety.consequences)
-                        .font(DiskMapType.small)
-                        .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(item.safety.recommendedAction)
-                        .font(DiskMapType.captionMedium)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .padding(.top, 4)
+        let staged = model.isStaged(URL(fileURLWithPath: item.absolutePath))
+        let trashUnsafe = item.recipe?.trashIsUnsafe == true
+        InspectorColumn {
+            InspectorHeader(name: item.displayName, size: ByteFormat.string(item.bytes),
+                            detail: "\(item.category.title) · \(item.ecosystem.title)") {
+                Image(systemName: item.ecosystem.symbolName)
+                    .font(.system(size: DiskMapType.scaled(17)))
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .frame(width: 40, height: 40)
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(DiskMapTheme.ink.opacity(0.06)))
+            }
+            Hairline()
+            FactRow(label: "Location", value: item.displayPath)
+            if let name = item.projectName { FactRow(label: "Project", value: name) }
+            FactRow(label: "Rebuild", value: item.rebuildCost.title + (item.lockfile.map { " · \($0)" } ?? ""))
+            if let project {
+                VStack(alignment: .leading, spacing: 4) {
+                    MonoLabel("Git")
+                    SafetyLabel(level: nil, title: project.git.title, tint: DeveloperLabels.gitTint(project.git))
+                    Text(project.git.detail)
+                        .font(DiskMapType.secondary)
+                        .foregroundStyle(DiskMapTheme.ink2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
-                VStack(spacing: 8) {
-                    // Where moving to the Trash damages the tool's own state,
-                    // offer the command instead — never both (TASK-055).
-                    if item.recipe?.trashIsUnsafe != true {
-                        Button {
-                            Task { await stage() }
-                        } label: {
-                            Label("Add to Cleanup", systemImage: "trash")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(PrimaryCTAStyle(fullWidth: true))
-                        .disabled(item.isProtected)
-                    }
-
-                    Button("Reveal in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.absolutePath)])
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-
-                    Button("Open in File Browser") {
-                        model.currentNode = item.nodeID
-                        model.selectedNode = item.nodeID
-                        model.destination = .fileBrowser
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-
-                    Button("Visualize this folder") {
-                        model.currentNode = item.nodeID
-                        model.selectedNode = item.nodeID
-                        model.destination = .visualize
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-
-                    Button("Copy Path") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(item.absolutePath, forType: .string)
-                        model.showToast("Path copied")
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                }
-            }
-            .padding(16)
-        }
-    }
-
-    private func recipeCard(_ recipe: CleanupRecipe) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(recipe.trashIsUnsafe ? "Don’t move this to the Trash" : recipe.title,
-                  systemImage: recipe.trashIsUnsafe ? "exclamationmark.octagon.fill" : "terminal")
-                .font(DiskMapType.smallStrong)
-                .foregroundStyle(recipe.trashIsUnsafe ? DiskMapTheme.danger : DiskMapTheme.ink)
-            Text(recipe.why)
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.ink.opacity(0.85))
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Text(recipe.command)
-                    .font(DiskMapType.small.monospaced())
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .textSelection(.enabled)
-                    .lineLimit(2)
-                Spacer(minLength: 0)
-                Button("Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(recipe.command, forType: .string)
-                    model.showToast("Command copied — DiskMap never runs it for you")
-                }
-                .buttonStyle(InkButtonStyle(filled: false))
-                .accessibilityLabel("Copy command \(recipe.command)")
-            }
-            .padding(8)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(DiskMapTheme.inspectorFill))
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill((recipe.trashIsUnsafe ? DiskMapTheme.danger : DiskMapTheme.info).opacity(0.08))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke((recipe.trashIsUnsafe ? DiskMapTheme.danger : DiskMapTheme.info).opacity(0.25), lineWidth: 1))
-        )
-    }
-
-    private func projectCard(_ project: DeveloperProject) -> some View {
-        section("Project “\(project.name)”") {
-            VStack(alignment: .leading, spacing: 6) {
-                Label(project.git.title, systemImage: project.git.isBackedUp ? "checkmark.seal" : "exclamationmark.triangle")
-                    .font(DiskMapType.smallStrong)
-                    .foregroundStyle(DeveloperLabels.gitTint(project.git))
-                Text(project.git.detail)
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .fixedSize(horizontal: false, vertical: true)
-                StatRow(label: "Last source change", value: DeveloperLabels.lastChange(project.lastSourceDay))
-                if let manifest = project.manifest { StatRow(label: "Manifest", value: manifest) }
+                FactRow(label: "Last source change", value: DeveloperLabels.lastChange(project.lastSourceDay))
                 if let ignored = project.ignoredBytes, ignored > 0 {
-                    StatRow(label: "Ignored by git", value: ByteFormat.string(ignored))
+                    FactRow(label: "Ignored by git", value: ByteFormat.string(ignored))
                 }
             }
+            if let recipe = item.recipe {
+                VStack(alignment: .leading, spacing: 6) {
+                    MonoLabel(recipe.trashIsUnsafe ? "Don’t move this to the Trash" : recipe.title,
+                              tint: recipe.trashIsUnsafe ? DiskMapTheme.danger : DiskMapTheme.ink3)
+                    Text(recipe.why)
+                        .font(DiskMapType.secondary)
+                        .foregroundStyle(DiskMapTheme.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 6) {
+                        Text(recipe.command)
+                            .font(DiskMapType.figure)
+                            .foregroundStyle(DiskMapTheme.ink)
+                            .textSelection(.enabled)
+                            .lineLimit(2)
+                        Spacer(minLength: 0)
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(recipe.command, forType: .string)
+                            model.showToast("Command copied — DiskMap never runs it for you")
+                        } label: { Label("Copy command", systemImage: "doc.on.doc") }
+                            .buttonStyle(IconButtonStyle(size: 24))
+                            .accessibilityLabel("Copy command \(recipe.command)")
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous).fill(DiskMapTheme.ink.opacity(0.05)))
+                }
+            }
+            Hairline()
+            Note(label: "Why it's large", text: item.whyLarge)
+            Note(label: "If you remove it", text: item.rebuildCost.explanation)
+            SafetyLine(assessment: item.safety)
+            InspectorActions(
+                primaryTitle: trashUnsafe ? "Use the command above" : staged ? "In Cleanup" : "Add to Cleanup",
+                primaryDone: staged,
+                primaryEnabled: !trashUnsafe && !item.isProtected,
+                primary: { if staged { model.isCleanupQueuePresented = true } else { onStage() } },
+                path: item.absolutePath
+            ) {
+                Button("Open in File Browser") {
+                    model.currentNode = item.nodeID
+                    model.selectedNode = item.nodeID
+                    model.destination = .fileBrowser
+                }
+                Button("Show in Visualize") {
+                    model.currentNode = item.nodeID
+                    model.selectedNode = item.nodeID
+                    model.destination = .visualize
+                }
+            }
+            .padding(.top, 4)
         }
-    }
-
-    private var badgeColor: Color {
-        switch item.safety.level {
-        case .safe: return DiskMapTheme.safe
-        case .review: return DiskMapTheme.review
-        case .protected: return DiskMapTheme.danger
-        }
-    }
-
-    private var reclaimTitle: String {
-        switch item.reclaimability {
-        case .reclaimable: return "Potentially reclaimable"
-        case .reviewFirst: return "Review first"
-        case .keep: return "Likely keep"
-        }
-    }
-
-    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(DiskMapType.captionStrong)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            content()
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(DiskMapTheme.cream.opacity(0.8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-                )
-        )
-    }
-
-    private func stage() async {
-        guard let root = model.rootURL, let tree = model.tree else { return }
-        let url = tree.path(of: item.nodeID, root: root)
-        let result = await model.stageForCleanup([
-            CleanupStageRequest(url: url, size: item.bytes, reason: "Developer: \(item.displayName)")
-        ])
-        model.showToast(result.added > 0 ? "Added to Cleanup" : (result.rejected > 0 ? "Blocked by safety rules" : "Already in Cleanup"))
-        if result.added > 0 || result.alreadyPresent > 0 { onOpenCleanup() }
     }
 }
-
 
 /// Short labels and tints shared by the Developer Storage table and inspector.
 enum DeveloperLabels {
@@ -861,7 +619,7 @@ enum DeveloperLabels {
     static func rebuildTint(_ cost: RebuildCost) -> Color {
         switch cost {
         case .free, .cheap: return DiskMapTheme.safe
-        case .networked: return DiskMapTheme.mutedLabel
+        case .networked: return DiskMapTheme.ink2
         case .networkedUnpinned: return DiskMapTheme.review
         }
     }
@@ -888,7 +646,7 @@ enum DeveloperLabels {
         switch state {
         case .inSync: return DiskMapTheme.safe
         case .noRemote, .differs: return DiskMapTheme.review
-        case .notARepository, .unknown: return DiskMapTheme.mutedLabel
+        case .notARepository, .unknown: return DiskMapTheme.ink2
         }
     }
 }

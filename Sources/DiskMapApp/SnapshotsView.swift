@@ -5,7 +5,6 @@ import SwiftUI
 /// Explore → Snapshots: storage history and comparison workspace.
 struct SnapshotsView: View {
     @ObservedObject var model: ScanModel
-    var onOpenCleanup: () -> Void = {}
     @Environment(\.diskMapContentWidth) private var contentWidth
 
     @State private var records: [SnapshotRecord] = []
@@ -31,7 +30,7 @@ struct SnapshotsView: View {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .all: return "All Snapshots"
+            case .all: return "All"
             case .favorites: return "Favorites"
             }
         }
@@ -93,12 +92,13 @@ struct SnapshotsView: View {
     var body: some View {
         Group {
             if model.tree == nil && records.isEmpty {
-                emptyNoScan
+                DiskMapEmptyState(symbol: "camera", title: "Scan first, then save snapshots",
+                                  message: "Snapshots record sizes over time so you can see what grew. They don’t copy your files.")
             } else {
                 AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedChangePath ?? selectedID, main: mainColumn, inspector: inspector)
             }
         }
-        .background(DiskMapTheme.cream)
+        .background(DiskMapTheme.canvas)
         .task { reload() }
         .sheet(isPresented: $showSave) { saveSheet }
         .confirmationDialog(
@@ -118,146 +118,56 @@ struct SnapshotsView: View {
         }
     }
 
-    private var emptyNoScan: some View {
-        VStack(spacing: 12) {
-            Text("Snapshots")
-                .font(DiskMapType.title)
-            Text("Scan a folder first, then save a DiskMap snapshot to track storage over time.")
-                .font(DiskMapType.body)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .multilineTextAlignment(.center)
-            Text("A DiskMap snapshot records your storage analysis. It does not copy or back up your files.")
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .multilineTextAlignment(.center)
-                .padding(.top, 4)
-        }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
     private var mainColumn: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                if records.isEmpty && currentRecord != nil {
-                    compactFirstUseTip
-                }
-                HStack(alignment: .top, spacing: 14) {
-                    historyPanel
-                        .frame(width: 280)
+        VStack(alignment: .leading, spacing: 0) {
+            PageHeader(eyebrow: "Explore", title: "Snapshots",
+                       subtitle: "Sizes over time — save one, compare later. Snapshots record sizes, not files; they are not backups.") {
+                Button { prepareSave() } label: { Label("Save Snapshot", systemImage: "plus") }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(model.tree == nil)
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, DiskMapSpace.pageTop)
+            .padding(.bottom, 16)
+            Hairline()
+            HStack(alignment: .top, spacing: 0) {
+                historyPanel
+                    .frame(width: 250)
+                Rectangle().fill(DiskMapTheme.line).frame(width: 1)
+                ScrollView {
                     compareWorkspace
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 18)
                 }
             }
-            .padding(20)
         }
-    }
-
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Snapshots")
-                    .font(DiskMapType.title)
-                    .foregroundStyle(DiskMapTheme.ink)
-                Text("Track how your storage changes over time. Save a snapshot after important changes and compare it later.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 12)
-            Button {
-                prepareSave()
-            } label: {
-                Label("Save Snapshot", systemImage: "plus")
-            }
-            .buttonStyle(InkButtonStyle())
-            .disabled(model.tree == nil)
-        }
-    }
-
-    private var compactFirstUseTip: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "info.circle")
-                .foregroundStyle(DiskMapTheme.info)
-            Text("Save a snapshot to start history. Comparing later shows what grew or shrank — snapshots are analytical, not backups.")
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(DiskMapTheme.info.opacity(0.07))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(DiskMapTheme.info.opacity(0.2), lineWidth: 1)
-                )
-        )
-    }
-
-    private var firstUseBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Storage History")
-                .font(DiskMapType.bodyStrong)
-            Text("Save a snapshot now, then compare it with a future scan to see exactly what grew or shrank.")
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Text("A DiskMap snapshot records your storage analysis. It does not copy or back up your files.")
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.info)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(DiskMapTheme.info.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(DiskMapTheme.info.opacity(0.25), lineWidth: 1)
-                )
-        )
     }
 
     private var historyPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 2) {
                 ForEach(ListFilter.allCases) { f in
                     let count = f == .all ? allRecords.count : allRecords.filter { $0.meta.favorite }.count
-                    Button {
-                        listFilter = f
-                    } label: {
-                        Text("\(f.title) \(count)")
-                            .font(.system(size: DiskMapType.scaled(11), weight: listFilter == f ? .semibold : .regular))
-                            .foregroundStyle(listFilter == f ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(listFilter == f ? DiskMapTheme.navSelected : Color.clear)
-                            )
+                    Chip(title: f.title, count: "\(count)", isOn: listFilter == f) { listFilter = f }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+            ScrollView {
+                VStack(spacing: 0) {
+                    if visibleRecords.isEmpty {
+                        Text(listFilter == .favorites ? "No favourites yet." : "No saved snapshots yet.")
+                            .font(DiskMapType.secondary)
+                            .foregroundStyle(DiskMapTheme.ink3)
+                            .padding(.vertical, 20)
                     }
-                    .buttonStyle(.plain)
+                    ForEach(visibleRecords) { rec in
+                        historyRow(rec)
+                    }
                 }
+                .padding(.horizontal, 8)
             }
-
-            if visibleRecords.isEmpty {
-                Text("No saved snapshots yet.")
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
-                    .padding(.vertical, 20)
-            } else {
-                ForEach(visibleRecords) { rec in
-                    historyRow(rec)
-                }
-            }
-
-            Text("DiskMap snapshots are analytical checkpoints — not Time Machine or APFS filesystem snapshots.")
-                .font(DiskMapType.micro)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .padding(.top, 8)
         }
-        .padding(12)
-        .background(cardBG)
     }
 
     private func historyRow(_ rec: SnapshotRecord) -> some View {
@@ -266,74 +176,52 @@ struct SnapshotsView: View {
             selectedID = rec.id
             selectedChangePath = nil
         } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "externaldrive.fill")
-                    .font(.system(size: DiskMapType.scaled(16)))
-                    .foregroundStyle(DiskMapTheme.info)
-                    .frame(width: 28, height: 28)
-                    .background(DiskMapTheme.navSelected, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
                         Text(rec.displayName)
-                            .font(DiskMapType.smallStrong)
+                            .font(DiskMapType.bodyEmphasis)
                             .foregroundStyle(DiskMapTheme.ink)
                             .lineLimit(1)
-                        if rec.isCurrent {
-                            Text("Current")
-                                .font(.system(size: DiskMapType.scaled(9), weight: .semibold))
-                                .foregroundStyle(DiskMapTheme.info)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(DiskMapTheme.info.opacity(0.12), in: Capsule())
+                        if rec.meta.favorite {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: DiskMapType.scaled(9)))
+                                .foregroundStyle(DiskMapTheme.ink3)
+                                .accessibilityLabel("Favorite")
                         }
                     }
-                    Text(rec.header.capturedAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(DiskMapType.micro)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                    Text("\(ByteFormat.string(rec.usedBytes)) used")
-                        .font(DiskMapType.captionMedium.monospacedDigit())
-                        .foregroundStyle(DiskMapTheme.ink)
-                    if rec.freeBytes > 0 {
-                        Text("\(ByteFormat.string(rec.freeBytes)) free")
-                            .font(DiskMapType.micro)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                    }
+                    Text(rec.isCurrent ? "Now" : rec.header.capturedAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(DiskMapType.figureSmall)
+                        .foregroundStyle(DiskMapTheme.ink3)
                 }
-                Spacer(minLength: 0)
-                if !rec.isCurrent {
-                    Menu {
-                        Button("Compare with previous") { compareWithPrevious(rec) }
-                        Button(rec.meta.favorite ? "Unfavorite" : "Favorite") { toggleFavorite(rec) }
-                        Button("Add to Cleanup…") { confirmDelete = rec }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(DiskMapType.smallStrong)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .frame(width: 24, height: 24)
-                    }
-                }
+                Spacer(minLength: 4)
+                Text(ByteFormat.string(rec.usedBytes))
+                    .font(DiskMapType.figureSmall)
+                    .foregroundStyle(DiskMapTheme.ink2)
             }
-            .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? DiskMapTheme.navSelected : Color.clear)
-            )
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .background(RowBackground(selected: selected, hovering: false))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(rec.displayName), \(ByteFormat.string(rec.usedBytes)) used")
+        .contextMenu {
+            if !rec.isCurrent {
+                Button("Compare with Previous") { compareWithPrevious(rec) }
+                Button(rec.meta.favorite ? "Unfavorite" : "Favorite") { toggleFavorite(rec) }
+                Divider()
+                Button("Add to Cleanup…") { confirmDelete = rec }
+            }
+        }
     }
 
     private var compareWorkspace: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 20) {
             compareSelectors
             if isComparing {
-                VStack(spacing: 8) {
-                    ProgressView()
-                    Text("Reading both snapshots…")
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                }
-                .frame(maxWidth: .infinity, minHeight: 160)
-                .background(SnapshotCompareText.card)
+                DiskMapLoadingState(title: "Comparing", detail: "Reading both snapshots.")
+                    .frame(minHeight: 160)
             } else if let comparison, let ids = comparedIDs,
                       let before = record(ids.before), let after = record(ids.after) {
                 SnapshotCompareView(
@@ -342,23 +230,17 @@ struct SnapshotsView: View {
                     browsePath: $browsePath, selectedPath: $selectedChangePath
                 )
             } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(records.isEmpty ? "Save a snapshot to compare against later." : "Pick two snapshots to see what changed between them.")
-                        .font(DiskMapType.body)
-                        .foregroundStyle(DiskMapTheme.ink)
-                    Text("You'll see the net change, the handful of places it actually happened, and a drill-down whose rows always add up.")
-                        .font(DiskMapType.caption)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(SnapshotCompareText.card)
+                Text(records.isEmpty
+                     ? "Save a snapshot now; compare it with a later scan to see what grew or shrank."
+                     : "Pick two snapshots to see what changed between them.")
+                    .font(DiskMapType.body)
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let statusMessage {
                 Text(statusMessage)
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink3)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -367,42 +249,33 @@ struct SnapshotsView: View {
     }
 
     private var compareSelectors: some View {
-        HStack(alignment: .bottom, spacing: 10) {
+        HStack(spacing: 8) {
+            MonoLabel("Compare")
             snapshotPicker("Before", selection: $beforeID)
-            Button {
-                swap(&beforeID, &afterID)
-            } label: {
-                Image(systemName: "arrow.left.arrow.right")
-                    .font(DiskMapType.captionStrong)
-                    .frame(width: 30, height: 26)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(DiskMapTheme.navSelected))
+            Button { swap(&beforeID, &afterID) } label: {
+                Label("Swap Before and After", systemImage: "arrow.left.arrow.right")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IconButtonStyle(size: 24))
             .help("Swap Before and After")
-            .padding(.bottom, 1)
             snapshotPicker("After", selection: $afterID)
+            Spacer(minLength: 0)
         }
-        .padding(14)
-        .background(cardBG)
     }
 
     private func snapshotPicker(_ title: String, selection: Binding<String?>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(DiskMapType.microStrong)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-            Picker("", selection: selection) {
-                Text("Select…").tag(String?.none)
-                if let current = currentRecord {
-                    Text("Current scan (now)").tag(Optional(current.id))
-                }
-                ForEach(records) { rec in
-                    Text(rec.pickerLabel).tag(Optional(rec.id))
-                }
+        Picker(title, selection: selection) {
+            Text("Select…").tag(String?.none)
+            if let current = currentRecord {
+                Text("Current scan (now)").tag(Optional(current.id))
             }
-            .labelsHidden()
-            .frame(minWidth: 150, maxWidth: .infinity, alignment: .leading)
+            ForEach(records) { rec in
+                Text(rec.pickerLabel).tag(Optional(rec.id))
+            }
         }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .fixedSize()
+        .accessibilityLabel(title)
     }
 
     private var canCompare: Bool {
@@ -411,69 +284,61 @@ struct SnapshotsView: View {
     }
 
     private var inspector: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                if let entry = selectedEntry {
-                    changeInspector(entry)
-                } else if let rec = selectedRecord {
-                    snapshotInspector(rec)
-                } else {
-                    Text("Select a snapshot or change")
-                        .font(DiskMapType.bodyStrong)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
-                }
+        Group {
+            if let entry = selectedEntry {
+                changeInspector(entry)
+            } else if let rec = selectedRecord {
+                snapshotInspector(rec)
+            } else {
+                DiskMapEmptyState(symbol: "camera", title: "Select a snapshot or change", message: "Its details appear here.")
             }
-            .padding(16)
         }
-        .background(DiskMapTheme.inspectorFill)
+        .background(DiskMapTheme.canvas)
     }
 
     private func snapshotInspector(_ rec: SnapshotRecord) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(rec.displayName)
-                .font(DiskMapType.headline)
-            if rec.isCurrent {
-                Text("Current")
-                    .font(DiskMapType.microStrong)
-                    .foregroundStyle(DiskMapTheme.info)
+        InspectorColumn {
+            InspectorHeader(name: rec.displayName, size: ByteFormat.string(rec.usedBytes) + " used",
+                            detail: rec.isCurrent ? "Live — not saved yet" : rec.header.capturedAt.formatted(date: .abbreviated, time: .shortened)) {
+                Image(systemName: "camera")
+                    .font(.system(size: DiskMapType.scaled(16)))
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .frame(width: 40, height: 40)
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(DiskMapTheme.ink.opacity(0.06)))
             }
-            Text(ByteFormat.string(rec.usedBytes) + " used")
-                .font(DiskMapType.title.monospacedDigit())
-            if !rec.meta.note.isEmpty {
-                Text(rec.meta.note)
-                    .font(DiskMapType.small)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+            if !rec.meta.note.isEmpty && !rec.isCurrent { Note(label: "Note", text: rec.meta.note) }
+            Hairline()
+            if rec.freeBytes > 0 { FactRow(label: "Free", value: ByteFormat.string(rec.freeBytes)) }
+            if rec.totalBytes > 0 { FactRow(label: "Capacity", value: ByteFormat.string(rec.totalBytes)) }
+            if let files = rec.meta.fileCount, let folders = rec.meta.folderCount {
+                FactRow(label: "Contents", value: countLabel(files, "file") + " · " + countLabel(folders, "folder"))
             }
-            VStack(alignment: .leading, spacing: 6) {
-                StatRow(label: "Captured", value: rec.header.capturedAt.formatted(date: .abbreviated, time: .shortened))
-                if rec.freeBytes > 0 {
-                    StatRow(label: "Free", value: ByteFormat.string(rec.freeBytes))
-                }
-                if rec.totalBytes > 0 {
-                    StatRow(label: "Capacity", value: ByteFormat.string(rec.totalBytes))
-                }
-                if let files = rec.meta.fileCount {
-                    StatRow(label: "Files", value: Self.formatCount(files))
-                }
-                if let folders = rec.meta.folderCount {
-                    StatRow(label: "Folders", value: Self.formatCount(folders))
-                }
-                if let secs = rec.meta.scanSeconds {
-                    StatRow(label: "Scan time", value: String(format: "%.1fs", secs))
-                }
-                StatRow(label: "Root", value: CanonicalPath.displayPath(absolutePath: rec.header.rootPath))
-            }
-            .padding(12)
-            .background(cardBG)
-
+            if let secs = rec.meta.scanSeconds { FactRow(label: "Scan time", value: String(format: "%.1f s", secs)) }
+            FactRow(label: "Root", value: CanonicalPath.displayPath(absolutePath: rec.header.rootPath))
             if !rec.isCurrent {
-                Button("Compare with previous") { compareWithPrevious(rec) }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                Button("Add snapshot to Cleanup…") { confirmDelete = rec }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-            } else {
-                Button("Save Snapshot") { prepareSave() }
-                    .buttonStyle(InkButtonStyle(fullWidth: true))
+                VStack(alignment: .leading, spacing: 8) {
+                    Button("Compare with Previous") { compareWithPrevious(rec) }
+                        .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+                    HStack(spacing: 2) {
+                        Button { toggleFavorite(rec) } label: {
+                            Label(rec.meta.favorite ? "Unfavorite" : "Favorite", systemImage: rec.meta.favorite ? "star.fill" : "star")
+                        }
+                        .help(rec.meta.favorite ? "Unfavorite" : "Favorite")
+                        Spacer()
+                        Menu {
+                            Button("Add to Cleanup…") { confirmDelete = rec }
+                        } label: {
+                            Image(systemName: "ellipsis").frame(width: 28, height: 28).contentShape(Rectangle())
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .foregroundStyle(DiskMapTheme.ink2)
+                        .accessibilityLabel("More actions")
+                    }
+                    .buttonStyle(IconButtonStyle())
+                }
+                .padding(.top, 4)
             }
         }
     }
@@ -481,57 +346,57 @@ struct SnapshotsView: View {
     private func changeInspector(_ entry: SnapshotComparison.Entry) -> some View {
         let path = comparison?.absolutePath(of: entry) ?? entry.path
         let existsNow = FileManager.default.fileExists(atPath: path)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Text(entry.name)
-                    .font(DiskMapType.headline)
-                    .lineLimit(2)
-                if let kind = entry.kind { KindBadge(kind: kind) }
+        let found: Int32? = {
+            guard existsNow, let tree = model.tree, let root = model.rootURL,
+                  case .found(let id) = FileQuery.node(atPath: path, tree: tree, rootPath: root.path) else { return nil }
+            return id
+        }()
+        return InspectorColumn {
+            InspectorHeader(name: entry.name, size: SnapshotCompareText.signed(entry.delta),
+                            detail: SnapshotCompareText.beforeAfter(entry)) {
+                Image(systemName: entry.isDirectory ? "folder" : "doc")
+                    .font(.system(size: DiskMapType.scaled(16)))
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .frame(width: 40, height: 40)
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(DiskMapTheme.ink.opacity(0.06)))
             }
-            Text(SnapshotCompareText.signed(entry.delta))
-                .font(.system(size: DiskMapType.scaled(26), weight: .semibold).monospacedDigit())
-                .foregroundStyle(SnapshotCompareText.color(for: entry.delta))
-            Text(CanonicalPath.displayPath(absolutePath: path))
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .textSelection(.enabled)
-            VStack(alignment: .leading, spacing: 6) {
-                StatRow(label: "Before", value: entry.beforeID == nil ? "Not there" : ByteFormat.string(entry.before))
-                StatRow(label: "After", value: entry.afterID == nil ? "Gone" : ByteFormat.string(entry.after))
-                if entry.before > 0, entry.after > 0 {
-                    StatRow(label: "Change", value: String(format: "%+.0f%%", Double(entry.delta) / Double(entry.before) * 100))
-                }
+            if let kind = entry.kind { KindBadge(kind: kind) }
+            Hairline()
+            FactRow(label: "Location", value: CanonicalPath.displayPath(absolutePath: path))
+            FactRow(label: "Before", value: entry.beforeID == nil ? "Not there" : ByteFormat.string(entry.before))
+            FactRow(label: "After", value: entry.afterID == nil ? "Gone" : ByteFormat.string(entry.after))
+            if entry.before > 0, entry.after > 0 {
+                FactRow(label: "Change", value: String(format: "%+.0f%%", Double(entry.delta) / Double(entry.before) * 100))
             }
-            .padding(12)
-            .background(cardBG)
+            if !existsNow && entry.kind != .removed {
+                Note(label: nil, text: "This isn't on disk any more.")
+            }
             if entry.isDirectory {
-                Button("Show what changed inside") { browsePath = entry.path }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
+                Button("Show What Changed Inside") { browsePath = entry.path }
+                    .buttonStyle(SecondaryButtonStyle(fullWidth: true))
             }
             if existsNow {
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-                }
-                .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                if let tree = model.tree, let root = model.rootURL,
-                   case .found(let id) = FileQuery.node(atPath: path, tree: tree, rootPath: root.path) {
-                    Button("Show in File Browser") {
-                        model.selectedNode = id
-                        model.currentNode = tree.isDirectory[Int(id)] ? id : max(0, tree.parent[Int(id)])
-                        model.destination = .fileBrowser
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false, fullWidth: true))
-                    if entry.delta > 0 {
-                        Button("Add to Cleanup") {
+                let staged = model.isStaged(URL(fileURLWithPath: path))
+                InspectorActions(
+                    primaryTitle: staged ? "In Cleanup" : "Add to Cleanup",
+                    primaryDone: staged,
+                    primaryEnabled: found != nil && entry.delta > 0,
+                    primary: {
+                        if staged { model.isCleanupQueuePresented = true } else if let id = found {
                             model.stageRow(path: path, size: model.selectedTotals[Int(id)], reason: "Grew since snapshot: \(entry.name)")
                         }
-                        .buttonStyle(InkButtonStyle(fullWidth: true))
+                    },
+                    path: path
+                ) {
+                    if let id = found, let tree = model.tree {
+                        Button("Show in File Browser") {
+                            model.selectedNode = id
+                            model.currentNode = tree.isDirectory[Int(id)] ? id : max(0, tree.parent[Int(id)])
+                            model.destination = .fileBrowser
+                        }
                     }
                 }
-            } else if entry.kind != .removed {
-                Text("This isn't on disk any more.")
-                    .font(DiskMapType.caption)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                .padding(.top, 4)
             }
         }
     }
@@ -539,40 +404,34 @@ struct SnapshotsView: View {
     private var saveSheet: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Save Snapshot")
-                .font(DiskMapType.headline)
+                .font(DiskMapType.heading)
             Text("Save the current scan so you can compare your storage later. This does not copy or back up your files.")
-                .font(DiskMapType.small)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .font(DiskMapType.secondary)
+                .foregroundStyle(DiskMapTheme.ink2)
             Text("Name")
-                .font(DiskMapType.captionStrong)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .font(DiskMapType.secondary.weight(.semibold))
+                .foregroundStyle(DiskMapTheme.ink2)
             TextField("Snapshot name", text: $saveName)
                 .textFieldStyle(.roundedBorder)
             Text("Optional note")
-                .font(DiskMapType.captionStrong)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .font(DiskMapType.secondary.weight(.semibold))
+                .foregroundStyle(DiskMapTheme.ink2)
             TextField("e.g. Before cleaning Docker caches", text: $saveNote, axis: .vertical)
                 .lineLimit(3...5)
                 .textFieldStyle(.roundedBorder)
             HStack {
                 Spacer()
                 Button("Cancel") { showSave = false }
-                    .buttonStyle(InkButtonStyle(filled: false))
+                    .buttonStyle(SecondaryButtonStyle())
+                    .keyboardShortcut(.cancelAction)
                 Button("Save Snapshot") { saveSnapshot() }
-                    .buttonStyle(InkButtonStyle())
+                    .buttonStyle(PrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)
         .frame(width: 420)
-    }
-
-    private var cardBG: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(DiskMapTheme.cardFill)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(DiskMapTheme.cardStroke, lineWidth: 1)
-            )
+        .background(DiskMapTheme.raised)
     }
 
     // MARK: - Actions
@@ -645,8 +504,7 @@ struct SnapshotsView: View {
         }
         let result = await model.stageForCleanup(requests)
         confirmDelete = nil
-        model.showToast(result.added > 0 ? "Snapshot added to Cleanup" : "Snapshot is already in Cleanup")
-        onOpenCleanup()
+        model.showToast(result.added > 0 ? "Snapshot added to Cleanup — ⇧⌘⌫ to review" : "Snapshot is already in Cleanup")
     }
 
     private func toggleFavorite(_ rec: SnapshotRecord) {
@@ -705,11 +563,6 @@ struct SnapshotsView: View {
         browsePath = ""
         selectedChangePath = spots.first?.path
     }
-
-    private func signed(_ delta: Int64) -> String {
-        let sign = delta >= 0 ? "+" : "−"
-        return "\(sign)\(ByteFormat.string(abs(delta)))"
-    }
 }
 
 
@@ -721,20 +574,5 @@ private extension SnapshotsView {
         f.groupingSeparator = ","
         f.usesGroupingSeparator = true
         return f.string(from: NSNumber(value: n)) ?? "\(n)"
-    }
-}
-
-private extension DiskMapTheme {
-    static func color(forHint hint: String) -> Color {
-        switch hint {
-        case "apps": return folderPastels[4]
-        case "library": return folderPastels[0]
-        case "downloads": return folderPastels[1]
-        case "documents": return folderPastels[5]
-        case "developer": return folderPastels[2]
-        case "caches": return folderPastels[3]
-        case "system": return mutedLabel
-        default: return info
-        }
     }
 }
