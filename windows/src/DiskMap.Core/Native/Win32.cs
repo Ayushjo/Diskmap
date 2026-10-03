@@ -287,4 +287,87 @@ internal static partial class Win32
         if (path.StartsWith(@"\\")) return @"\\?\UNC\" + path[2..];
         return @"\\?\" + path;
     }
+
+    // ---- Token privileges ----
+    //
+    // OpenFileById(FILE_FLAG_BACKUP_SEMANTICS) and raw volume reads need
+    // SeBackupPrivilege/SeRestorePrivilege *enabled* in the process token —
+    // elevated tokens carry them present-but-disabled, so AdjustTokenPrivileges
+    // is mandatory before touching $MFT. Without it the MFT path silently
+    // fails and every scan falls back to FindFirstFileExW.
+
+    public const uint TOKEN_ADJUST_PRIVILEGES = 0x20;
+    public const uint TOKEN_QUERY = 0x8;
+    public const uint SE_PRIVILEGE_ENABLED = 0x2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct LUID { public uint LowPart; public int HighPart; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct LUID_AND_ATTRIBUTES { public LUID Luid; public uint Attributes; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TOKEN_PRIVILEGES
+    {
+        public uint PrivilegeCount;
+        public LUID_AND_ATTRIBUTES Privileges;
+    }
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool OpenProcessToken(
+        IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool LookupPrivilegeValueW(
+        string? lpSystemName, string lpName, out LUID lpLuid);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AdjustTokenPrivileges(
+        IntPtr TokenHandle,
+        [MarshalAs(UnmanagedType.Bool)] bool DisableAllPrivileges,
+        ref TOKEN_PRIVILEGES NewState,
+        uint BufferLength,
+        IntPtr PreviousState,
+        IntPtr ReturnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CloseHandle(IntPtr hObject);
+
+    /// <summary>
+    /// Enables SeBackupPrivilege + SeRestorePrivilege on the current process
+    /// token. Returns false when the process can't hold them (non-elevated).
+    /// </summary>
+    public static bool EnableBackupPrivileges()
+    {
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out var token))
+            return false;
+        try
+        {
+            bool ok = true;
+            foreach (var name in new[] { "SeBackupPrivilege", "SeRestorePrivilege" })
+            {
+                if (!LookupPrivilegeValueW(null, name, out var luid)) { ok = false; continue; }
+                var tp = new TOKEN_PRIVILEGES
+                {
+                    PrivilegeCount = 1,
+                    Privileges = new LUID_AND_ATTRIBUTES { Luid = luid, Attributes = SE_PRIVILEGE_ENABLED },
+                };
+                if (!AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero))
+                    ok = false;
+                // AdjustTokenPrivileges returns success even when a privilege
+                // isn't assigned — GetLastError reports NOT_ALL_ASSIGNED.
+                else if (Marshal.GetLastWin32Error() == 1300 /* ERROR_NOT_ALL_ASSIGNED */)
+                    ok = false;
+            }
+            return ok;
+        }
+        finally
+        {
+            CloseHandle(token);
+        }
+    }
 }

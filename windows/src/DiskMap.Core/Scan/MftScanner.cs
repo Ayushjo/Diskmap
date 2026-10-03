@@ -50,6 +50,11 @@ internal static class MftScanner
             return null;
         string volumePath = @"\\?\" + char.ToUpperInvariant(volumeRoot[0]) + ":";
 
+        // FILE_FLAG_BACKUP_SEMANTICS (on the $MFT OpenFileById) and raw
+        // volume reads need SeBackupPrivilege *enabled* — admin tokens hold
+        // it disabled by default, so enable it or every step below fails.
+        Win32.EnableBackupPrivileges();
+
         using var volume = Win32.CreateFileW(
             volumePath, Win32.GENERIC_READ,
             Win32.FILE_SHARE_READ | Win32.FILE_SHARE_WRITE | Win32.FILE_SHARE_DELETE,
