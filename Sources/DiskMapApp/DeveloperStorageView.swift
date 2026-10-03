@@ -227,7 +227,7 @@ struct DeveloperStorageView: View {
                                         .frame(width: 24, height: 24)
                                 } trailing: {
                                     SafetyLabel(level: nil, title: DeveloperLabels.gitShort(proj.git), tint: DeveloperLabels.gitTint(proj.git))
-                                        .frame(width: 92, alignment: .leading)
+                                        .frame(width: DiskMapType.scaled(92), alignment: .leading)
                                         .help(proj.git.detail)
                                     TextColumn(text: DeveloperLabels.rebuildShort(proj.rebuildCost), width: 92)
                                     MonoColumn(text: RelativeAge.short(day: proj.lastSourceDay), width: 56)
@@ -307,7 +307,7 @@ struct DeveloperStorageView: View {
                 } trailing: {
                     TextColumn(text: item.ecosystem.title, width: 84)
                     SafetyLabel(level: item.safety.level)
-                        .frame(width: 104, alignment: .leading)
+                        .frame(width: DiskMapType.scaled(104), alignment: .leading)
                     MonoColumn(text: ByteFormat.string(item.bytes), width: 74, emphasis: true)
                 }
             }

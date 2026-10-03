@@ -180,7 +180,7 @@ struct OldDownloadsView: View {
                     FileIdentityIcon(url: URL(fileURLWithPath: item.absolutePath), kind: item.kind, size: 24)
                 } trailing: {
                     SafetyLabel(level: item.status == .reviewFirst ? .review : .safe)
-                        .frame(width: 96, alignment: .leading)
+                        .frame(width: DiskMapType.scaled(96), alignment: .leading)
                     TextColumn(text: item.kind.title, width: 80)
                     MonoColumn(text: RelativeAge.short(ageDays: item.ageDays), width: 64)
                     MonoColumn(text: ByteFormat.string(item.bytes), width: 74, emphasis: true)

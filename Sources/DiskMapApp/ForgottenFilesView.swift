@@ -246,7 +246,7 @@ struct ForgottenFilesView: View {
                 FileIdentityIcon(url: URL(fileURLWithPath: c.absolutePath), kind: c.kind, size: 24)
             } trailing: {
                 SafetyLabel(level: nil, title: Self.confidenceLabel(c.confidence), tint: Self.confidenceTint(c.confidence))
-                    .frame(width: 128, alignment: .leading)
+                    .frame(width: DiskMapType.scaled(128), alignment: .leading)
                     .help(c.confidence == .oldImportant
                           ? "Excluded from recommendations because this appears to be app-managed or important data."
                           : c.confidence.title)

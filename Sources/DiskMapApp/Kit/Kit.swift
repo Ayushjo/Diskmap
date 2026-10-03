@@ -309,8 +309,9 @@ struct ColumnHeaderLabel: View {
     var alignment: Alignment = .leading
     var width: CGFloat? = nil
     var body: some View {
+        // Same scaling as MonoColumn / TextColumn, so headers stay over their columns.
         MonoLabel(title)
-            .frame(width: width, alignment: alignment)
+            .frame(width: width.map { $0 * max(1, DiskMapType.scale) }, alignment: alignment)
             .frame(maxWidth: width == nil ? .infinity : nil, alignment: alignment)
     }
 }

@@ -59,7 +59,7 @@ struct MonoColumn: View {
             .font(emphasis ? DiskMapType.figureStrong : DiskMapType.figureSmall)
             .foregroundStyle(emphasis ? DiskMapTheme.ink : DiskMapTheme.ink2)
             .lineLimit(1)
-            .frame(width: width, alignment: .trailing)
+            .frame(width: width * max(1, DiskMapType.scale), alignment: .trailing)
     }
 }
 
@@ -72,7 +72,7 @@ struct TextColumn: View {
             .font(DiskMapType.secondary)
             .foregroundStyle(DiskMapTheme.ink2)
             .lineLimit(1)
-            .frame(width: width, alignment: .leading)
+            .frame(width: width * max(1, DiskMapType.scale), alignment: .leading)
     }
 }
 

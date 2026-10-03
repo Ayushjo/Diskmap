@@ -156,7 +156,7 @@ struct AppsView: View {
                     AppIconView(path: app.bundlePath, size: 28)
                 } trailing: {
                     statusLabel(app.status)
-                        .frame(width: 96, alignment: .leading)
+                        .frame(width: DiskMapType.scaled(96), alignment: .leading)
                     TextColumn(text: app.source.title, width: 76)
                     MonoColumn(text: lastUsedLabel(app.lastUsed), width: 64)
                     MonoColumn(text: app.sizePending ? "…" : ByteFormat.string(app.totalBytes), width: 74, emphasis: true)

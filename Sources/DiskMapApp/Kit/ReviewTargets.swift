@@ -28,7 +28,7 @@ struct ReviewTargetRow: View {
                     ReviewTargetIcon(target: target)
                 } trailing: {
                     SafetyLabel(level: target.safety.level, title: target.isGenerallySafe ? "Generally safe" : nil)
-                        .frame(width: 112, alignment: .leading)
+                        .frame(width: DiskMapType.scaled(112), alignment: .leading)
                     MonoColumn(text: ByteFormat.string(target.bytes), width: 74, emphasis: true)
                 }
             }
