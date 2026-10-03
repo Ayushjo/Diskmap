@@ -965,3 +965,14 @@ measured in alternating pairs against the fixed 1M/400k reservation and was
 no faster (paired median 1.07×). Amortised regrowth of a few hundred MB costs
 tens of milliseconds in a ~16 s walk; the walk's tail came from other load on
 the machine. Kept simple: the fixed reservation stays.
+
+### Visual regression: one fixture, one machine for baselines (2026-10-03)
+
+`scripts/render-all.sh` renders every screen from a fixed fixture with the
+harness in `--deterministic` mode (fixed volume figures, a plain model with no
+cache or history, default settings, no timing text) and `ImageDiff` compares
+with `docs/visual-baseline` (tolerance 8/255 per channel, fail above 0.5% of
+pixels). Two local runs matched (91 identical, one at 0.035%). Baselines are
+produced on CI because fonts, file icons and antialiasing differ between
+Macs; a laptop's renders are compared only with themselves. Screens that list
+the machine's own state (Applications, Snapshots) are left out.

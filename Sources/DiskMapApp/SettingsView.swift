@@ -60,7 +60,8 @@ enum CloneAccounting {
     static let defaultMode: SharingMode = .off
 
     static var mode: SharingMode {
-        UserDefaults.standard.string(forKey: key).flatMap(SharingMode.init(rawValue:)) ?? defaultMode
+        if SnapshotHarness.isDeterministic { return defaultMode }
+        return UserDefaults.standard.string(forKey: key).flatMap(SharingMode.init(rawValue:)) ?? defaultMode
     }
 
     static func explanation(_ mode: SharingMode) -> String {

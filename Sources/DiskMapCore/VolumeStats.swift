@@ -14,7 +14,19 @@ public struct VolumeStats: Sendable, Equatable {
         return Double(usedBytes) / Double(totalBytes)
     }
 
+    /// Visual regression only (TASK-084): when set, every lookup returns it,
+    /// so renders do not depend on how full the machine's disk is today.
+    nonisolated(unsafe) public static var fixed: VolumeStats?
+
+    public init(volumeName: String, totalBytes: UInt64, freeBytes: UInt64, usedBytes: UInt64) {
+        self.volumeName = volumeName
+        self.totalBytes = totalBytes
+        self.freeBytes = freeBytes
+        self.usedBytes = usedBytes
+    }
+
     public static func forPath(_ path: String) -> VolumeStats? {
+        if let fixed { return fixed }
         var fs = statfs()
         let rc = path.withCString { statfs($0, &fs) }
         guard rc == 0 else { return nil }

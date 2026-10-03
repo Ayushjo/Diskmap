@@ -36,8 +36,11 @@ struct CleanupStageSummary: Sendable {
 /// `scannedCount` updates.
 @MainActor
 final class ScanModel: ObservableObject {
-    static let shared = ScanModel(scanCache: ScanCache(directory: ScanCache.defaultDirectory(), slot: "app"),
-                                  recordsLastScan: true)
+    /// In `--deterministic` harness runs (TASK-084) the model keeps no cache
+    /// and writes nothing, so every render starts from the same state.
+    static let shared = SnapshotHarness.isDeterministic
+        ? ScanModel()
+        : ScanModel(scanCache: ScanCache(directory: ScanCache.defaultDirectory(), slot: "app"), recordsLastScan: true)
 
     @Published var tree: FileTree?
     /// What grew since about a week ago, from the storage history (TASK-079).

@@ -20,12 +20,23 @@ enum SnapshotHarness {
 
     static var isActive: Bool { value(after: "--snapshot-dir") != nil }
 
+    /// `--deterministic` (TASK-084): renders that do not depend on the day,
+    /// the disk's free space or earlier runs — for visual regression.
+    nonisolated static var isDeterministic: Bool {
+        CommandLine.arguments.contains("--snapshot-dir") && CommandLine.arguments.contains("--deterministic")
+    }
+
+    /// What the deterministic renders show for the volume.
+    static let fixedVolume = VolumeStats(volumeName: "Macintosh HD", totalBytes: 500_000_000_000,
+                                         freeBytes: 120_000_000_000, usedBytes: 380_000_000_000)
+
     /// The modifiers of the synthetic click being delivered. A synthetic
     /// event cannot hold a real key down, so selection code asks here first.
     static var clickModifiers: NSEvent.ModifierFlags?
 
     static func startIfRequested() {
         guard let dir = value(after: "--snapshot-dir") else { return }
+        if isDeterministic { VolumeStats.fixed = fixedVolume }
         if let appearance = value(after: "--appearance") {
             // hc-* renders the Increase Contrast token values via an in-app
             // override; the system setting itself is left alone.
@@ -51,6 +62,10 @@ enum SnapshotHarness {
         for _ in 0..<1_200 {
             if model.tree != nil && !model.isScanning { break }
             try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        if isDeterministic {
+            // No timing on screen: "Full scan in 0.4 s" differs every run.
+            model.lastScanKind = .full(seconds: 1, fallbackReason: nil)
         }
         // A quick rescan can finish before SwiftUI has made the window.
         for _ in 0..<100 where mainWindow() == nil {

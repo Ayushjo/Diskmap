@@ -257,7 +257,8 @@ enum TextSize: String, CaseIterable, Identifiable {
     }
 
     static var stored: TextSize {
-        UserDefaults.standard.string(forKey: storageKey).flatMap(TextSize.init(rawValue:)) ?? .standard
+        if SnapshotHarness.isDeterministic { return .standard }
+        return UserDefaults.standard.string(forKey: storageKey).flatMap(TextSize.init(rawValue:)) ?? .standard
     }
 
     var bigger: TextSize { Self.allCases.first { $0.scale > scale } ?? self }

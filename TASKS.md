@@ -1486,3 +1486,19 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   (load average 6.5–10, a Docker VM at 0–100% CPU run to run). Evidence:
   `docs/perf-results/p95-walk-tail.txt`; PERF.md updated with the
   method lesson (alternate A/B, quiet machine).
+- [x] **TASK-084: Visual regression check**
+  `scripts/make-visual-fixture.sh` builds a fixed tree (sizes, names, one
+  duplicate pair; dates relative to now) under /tmp. Harness
+  `--deterministic`: fixed volume figures (`VolumeStats.fixed`), no scan
+  cache, history or saved searches (a plain model), default text size and
+  clone accounting, constant scan-timing line. `scripts/render-all.sh`
+  renders 23 screens (15 destinations + 8 Visualize modes; Applications and
+  Snapshots left out — they list this Mac's apps and saved snapshots) in
+  light, dark, hc-light and hc-dark = 92 PNGs at 1280×820 in ~4 min, then
+  compares with `docs/visual-baseline` via the new `ImageDiff` tool
+  (per-pixel, tolerance 8/255, fail above 0.5%, red diff images; 7 s in
+  release). Verified: two runs → 91 identical, 1 at 0.035%; a changed
+  sidebar-selection colour → FAIL at 4.5% / 1.1% with diff images.
+  `.github/workflows/visual.yml` (macos-14) renders and compares, or makes
+  baselines when run with "update"; baselines are committed from its
+  artifact, not from a laptop, so none are in the repo yet.

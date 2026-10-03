@@ -27,6 +27,8 @@ let package = Package(
         .executableTarget(name: "DiskMapScanBench", dependencies: ["DiskMapCore"]),
         .executableTarget(name: "AttrProbe"),
         .executableTarget(name: "SharingProbe"),
+        // Visual regression check for scripts/render-all.sh (TASK-084).
+        .executableTarget(name: "ImageDiff"),
         .executableTarget(name: "diskmap", dependencies: ["DiskMapCore"]),
     ]
 )
