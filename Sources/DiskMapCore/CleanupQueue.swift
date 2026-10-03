@@ -33,6 +33,15 @@ public actor CleanupQueue {
         /// takes seconds (a 325k-file ~/Library/Caches: ~9.6 s), so staging
         /// returns at once and the figure fills in afterwards.
         public internal(set) var isMeasuring: Bool
+        /// Where `sharing` came from: the last scan's tree (instant), or a
+        /// walk of the path (TASK-082). Nil while measuring.
+        public internal(set) var measurementSource: MeasurementSource? = nil
+    }
+
+    public enum MeasurementSource: Sendable, Equatable {
+        /// From the scan finished at this time, checked unchanged since.
+        case scan(Date)
+        case walk
     }
 
     /// What confirming would free, and why the rest would not.
@@ -84,6 +93,8 @@ public actor CleanupQueue {
     }
 
     private var items: [StagedItem] = []
+    /// The latest scan, for measuring staged folders without walking them.
+    private var scanContext: StorageSharing.ScanContext?
     private var measurementWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// Paths that must never be staged, regardless of what a scan or
@@ -99,6 +110,12 @@ public actor CleanupQueue {
     ]
 
     public init() {}
+
+    /// Called after every scan (and with nil when the tree is gone), so
+    /// staging can measure from the tree when that is exact (TASK-082).
+    public func setScanContext(_ context: StorageSharing.ScanContext?) {
+        scanContext = context
+    }
 
     public func stage(
         _ url: URL,
@@ -132,17 +149,24 @@ public actor CleanupQueue {
         // a huge folder returns immediately and never parks a thread.
         let id = item.id
         let measuredPath = standardized.path
+        let context = scanContext
         Task {
+            // The tree first: exact when it can be, nil otherwise.
+            if let context, let seeded = await StorageSharing.seededProfileOffPool(context: context, path: measuredPath) {
+                self.recordMeasurement(seeded, source: .scan(context.capturedAt), for: id)
+                return
+            }
             let sharing = await StorageSharing.profileOffPool(atPath: measuredPath)
-            self.recordMeasurement(sharing, for: id)
+            self.recordMeasurement(sharing, source: .walk, for: id)
         }
         return true
     }
 
-    private func recordMeasurement(_ sharing: StorageSharing.Profile?, for id: UUID) {
+    private func recordMeasurement(_ sharing: StorageSharing.Profile?, source: MeasurementSource, for id: UUID) {
         if let index = items.firstIndex(where: { $0.id == id }) {
             items[index].sharing = sharing
             items[index].isMeasuring = false
+            items[index].measurementSource = source
         }
         resumeWaitersIfSettled()
     }

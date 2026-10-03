@@ -133,6 +133,11 @@ enum BulkScan {
         return mode == .full ? .full : .refcount
     }
 
+    static func sharingMode(of layout: SharingLayout?) -> SharingMode {
+        guard let layout else { return .off }
+        return layout == .full ? .full : .refcount
+    }
+
     private static func configuredWorkers() -> Int {
         let cpu = ProcessInfo.processInfo.activeProcessorCount
         let fallback = max(1, min(cpu, 8))
@@ -231,6 +236,7 @@ enum BulkScan {
         var fileID: UInt64
         var devID: Int32
         var isHardLink: Bool
+        var allocatedEstimated: Bool = false
         /// Sharing facts (TASK-077); `privateBytes` is -1 when not read.
         var privateBytes: Int64 = -1
         var cloneID: UInt64 = 0
@@ -243,6 +249,7 @@ enum BulkScan {
 
         var flags: UInt8 {
             (notDownloaded ? NodeFlags.notDownloaded : 0) | (isHardLink ? NodeFlags.hardLink : 0)
+                | (allocatedEstimated ? NodeFlags.allocatedEstimated : 0)
         }
     }
 
@@ -292,7 +299,7 @@ enum BulkScan {
                 isDirectory: entry.isDirectory, logical: entry.logical, allocated: entry.allocated,
                 day: entry.day, createdDay: entry.createdDay, notDownloaded: entry.notDownloaded,
                 descend: entry.descend, fileID: entry.fileID, devID: entry.devID, isHardLink: entry.isHardLink,
-                privateBytes: entry.privateBytes, cloneID: entry.cloneID, cloneRefcount: entry.cloneRefcount
+                allocatedEstimated: entry.allocatedEstimated, privateBytes: entry.privateBytes, cloneID: entry.cloneID, cloneRefcount: entry.cloneRefcount
             )
         })
     }
@@ -373,6 +380,7 @@ enum BulkScan {
                 isDirectory: isDirectory,
                 logical: logical,
                 allocated: allocated > 0 ? allocated : logical,
+                allocatedEstimated: !isDirectory && allocated <= 0 && logical > 0,
                 day: dayFromEpochSeconds(modified),
                 createdDay: dayFromEpochSeconds(created),
                 notDownloaded: dataless,
@@ -579,6 +587,7 @@ enum BulkScan {
                         flags |= NodeFlags.hardLink
                         hardLinkDelta += 1
                     }
+                    if entry.allocatedEstimated { flags |= NodeFlags.allocatedEstimated }
                     let id = tree.addNode(
                         utf8: bytes,
                         parent: batch.parent,
@@ -713,7 +722,7 @@ enum BulkScan {
             // The publisher has exited, so the live counters and tree are
             // quiescent: send one final, complete report.
             reportLiveIfDue(lastFolderUTF8: BulkScan.nulTerminatedUTF8(scanRootPath), force: true)
-            tree.hasSharingInfo = readsSharing
+            tree.sharingMode = BulkScan.sharingMode(of: sharingLayout)
             condition.lock()
             let result = Result(
                 tree: tree,
@@ -757,6 +766,8 @@ private struct Entry {
     var isDirectory: Bool
     var logical: Int64
     var allocated: Int64
+    /// `allocated` is the logical size because the volume reported 0.
+    var allocatedEstimated: Bool = false
     var day: Int32
     var createdDay: Int32
     var notDownloaded: Bool

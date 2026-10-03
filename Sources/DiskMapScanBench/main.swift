@@ -29,6 +29,9 @@ struct Args {
     var queries: [String] = []
     var json = false
     var label = "scan"
+    /// TASK-082: after the scan, time measuring this folder from the tree
+    /// against walking it, and check the two agree.
+    var seeded: String?
     /// TASK-061: one full walk, then N quick updates from the in-memory tree.
     var incrementalRuns = 0
 }
@@ -67,6 +70,9 @@ func parseArgs() -> Args {
             args.json = true
         case "--incremental":
             args.incrementalRuns = max(1, Int(rest.first ?? "5") ?? 5)
+            if !rest.isEmpty { rest.removeFirst() }
+        case "--seeded":
+            args.seeded = rest.first.map { ($0 as NSString).expandingTildeInPath }
             if !rest.isEmpty { rest.removeFirst() }
         case "--label":
             args.label = rest.first ?? args.label
@@ -345,6 +351,30 @@ for run in 1...args.repeats {
         _ = AgeMap.bucketSizes(in: tree, totals: allocated, today: AgeMap.today())
         _ = AgeMap.untouched(in: tree, totals: allocated, today: AgeMap.today(), limit: 100)
         layoutSeconds = durationSeconds(from: started)
+    }
+
+    if let seededPath = args.seeded {
+        let marker = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("diskmap-bench-barrier/.marker")
+        let context = StorageSharing.ScanContext(
+            tree: result.tree, rootPath: root.path, eventID: result.eventIDAtStart,
+            volumeUUID: FSEventHistory.volumeUUID(forPath: FSEventHistory.realPath(root.path)),
+            deniedIDs: Set(result.deniedDirectoryIDs), barrierMarker: marker, capturedAt: Date())
+        let seededStart = ContinuousClock.now
+        let outcome = StorageSharing.seededMeasurement(context: context, path: seededPath)
+        let seededSeconds = durationSeconds(from: seededStart)
+        var seeded: StorageSharing.Profile?
+        switch outcome {
+        case .measured(let profile): seeded = profile
+        case .walkNeeded(let reason): print("seeded walk_needed reason=\(reason)")
+        }
+        let walkStart = ContinuousClock.now
+        let walked = StorageSharing.profile(atPath: seededPath)
+        let walkSeconds = durationSeconds(from: walkStart)
+        print("seeded path=\(seededPath) sharing=\(result.tree.sharingMode.rawValue) seeded=\(seeded != nil) seeded_seconds=\(String(format: "%.3f", seededSeconds)) walk_seconds=\(String(format: "%.3f", walkSeconds)) files=\(walked?.fileCount ?? -1) equal=\(seeded == walked)")
+        if let seeded, let walked, seeded != walked {
+            print("seeded files=\(seeded.fileCount) alloc=\(seeded.allocatedBytes) unattributed=\(seeded.sharedUnattributedBytes) complete=\(seeded.isComplete)")
+            print("walked files=\(walked.fileCount) alloc=\(walked.allocatedBytes) unattributed=\(walked.sharedUnattributedBytes) complete=\(walked.isComplete)")
+        }
     }
 
     if result.tree.hasSharingInfo {

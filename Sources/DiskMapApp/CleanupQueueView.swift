@@ -319,9 +319,13 @@ extension CleanupQueueView {
         if freed == 0 && occupied > 0 {
             return "\(diskByteString(occupied)) · shared — freed only when every copy or link is queued"
         }
-        if freed + 4_096 < occupied {
-            return "Frees \(diskByteString(freed)) of \(diskByteString(occupied)) — the rest is shared"
+        let base = freed + 4_096 < occupied
+            ? "Frees \(diskByteString(freed)) of \(diskByteString(occupied)) — the rest is shared"
+            : diskByteString(freed)
+        // TASK-082: measured from the last scan (checked unchanged since).
+        if case .scan(let date) = item.measurementSource {
+            return base + " · from the scan at \(date.formatted(date: .omitted, time: .shortened))"
         }
-        return diskByteString(freed)
+        return base
     }
 }

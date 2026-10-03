@@ -62,9 +62,11 @@ public struct FileTree: Sendable {
     /// Sparse — one row per clone or partly-shared file, never per node —
     /// so the per-node layout above stays as it is.
     public private(set) var sharing = SharingTable()
-    /// True when the scan asked the volume for sharing facts (APFS only). An
-    /// empty table then means "no clones here", not "unknown".
-    public internal(set) var hasSharingInfo = false
+    /// Which sharing facts the scan read (APFS only; `.off` otherwise). With
+    /// any of them, an empty table means "no clones here", not "unknown";
+    /// only `.full` also knows edited clones (partly shared files).
+    public internal(set) var sharingMode: SharingMode = .off
+    public var hasSharingInfo: Bool { sharingMode != .off }
 
     public var count: Int { nameIndex.count }
 
@@ -306,10 +308,10 @@ public struct FileTree: Sendable {
     /// Replaces the side table wholesale (snapshot load). Rows must be sorted
     /// by node id and in range; anything else is rejected.
     @discardableResult
-    mutating func replaceSharing(_ table: SharingTable, hasSharingInfo: Bool) -> Bool {
+    mutating func replaceSharing(_ table: SharingTable, mode: SharingMode) -> Bool {
         guard table.isWellFormed(nodeCount: count) else { return false }
         sharing = table
-        self.hasSharingInfo = hasSharingInfo
+        sharingMode = mode
         for node in table.node { flags[Int(node)] |= NodeFlags.apfsClone }
         return true
     }

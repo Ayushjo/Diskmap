@@ -164,7 +164,7 @@ public enum FSEventHistory {
     }
 
     /// realpath(3): FSEvents reports /private/var/…, not /var/….
-    static func realPath(_ path: String) -> String {
+    public static func realPath(_ path: String) -> String {
         guard let resolved = realpath(path, nil) else { return path }
         defer { free(resolved) }
         return String(cString: resolved)

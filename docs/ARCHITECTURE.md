@@ -915,3 +915,17 @@ per file, so there is no cheaper way to ask; a second pass would cost a whole
 walk.
 Overview says plainly that clones are counted per copy when it is off, and
 links to Settings.
+
+### Staging from the scan tree: exact, or a walk (2026-10-03)
+
+The cleanup queue's reclaim figure promises what emptying the Trash frees,
+so a figure from the tree is used only when it equals the walk's
+(`StorageSharing.seededMeasurement`, checked by `Profile ==` in tests and on
+real folders): the folder is in the tree, FSEvents (after a barrier) reports
+nothing under it since the scan's start id, and on APFS the scan read every
+sharing fact (`.full`). Anything else walks, as before, and the reason is
+logged. Rejected: using a `.refcount` tree — an edited clone looks plain
+there, and its shared blocks would count as freed (an overestimate);
+parallelising the walk instead (ruled out earlier). Accepted window: a file
+here cloned or hard-linked *from another folder* after the scan raises no
+event here — the same window every scan-based number has.

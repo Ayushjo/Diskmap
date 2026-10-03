@@ -53,7 +53,7 @@ enum CloneAccounting {
         case .refcount:
             return "Clones count once, so folder sizes match the disk. Scans take roughly 15–20% longer. The next scan reads every folder again."
         case .full:
-            return "Also notices copies that were edited after cloning and still share some blocks (counted in full and reported). Scans take nearly twice as long."
+            return "Also notices copies that were edited after cloning and still share some blocks (counted in full and reported), and lets Cleanup measure a folder that hasn’t changed since the scan instantly instead of reading it again. Scans take nearly twice as long."
         }
     }
 }

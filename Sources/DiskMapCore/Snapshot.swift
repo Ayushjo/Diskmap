@@ -32,7 +32,7 @@ enum SnapshotCodec {
     /// readable; their nodes decode with fileID 0 ("unknown"), which the
     /// hard-link correction treats as "nothing to correct".
     /// v4 (TASK-077) appends the APFS sharing table after the fileIDs: one
-    /// byte "sharing was read", a row count, then node ids, clone ids,
+    /// byte for the sharing mode read (0 off, 1 refcount, 2 full), a row count, then node ids, clone ids,
     /// private bytes and refcounts. v1–v3 decode with an empty table and
     /// `hasSharingInfo == false` ("not known", not "no clones").
     static let version: UInt32 = 4
@@ -57,7 +57,7 @@ enum SnapshotCodec {
         writer.flags(tree.isDirectory.map { $0 ? UInt8(1) : 0 })
         writer.flags(tree.flags)
         writer.u64s(tree.fileID)
-        writer.flags([tree.hasSharingInfo ? 1 : 0])
+        writer.flags([tree.sharingMode == .full ? 2 : tree.sharingMode == .refcount ? 1 : 0])
         let sharing = tree.sharing
         writer.i32(Int32(sharing.count))
         writer.i32s(sharing.node)
@@ -103,9 +103,13 @@ enum SnapshotCodec {
             fileID = []   // replacePacked fills zeros
         }
         var sharing = SharingTable()
-        var hasSharingInfo = false
+        var sharingMode = SharingMode.off
         if fileVersion >= 4 {
-            hasSharingInfo = try reader.flags(1).first == 1
+            switch try reader.flags(1).first {
+            case 1: sharingMode = .refcount
+            case 2: sharingMode = .full
+            default: sharingMode = .off
+            }
             let rows = Int(try reader.i32())
             guard rows >= 0, rows <= count else { throw SnapshotError.corrupt }
             guard let table = SharingTable(
@@ -134,7 +138,7 @@ enum SnapshotCodec {
             flags: flags,
             fileID: fileID
         ) else { throw SnapshotError.corrupt }
-        guard tree.replaceSharing(sharing, hasSharingInfo: hasSharingInfo) else { throw SnapshotError.corrupt }
+        guard tree.replaceSharing(sharing, mode: sharingMode) else { throw SnapshotError.corrupt }
         return DiskSnapshot(rootPath: rootPath, capturedAt: capturedAt, tree: tree)
     }
 }

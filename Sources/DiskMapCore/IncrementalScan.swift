@@ -209,9 +209,11 @@ public enum IncrementalScan {
         // Clone accounting must match the saved tree's, or the totals would
         // mix counted-once and counted-per-copy clones (TASK-077).
         let layout = BulkScan.sharingLayout(rootPath: rootPath, requested: sharing)
-        if (layout != nil) != old.hasSharingInfo {
-            return .fullScanNeeded(reason: layout != nil ? "the saved scan predates clone accounting"
-                                                         : "clone accounting was turned off")
+        let mode = BulkScan.sharingMode(of: layout)
+        if mode != old.sharingMode {
+            return .fullScanNeeded(reason: old.sharingMode == .off ? "the saved scan predates clone accounting"
+                                   : mode == .off ? "clone accounting was turned off"
+                                   : "clone accounting changed")
         }
 
         var rootInfo = stat()
@@ -307,7 +309,7 @@ public enum IncrementalScan {
         }
 
         mutating func run(rootModifiedDay: Int32) {
-            new.hasSharingInfo = sharing != nil
+            new.sharingMode = BulkScan.sharingMode(of: sharing)
             let rootID = new.appendNodeReusingName(
                 old.nameIndex[0], parent: -1, isDirectory: true,
                 logicalSize: old.logicalSize[0], allocatedSize: old.allocatedSize[0],

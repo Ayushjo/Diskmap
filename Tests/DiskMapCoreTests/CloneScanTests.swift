@@ -166,7 +166,7 @@ struct CloneScanTests {
         try f.clone("a.bin", "b.bin")
         let tree = await f.scan(.refcount)
         let decoded = try SnapshotCodec.decode(SnapshotCodec.encode(DiskSnapshot(rootPath: f.root.path, capturedAt: Date(), tree: tree)))
-        #expect(decoded.tree.hasSharingInfo)
+        #expect(decoded.tree.sharingMode == .refcount)
         #expect(decoded.tree.sharing == tree.sharing)
         #expect(decoded.tree.rollUpBoth().allocated == tree.rollUpBoth().allocated)
         let b = try #require(Self.node(decoded.tree, "b.bin"))
@@ -179,8 +179,8 @@ struct CloneScanTests {
         _ = tree.addNode(name: "x", parent: 0, isDirectory: false, logicalSize: 1, allocatedSize: 1, modifiedDaysSinceEpoch: 0)
         let outOfRange = SharingTable(node: [5], cloneID: [1], privateBytes: [0], refcount: [2])
         let unsorted = SharingTable(node: [1, 1], cloneID: [1, 1], privateBytes: [0, 0], refcount: [2, 2])
-        #expect(tree.replaceSharing(try! #require(outOfRange), hasSharingInfo: true) == false)
-        #expect(tree.replaceSharing(try! #require(unsorted), hasSharingInfo: true) == false)
+        #expect(tree.replaceSharing(try! #require(outOfRange), mode: .refcount) == false)
+        #expect(tree.replaceSharing(try! #require(unsorted), mode: .refcount) == false)
         #expect(SharingTable(node: [1], cloneID: [], privateBytes: [0], refcount: [2]) == nil)
     }
 

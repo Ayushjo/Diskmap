@@ -228,7 +228,12 @@ public enum StorageSharing {
                         profile.isComplete = false
                         continue
                     }
-                    let isDirectoryEntry = load(UInt32.self, buffer, offset + 40) == vdir
+                    let objectType = load(UInt32.self, buffer, offset + 40)
+                    // A symlink is not the data it points at, and the scan
+                    // does not record symlinks either — counting them here
+                    // made a folder's file count disagree with the tree's.
+                    if objectType == vlnk { continue }
+                    let isDirectoryEntry = objectType == vdir
                     let facts: FileFacts
                     if isDirectoryEntry {
                         facts = FileFacts(
@@ -322,4 +327,5 @@ public enum StorageSharing {
     private static let extendedMask = attrExtPrivateSize | attrExtCloneID | attrExtFlags | attrExtCloneRefcount
     private static let fsoptCommonExtended: UInt32 = 0x0000_0020
     private static let vdir: UInt32 = 2
+    private static let vlnk: UInt32 = 5
 }

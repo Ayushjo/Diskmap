@@ -1396,3 +1396,25 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   the fixture volume). 8 new tests on real `cp -c` clones (family once,
   split across folders with a stable electee, edited clone, hard-linked
   clone, plain files, codec, malformed table, quick rescan). 270 tests green.
+- [x] **TASK-082: Instant staging measurement (exact or not at all)**
+  `CleanupQueue.setScanContext` after every scan; staging a folder first
+  tries `StorageSharing.seededMeasurement` — the folder's subtree from the
+  tree (plain files summed, clones built from the sharing table, hard links /
+  cloud files / estimated allocations asked one by one; new
+  `NodeFlags.allocatedEstimated`), after an FSEvents barrier and replay
+  confirm nothing under it changed — and falls back to the walk with a
+  reason. Exactness rule: on APFS only after a `.full` scan (the tree now
+  records its `sharingMode`; codec v4 stores it), because without
+  PRIVATESIZE an edited clone looks plain and its shared blocks would count
+  as freed — an overestimate. Rows say "from the scan at 14:02". The walk
+  now skips symlinks, as the scan does (it counted them as 0-byte files —
+  the only difference the equality test found). Measured
+  (`docs/perf-results/seeded-staging.txt`): ~/FreeCAD, 147,226 files,
+  0.06–0.14 s from the tree vs 4.6–4.7 s walked, `Profile` equal; ~/Downloads
+  0.04 s vs 2.8 s, equal. ~/Library/Caches is written during every scan, so
+  it is walked ("2 folders changed since the scan") — correct, not a miss.
+  Default settings (clone accounting off) keep the walk everywhere on APFS.
+  7 tests (equality on a fixture with plain/empty files, hard links in and
+  out, a clone family across the boundary, an edited clone, a symlink;
+  change after scan; limit; non-full modes; unreadable subfolder; file /
+  unknown path; queue source). 277 tests green.

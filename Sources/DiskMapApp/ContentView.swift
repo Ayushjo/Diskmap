@@ -344,6 +344,14 @@ final class ScanModel: ObservableObject {
             }
         }
         deniedDirectoryIDs = result.deniedDirectoryIDs
+        // Staging a folder from this tree can skip the walk when exact (TASK-082).
+        let context = StorageSharing.ScanContext(
+            tree: scannedTree, rootPath: url.path, eventID: result.eventIDAtStart,
+            volumeUUID: FSEventHistory.volumeUUID(forPath: FSEventHistory.realPath(url.path)),
+            deniedIDs: Set(result.deniedDirectoryIDs),
+            barrierMarker: scanCache?.directory.appendingPathComponent(".event-barrier"),
+            capturedAt: Date())
+        Task { await cleanupQueue.setScanContext(context) }
         if recordsLastScan, let volume = VolumeStats.forPath(url.path) {
             LastScanRecord(rootPath: url.path, scannedAt: Date(), freeBytes: volume.freeBytes,
                            scannedBytes: prepared.allocated.first ?? 0).save()
