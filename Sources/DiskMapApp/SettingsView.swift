@@ -33,6 +33,7 @@ struct SettingsView: View {
             } header: {
                 Text("History")
             }
+            UpdateSettingsSection()
             Section {
                 Picker("Text size", selection: Binding(
                     get: { TextSize(rawValue: textSize) ?? .standard },

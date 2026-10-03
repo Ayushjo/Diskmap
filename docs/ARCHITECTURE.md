@@ -976,3 +976,15 @@ pixels). Two local runs matched (91 identical, one at 0.035%). Baselines are
 produced on CI because fonts, file icons and antialiasing differ between
 Macs; a laptop's renders are compared only with themselves. Screens that list
 the machine's own state (Applications, Snapshots) are left out.
+
+### Updates: Sparkle, opt-in, in one file (2026-10-03)
+
+The maintainer chose Sparkle with automatic checks off by default — the one
+exception to "nothing calls the network" (AGENTS.md rule 2, amended). All of
+it is in `Updates.swift`: the updater is not created at launch unless the user
+turned automatic checks on; "Check for Updates…" is the only other way in; a
+build without `SUFeedURL` and `SUPublicEDKey` cannot check at all and says so.
+`NetworkPolicyTests` keeps networking APIs and `import Sparkle` out of every
+other source file. Rejected: a home-grown version check (still networking,
+without signature verification) and auto-checks on by default (breaks the
+offline promise for everyone to save some a click).

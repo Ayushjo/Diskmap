@@ -1502,3 +1502,25 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   `.github/workflows/visual.yml` (macos-14) renders and compares, or makes
   baselines when run with "update"; baselines are committed from its
   artifact, not from a laptop, so none are in the repo yet.
+- [x] **TASK-083: Release — icon, versioned .app and .dmg, notarization-ready, Sparkle opt-in**
+  Icon drawn in SwiftUI (`IconRender` target → `scripts/make-icon.sh` →
+  `Resources/AppIcon.icns`, all 10 sizes); three variants in `docs/icon/`,
+  variant 1 wired in — **pick one** (`scripts/make-icon.sh 2|3`).
+  `build-adhoc.sh`: icon, `VERSION` (0.2.0) + build number from git,
+  Sparkle.framework embedded with an `@executable_path/../Frameworks` rpath,
+  `SUEnableAutomaticChecks` false, feed URL and public key only when given,
+  `dist/DiskMap-<version>.dmg` with an Applications link. Verified: codesign
+  --verify --deep ok, dmg mounts, the launched app opened **0 network
+  sockets in 30 s** with Sparkle loaded. `scripts/notarize.sh` and
+  `.github/workflows/release.yml` written, both refuse to run without a
+  Developer ID. Sparkle 2.10 (SwiftPM, resolved with --disable-keychain):
+  all update code in `Updates.swift`, nothing created at launch unless the
+  user enabled automatic checks; DiskMap ▸ Check for Updates… and Settings
+  ▸ Updates (default off), both disabled in builds without a feed.
+  **Rule change, called out: AGENTS.md rule 2 and the project skill now
+  name Sparkle as the single networking exception**; `NetworkPolicyTests`
+  fails if networking or `import Sparkle` appears outside `Updates.swift`,
+  and pins automatic checks off. Not done (needs you): Sparkle's
+  `generate_keys` (writes your keychain), an appcast host, and the
+  file:// appcast check, which needs a signed update. `docs/RELEASING.md`.
+  305 tests green.

@@ -27,8 +27,11 @@ decision log: `docs/ARCHITECTURE.md`. Ordered work breakdown + acceptance criter
 1. **Never delete files directly.** All removal routes through `CleanupQueue.commit()`,
    which moves to Trash via `FileManager.trashItem` — never `unlink` or
    `FileManager.removeItem`. Don't add a second deletion path.
-2. **No networking, anywhere.** Offline-only is a product promise. Grep for outbound
-   `URLSession`/networking before merging; don't add analytics or crash reporters.
+2. **No networking — single exception: Sparkle updates.** Offline-only is a product
+   promise. Grep for outbound `URLSession`/networking before merging; don't add
+   analytics or crash reporters. The only exception is Sparkle in
+   `Sources/DiskMapApp/Updates.swift`: off by default, only when the user enables
+   automatic checks or picks Check for Updates…; `NetworkPolicyTests` enforces it.
 3. **Two-step cleanup boundary.** Staging (`CleanupQueue.stage()`) and committing
    (moving to Trash) must stay separate actions. No one-click "scan and clean" — that's
    a deliberate human product decision, not a default. Every new source of staged items

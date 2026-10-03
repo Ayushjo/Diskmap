@@ -18,6 +18,7 @@ struct DiskMapApp: App {
             KeyboardCommands(model: ScanModel.shared)
             MenuBarCommands()
             AppearanceCommands()
+            UpdateCommands()
         }
         Settings {
             SettingsView()
@@ -44,6 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // app can sit in the run loop without `.task` ever firing.
         ScanModel.shared.startIfRequested()
         SnapshotHarness.startIfRequested()
+        // Sparkle starts only if the user turned automatic checks on (TASK-083).
+        if !SnapshotHarness.isActive { Updates.shared.startIfEnabled() }
     }
 
     /// A folder dropped on the Dock icon, or `open -a DiskMap ~/code`

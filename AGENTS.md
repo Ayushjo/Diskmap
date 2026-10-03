@@ -19,10 +19,16 @@ in order, with acceptance criteria: `TASKS.md`.
    Trash) — never `unlink` or `FileManager.removeItem`. If you're building a
    new cleanup feature, route it through `CleanupQueue`; don't add a second
    deletion path.
-2. **Nothing calls the network.** Grep for outbound `URLSession`/networking
-   before merging anything. Fully offline is a stated product promise and a
-   differentiator over closed competitors — don't regress it by accident
-   (e.g. adding a crash reporter or analytics SDK).
+2. **Nothing calls the network — with one exception.** Grep for outbound
+   `URLSession`/networking before merging anything. Fully offline is a stated
+   product promise and a differentiator over closed competitors — don't
+   regress it by accident (e.g. adding a crash reporter or analytics SDK).
+   **Single exception (TASK-083, chosen by the maintainer):** Sparkle update
+   checks, confined to `Sources/DiskMapApp/Updates.swift`, off by default,
+   made only when the user turns on "Check for updates automatically" or
+   chooses Check for Updates…, and impossible in builds without a feed URL and
+   public key. `NetworkPolicyTests` fails if networking appears in any other
+   file. Scans, cleanup, history and everything else stay offline.
 3. **The excluded-paths list in `CleanupQueue.swift` is the last line of
    defense** against staging something like `/System`. Any change to it
    needs to be called out explicitly in your summary of the change, not

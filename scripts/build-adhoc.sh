@@ -13,6 +13,13 @@ echo "==> swift build -c release --product DiskMapApp"
 swift build -c release --product DiskMapApp
 
 BIN="$ROOT/.build/release/DiskMapApp"
+VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
+# Sparkle (TASK-083): updates work only when both are given; otherwise the app
+# has no feed and never contacts any server. The private key never enters the
+# repo — sign releases with Sparkle's sign_update on the maintainer's Mac.
+FEED_URL="${DISKMAP_FEED_URL:-}"
+PUBLIC_KEY="${DISKMAP_SPARKLE_PUBLIC_KEY:-}"
 if [ ! -x "$BIN" ]; then
   echo "missing release binary at $BIN" >&2
   exit 1
@@ -23,6 +30,14 @@ rm -rf "$APP"
 mkdir -p "$MACOS" "$RES"
 cp "$BIN" "$MACOS/DiskMap"
 chmod +x "$MACOS/DiskMap"
+
+# App icon, drawn by Sources/IconRender (scripts/make-icon.sh).
+cp "$ROOT/Resources/AppIcon.icns" "$RES/AppIcon.icns"
+
+# Sparkle.framework next to the binary, found through @executable_path.
+mkdir -p "$CONTENTS/Frameworks"
+cp -R "$ROOT/.build/release/Sparkle.framework" "$CONTENTS/Frameworks/"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS/DiskMap" 2>/dev/null || true
 
 # SwiftPM resource bundle (quick-wins JSON)
 for bundle in "$ROOT"/.build/release/DiskMap_*.bundle; do
@@ -52,9 +67,18 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>${VERSION}</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>${BUILD_NUMBER}</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <!-- Updates are opt-in: never checked unless the user turns it on. -->
+  <key>SUEnableAutomaticChecks</key>
+  <false/>${FEED_URL:+
+  <key>SUFeedURL</key>
+  <string>${FEED_URL}</string>}${PUBLIC_KEY:+
+  <key>SUPublicEDKey</key>
+  <string>${PUBLIC_KEY}</string>}
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSHighResolutionCapable</key>
@@ -88,6 +112,18 @@ echo "==> ad-hoc codesign"
 codesign --force --deep --sign - "$APP"
 codesign -dv --verbose=2 "$APP" 2>&1 | head -20
 
-echo "==> done: $APP"
+echo "==> verify"
+codesign --verify --deep --strict "$APP" && echo "signature ok (ad-hoc)"
+
+DMG="$DIST/DiskMap-${VERSION}.dmg"
+echo "==> $DMG"
+STAGE="$(mktemp -d "${TMPDIR:-/tmp}/diskmap-dmg.XXXXXX")"
+cp -R "$APP" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+rm -f "$DMG"
+hdiutil create -volname "DiskMap ${VERSION}" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+rm -rf "$STAGE"
+
+echo "==> done: $APP (version ${VERSION}, build ${BUILD_NUMBER}) and $DMG"
 echo "First launch: right-click the app → Open (Gatekeeper unidentified-developer warning)."
 echo "No Apple Developer account required for this personal-use path."
