@@ -1439,3 +1439,16 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   `-StorageHistoryDirectory` points the harness at a scratch folder.
   Verified with a seeded week-old entry for ~/Downloads (render). 10 tests.
   287 tests green.
+- [x] **TASK-080: Put Back the last cleanup**
+  `moveToTrash` now returns `trashItem`'s resulting URL; `CommitEntry` keeps
+  it; `CleanupRecord` (original path, Trash path, bytes) is built from the
+  commit report and persisted to `last-cleanup.json`.
+  `CleanupQueue.putBack` moves items back only when still in the Trash and
+  nothing is at the old path (skips say why), recreating a missing parent;
+  then a quick rescan. UI: "Put Back N Items" in the cleanup sheet, File ▸
+  Put Back Last Cleanup, toast "Put back N of M", receipt lists skips. Tests
+  through the seam with a fake Trash folder (never the real one): restore
+  exact paths and sizes, occupied path untouched, emptied Trash reported,
+  folder brings its queued child, missing parent recreated, failures not
+  recorded, record round trip. No `removeItem` in app or core code; the
+  only new file operation is `moveItem` out of the Trash. 294 tests green.

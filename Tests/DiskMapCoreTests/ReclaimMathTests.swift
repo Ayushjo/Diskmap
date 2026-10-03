@@ -257,7 +257,7 @@ struct ReclaimMathTests {
         let path = f.file("solo.bin", bytes: 300_000)
         let queue = CleanupQueue()
         #expect(await queue.stage(URL(fileURLWithPath: path), size: 1, reason: "test"))
-        let report = await queue.commitReport { _ in }
+        let report = await queue.commitReport { _ in nil }
         #expect(report.freedWhenTrashEmptied == f.allocated(path))
     }
 
@@ -273,7 +273,7 @@ struct ReclaimMathTests {
         let before = await queue.reclaimEstimate()
 
         var moved: [String] = []
-        let report = await queue.commitReport { moved.append($0.path) }
+        let report = await queue.commitReport { moved.append($0.path); return nil }
         #expect(report.freedWhenTrashEmptied == before.bytes)
         #expect(report.entries.map(\.freedBytes).reduce(0, +) == before.bytes)
         let receipt = CleanupPreflight.logEntries(from: report)
@@ -290,7 +290,7 @@ struct ReclaimMathTests {
         #expect(await stage(queue, f.dir + "/folder"))
 
         var moved: [String] = []
-        let report = await queue.commitReport { moved.append($0.path) }
+        let report = await queue.commitReport { moved.append($0.path); return nil }
         #expect(moved == [URL(fileURLWithPath: f.dir + "/folder").standardizedFileURL.path])
         let innerEntry = try #require(report.entries.first { $0.item.url.path.hasSuffix("inner.bin") })
         #expect(innerEntry.error == nil)
@@ -310,6 +310,7 @@ struct ReclaimMathTests {
         struct Denied: Error {}
         let report = await queue.commitReport { url in
             if url.lastPathComponent == "fails.bin" { throw Denied() }
+            return nil
         }
         #expect(report.freedWhenTrashEmptied == f.allocated(goes))
         #expect(await queue.allItems().map(\.url.lastPathComponent) == ["fails.bin"])

@@ -12,6 +12,12 @@ struct ExportScanCommands: Commands {
             Button("Export Scan…") { ExportScan.run(model: model) }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(model.tree == nil || model.isScanning)
+            Divider()
+            // TASK-080: undo the last Move to Trash.
+            Button(model.lastCleanup.map { "Put Back Last Cleanup (\($0.items.count))" } ?? "Put Back Last Cleanup") {
+                Task { await model.putBackLastCleanup() }
+            }
+            .disabled(model.lastCleanup?.items.isEmpty ?? true)
         }
     }
 }

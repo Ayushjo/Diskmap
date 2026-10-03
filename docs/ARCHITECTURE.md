@@ -941,3 +941,19 @@ Entries remember the clone accounting they were counted with and are compared
 only with entries counted the same way. The file is written with
 `Data.write(.atomic)` and never removed; a damaged one is left in place and a
 `.v2.json` beside it is used instead.
+
+### Put Back moves out of the Trash, never over anything (2026-10-03)
+
+`CleanupQueue.putBack` is the second place DiskMap moves user files, and the
+only one that is not `trashItem`. It is a move *into* the user's folders, not
+a removal: each item from the last cleanup goes back only when it is still in
+the Trash and its original path is free (checked with `lstat`, so even a
+dangling symlink counts as occupied); otherwise it is skipped with the reason
+("Already removed from the Trash", "Something new is at …"). A missing parent
+folder is recreated. The record (original path, Trash path, bytes) comes from
+`trashItem`'s `resultingItemURL`, is kept in
+`~/Library/Application Support/DiskMap/last-cleanup.json` so Put Back works
+after a relaunch, and is replaced (atomically, by an empty record) once used.
+Only items moved by themselves are recorded; a child that went with its
+folder comes back with the folder. Rule 1 in AGENTS.md is unchanged: nothing
+is removed except through `CleanupQueue.commit()` → Trash.

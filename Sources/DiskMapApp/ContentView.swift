@@ -77,6 +77,40 @@ final class ScanModel: ObservableObject {
     init(scanCache: ScanCache? = nil, recordsLastScan: Bool = false) {
         self.scanCache = scanCache
         self.recordsLastScan = recordsLastScan
+        // The app's own model remembers the last cleanup across launches.
+        if recordsLastScan, let record = CleanupRecord.load(from: CleanupRecord.defaultURL()), !record.items.isEmpty {
+            lastCleanup = record
+        }
+    }
+
+    /// What the last Move to Trash moved, and where to, for Put Back (TASK-080).
+    @Published var lastCleanup: CleanupRecord?
+
+    private func persistLastCleanup() {
+        guard recordsLastScan else { return }
+        let record = lastCleanup ?? CleanupRecord(date: Date(), items: [])
+        do { try record.save(to: CleanupRecord.defaultURL()) } catch {
+            ScanModel.appendLog("last cleanup record write failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Moves the last cleanup's items back from the Trash, skipping (and
+    /// saying why) anything emptied from the Trash or replaced since; then a
+    /// quick rescan so the numbers include them again.
+    func putBackLastCleanup() async {
+        guard let record = lastCleanup, !record.items.isEmpty else { return }
+        let report = await Task.detached(priority: .userInitiated) { CleanupQueue.putBack(record) }.value
+        lastCleanup = nil
+        persistLastCleanup()
+        let total = record.items.count
+        showToast(report.skipped.isEmpty
+                  ? "Put back \(report.restored.count) item\(report.restored.count == 1 ? "" : "s")"
+                  : "Put back \(report.restored.count) of \(total)")
+        lastCommitLines = report.restored.map { "Put back: \(CanonicalPath.displayPath(absolutePath: $0.originalPath))" }
+            + report.skipped.map { "Not put back: \(CanonicalPath.displayPath(absolutePath: $0.item.originalPath)) — \($0.reason)" }
+        if !report.restored.isEmpty, let root = rootURL, !isScanning {
+            await scan(root, mode: .quick)
+        }
     }
     /// Walking the disk, or turning the walk into the first screen (TASK-046).
     @Published var scanPhase: ScanPhase = .idle
@@ -762,6 +796,11 @@ final class ScanModel: ObservableObject {
 
     func commitCleanup() async {
         let report = await cleanupQueue.commitReport()
+        let record = CleanupRecord(report: report)
+        if !record.items.isEmpty {
+            lastCleanup = record
+            persistLastCleanup()
+        }
         let log = CleanupPreflight.logEntries(from: report)
         lastCommitLines = log.map { entry in
             if entry.succeeded {

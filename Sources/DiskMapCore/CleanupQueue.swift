@@ -82,6 +82,8 @@ public actor CleanupQueue {
         public let movedWithFolder: Bool
         /// This item's share of `CommitReport.freedWhenTrashEmptied`.
         public let freedBytes: Int64
+        /// Where the Trash put it (TASK-080), so it can be put back.
+        public let trashedURL: URL?
     }
 
     public struct CommitReport: Sendable {
@@ -328,17 +330,18 @@ public actor CleanupQueue {
     }
 
     /// The only function in the app that removes anything from its place on
-    /// disk, and it only ever moves to the Trash.
-    private static func moveToTrash(_ url: URL) throws {
+    /// disk, and it only ever moves to the Trash. Returns where it went.
+    private static func moveToTrash(_ url: URL) throws -> URL? {
         var trashedURL: NSURL?
         try FileManager.default.trashItem(at: url, resultingItemURL: &trashedURL)
+        return trashedURL as URL?
     }
 
     /// Seam for tests only, so the commit ordering can be checked without
     /// filling the developer's real Trash. Production code must go through
     /// `commitReport()`, whose mover is `moveToTrash` — never pass a deleting
     /// function here.
-    func commitReport(movingToTrash move: (URL) throws -> Void) async -> CommitReport {
+    func commitReport(movingToTrash move: (URL) throws -> URL?) async -> CommitReport {
         // The receipt must be computed from real measurements, and a moved
         // item can no longer be measured — so finish measuring first.
         await waitForMeasurements()
@@ -348,19 +351,19 @@ public actor CleanupQueue {
                 : $0.url.pathComponents.count < $1.url.pathComponents.count
         }
         var moved: [String] = []
-        var outcomes: [(item: StagedItem, error: Error?, withFolder: Bool)] = []
+        var outcomes: [(item: StagedItem, error: Error?, withFolder: Bool, trashed: URL?)] = []
         for item in ordered {
             let path = item.url.path
             if moved.contains(where: { path.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }) {
-                outcomes.append((item, nil, true))
+                outcomes.append((item, nil, true, nil))
                 continue
             }
             do {
-                try move(item.url)
+                let trashed = try move(item.url)
                 moved.append(path)
-                outcomes.append((item, nil, false))
+                outcomes.append((item, nil, false, trashed))
             } catch {
-                outcomes.append((item, error, false))
+                outcomes.append((item, error, false, nil))
             }
         }
 
@@ -371,7 +374,8 @@ public actor CleanupQueue {
                 item: outcome.item,
                 error: outcome.error,
                 movedWithFolder: outcome.withFolder,
-                freedBytes: outcome.error == nil ? (freed.perItem[outcome.item.id] ?? 0) : 0
+                freedBytes: outcome.error == nil ? (freed.perItem[outcome.item.id] ?? 0) : 0,
+                trashedURL: outcome.trashed
             )
         }
 

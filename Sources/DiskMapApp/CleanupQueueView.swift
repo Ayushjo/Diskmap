@@ -115,6 +115,25 @@ struct CleanupQueueView: View {
                 .background(DiskMapTheme.cream)
             }
 
+            if let last = model.lastCleanup, !last.items.isEmpty {
+                // TASK-080: the last Move to Trash can be undone from here.
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.uturn.backward.circle")
+                        .foregroundStyle(DiskMapTheme.info)
+                        .accessibilityHidden(true)
+                    Text("\(last.items.count) item\(last.items.count == 1 ? "" : "s") moved to the Trash \(last.date.formatted(.relative(presentation: .named))).")
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                    Spacer()
+                    Button("Put Back \(last.items.count) Item\(last.items.count == 1 ? "" : "s")") {
+                        Task { await model.putBackLastCleanup() }
+                    }
+                    .help("Move them from the Trash back where they were. Nothing that is there now is replaced.")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(DiskMapTheme.inspectorFill)
+            }
             if !model.lastCommitLines.isEmpty {
                 // PR #16: a big commit reports one line per item — bound it so
                 // the receipt can't push the staged list out of the window.
