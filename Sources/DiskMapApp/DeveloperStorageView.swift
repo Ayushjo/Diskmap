@@ -287,15 +287,11 @@ struct DeveloperStorageView: View {
 
     private func itemRow(_ item: DeveloperItem) -> some View {
         let isOn = checked.contains(item.id)
-        return HStack(spacing: 0) {
-            Toggle(isOn: Binding(get: { isOn }, set: { on in
+        return CheckRow {
+            KitCheckbox(isOn: Binding(get: { isOn }, set: { on in
                 if on { checked.insert(item.id) } else { checked.remove(item.id) }
-            })) { EmptyView() }
-                .labelsHidden()
-                .toggleStyle(.checkbox)
+            }), label: isOn ? "Unmark \(item.displayName)" : "Mark \(item.displayName)")
                 .disabled(!canStage(item))
-                .padding(.leading, 10)
-                .accessibilityLabel(isOn ? "Unmark \(item.displayName)" : "Mark \(item.displayName)")
             Button { selectedID = item.id } label: {
                 KitRow(title: item.displayName, subtitle: "\(item.category.shortTitle) · " + (model.rootURL.map { relativeParent(of: item.absolutePath, root: $0) } ?? item.displayPath),
                        selected: item.id == activeItem?.id, path: item.absolutePath,
@@ -375,14 +371,10 @@ struct DeveloperStorageView: View {
     private func toolRow(_ hit: QuickWins.Hit, category: String) -> some View {
         let abs = model.tree.flatMap { tree in model.rootURL.map { tree.path(of: hit.id, root: $0).path } } ?? hit.name
         let isOn = checkedTools.contains(hit.id)
-        return HStack(spacing: 0) {
-            Toggle(isOn: Binding(get: { isOn }, set: { on in
+        return CheckRow {
+            KitCheckbox(isOn: Binding(get: { isOn }, set: { on in
                 if on { checkedTools.insert(hit.id) } else { checkedTools.remove(hit.id) }
-            })) { EmptyView() }
-                .labelsHidden()
-                .toggleStyle(.checkbox)
-                .padding(.leading, 10)
-                .accessibilityLabel(isOn ? "Unmark \(hit.name)" : "Mark \(hit.name)")
+            }), label: isOn ? "Unmark \(hit.name)" : "Mark \(hit.name)")
             Button { selectedTool = hit.id } label: {
                 KitRow(title: hit.name, subtitle: model.rootURL.map { relativeParent(of: abs, root: $0) },
                        selected: selectedTool == hit.id, path: abs,

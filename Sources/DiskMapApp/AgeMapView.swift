@@ -123,14 +123,10 @@ struct AgeMapView: View {
         let abs = tree.path(of: id, root: rootURL).path
         let isOn = checked.contains(id)
         let cloudOnly = tree.flags[Int(id)] & NodeFlags.notDownloaded != 0
-        return HStack(spacing: 0) {
-            Toggle(isOn: Binding(get: { isOn }, set: { on in
+        return CheckRow {
+            KitCheckbox(isOn: Binding(get: { isOn }, set: { on in
                 if on { checked.insert(id) } else { checked.remove(id) }
-            })) { EmptyView() }
-                .labelsHidden()
-                .toggleStyle(.checkbox)
-                .padding(.leading, 10)
-                .accessibilityLabel(isOn ? "Unmark \(tree.name(of: id))" : "Mark \(tree.name(of: id))")
+            }), label: isOn ? "Unmark \(tree.name(of: id))" : "Mark \(tree.name(of: id))")
             Button { model.selectedNode = id } label: {
                 KitRow(title: tree.name(of: id), subtitle: relativeParent(of: abs, root: rootURL),
                        selected: model.selectedNode == id, path: abs, onStage: { stageOne(id) }) {

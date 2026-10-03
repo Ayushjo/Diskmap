@@ -15,6 +15,8 @@ struct KitRow<Leading: View, Trailing: View>: View {
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
     @State private var hovering = false
+    /// Set by `CheckRow`: the highlight reaches back under the checkbox.
+    @Environment(\.kitRowLeadingInset) private var leadingInset
 
     var body: some View {
         HStack(spacing: 12) {
@@ -42,10 +44,72 @@ struct KitRow<Leading: View, Trailing: View>: View {
         }
         .padding(.horizontal, 10)
         .frame(minHeight: height)
-        .background(RowBackground(selected: selected, hovering: hovering))
+        .background(RowBackground(selected: selected, hovering: hovering).padding(.leading, -leadingInset))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+/// The checkbox for review lists: drawn, so it has no focus ring, an
+/// accent fill when ticked, and a 24 pt hit area.
+struct KitCheckbox: View {
+    @Binding var isOn: Bool
+    /// What ticking it means for VoiceOver ("Mark Docker").
+    var label: String
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Button { isOn.toggle() } label: {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(isOn ? DiskMapTheme.accent : DiskMapTheme.raised)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(isOn ? DiskMapTheme.accent : DiskMapTheme.ink3.opacity(0.7), lineWidth: 1)
+                )
+                .overlay {
+                    if isOn {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: DiskMapType.scaled(8.5), weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: DiskMapType.scaled(14), height: DiskMapType.scaled(14))
+                .opacity(isEnabled ? 1 : 0.35)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .zIndex(1)
+        .accessibilityLabel(label)
+        .accessibilityValue(isOn ? "checked" : "unchecked")
+        .accessibilityAddTraits(isOn ? [.isToggle, .isSelected] : .isToggle)
+    }
+}
+
+/// A checkbox followed by a `KitRow`, with the row's highlight running
+/// under the checkbox so the two read as one row.
+struct CheckRow<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: 2) {
+            content
+        }
+        .padding(.leading, 8)
+        .environment(\.kitRowLeadingInset, 8 + 24 + 2)
+    }
+}
+
+private struct KitRowLeadingInsetKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+extension EnvironmentValues {
+    var kitRowLeadingInset: CGFloat {
+        get { self[KitRowLeadingInsetKey.self] }
+        set { self[KitRowLeadingInsetKey.self] = newValue }
     }
 }
 

@@ -247,12 +247,8 @@ struct DuplicatesView: View {
     private func copyRow(_ id: Int32, keeper: Int32?) -> some View {
         let abs = tree.path(of: id, root: rootURL).path
         let isOn = checked.contains(id)
-        return HStack(spacing: 0) {
-            Toggle(isOn: binding(id)) { EmptyView() }
-                .labelsHidden()
-                .toggleStyle(.checkbox)
-                .padding(.leading, 10)
-                .accessibilityLabel(isOn ? "Unmark \(tree.name(of: id))" : "Mark \(tree.name(of: id)) for removal")
+        return CheckRow {
+            KitCheckbox(isOn: binding(id), label: isOn ? "Unmark \(tree.name(of: id))" : "Mark \(tree.name(of: id)) for removal")
             Button {
                 model.selectedNode = id
                 let parent = tree.parent[Int(id)]

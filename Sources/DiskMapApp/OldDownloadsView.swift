@@ -166,14 +166,10 @@ struct OldDownloadsView: View {
     private func row(_ item: OldDownloadsCandidate) -> some View {
         let isChecked = checked.contains(item.nodeID)
         let stageItem = { Task { await stage([item]) } }
-        return HStack(spacing: 0) {
-            Toggle(isOn: Binding(get: { isChecked }, set: { on in
+        return CheckRow {
+            KitCheckbox(isOn: Binding(get: { isChecked }, set: { on in
                 if on { checked.insert(item.nodeID) } else { checked.remove(item.nodeID) }
-            })) { EmptyView() }
-                .labelsHidden()
-                .toggleStyle(.checkbox)
-                .padding(.leading, 10)
-                .accessibilityLabel(isChecked ? "Unmark \(item.name)" : "Mark \(item.name)")
+            }), label: isChecked ? "Unmark \(item.name)" : "Mark \(item.name)")
             Button { selectedID = item.nodeID } label: {
                 KitRow(title: item.name, subtitle: model.rootURL.map { relativeParent(of: item.absolutePath, root: $0) } ?? parentDisplay(item.displayPath),
                        selected: item.nodeID == active?.nodeID, path: item.absolutePath, onStage: { _ = stageItem() }) {

@@ -141,15 +141,11 @@ struct AppsView: View {
 
     private func appRow(_ app: ApplicationEntry) -> some View {
         let isOn = checked.contains(app.id)
-        return HStack(spacing: 0) {
-            Toggle(isOn: Binding(get: { isOn }, set: { on in
+        return CheckRow {
+            KitCheckbox(isOn: Binding(get: { isOn }, set: { on in
                 if on { checked.insert(app.id) } else { checked.remove(app.id) }
-            })) { EmptyView() }
-                .labelsHidden()
-                .toggleStyle(.checkbox)
+            }), label: isOn ? "Unmark \(app.name)" : "Mark \(app.name)")
                 .disabled(!app.canStageForCleanup)
-                .padding(.leading, 10)
-                .accessibilityLabel(isOn ? "Unmark \(app.name)" : "Mark \(app.name)")
             Button { selectedID = app.id } label: {
                 KitRow(title: app.name, subtitle: Self.publisherName(app.publisher), selected: app.id == active?.id, path: app.bundlePath,
                        onStage: app.canStageForCleanup ? { Task { await stage(app) } } : nil) {

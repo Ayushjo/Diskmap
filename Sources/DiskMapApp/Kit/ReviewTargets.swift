@@ -16,12 +16,8 @@ struct ReviewTargetRow: View {
     var onStage: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: 0) {
-            Toggle(isOn: Binding(get: { checked }, set: { _ in onToggle() })) { EmptyView() }
-                .labelsHidden()
-                .toggleStyle(.checkbox)
-                .padding(.leading, 10)
-                .accessibilityLabel(checked ? "Unmark \(target.displayName)" : "Mark \(target.displayName)")
+        CheckRow {
+            KitCheckbox(isOn: Binding(get: { checked }, set: { _ in onToggle() }), label: checked ? "Unmark \(target.displayName)" : "Mark \(target.displayName)")
             Button(action: onSelect) {
                 KitRow(title: target.displayName, subtitle: subtitle, selected: selected,
                        path: target.primaryPath, onStage: onStage) {
