@@ -1,0 +1,29 @@
+SharingProbe — APFS private size / clone id / clone refcount, measured 2026-09-28
+Machine: Darwin 25.x, APFS data volume, CLT 26.6 SDK. 1 MiB fixtures.
+
+volume rc=0 VOL_CAP_FMT_CLONE_MAPPING supported=false valid=true
+=== getattrlist, FSOPT_ATTR_CMN_EXTENDED (1 MiB files) ===
+plain                  fileID=27077164 nlink=1 alloc=1048576 PRIVATE=1048576 cloneID=27077164 mayShare=false REFCNT=1 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+family-a (3 clones)    fileID=27077165 nlink=1 alloc=1048576 PRIVATE=0 cloneID=27077165 mayShare=true REFCNT=3 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+family-b               fileID=27077166 nlink=1 alloc=1048576 PRIVATE=0 cloneID=27077165 mayShare=true REFCNT=3 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+family-c               fileID=27077167 nlink=1 alloc=1048576 PRIVATE=0 cloneID=27077165 mayShare=true REFCNT=3 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+pair-a (2 clones)      fileID=27077168 nlink=1 alloc=1048576 PRIVATE=0 cloneID=27077168 mayShare=true REFCNT=2 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+pair-b                 fileID=27077169 nlink=1 alloc=1048576 PRIVATE=0 cloneID=27077168 mayShare=true REFCNT=2 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+edited-src             fileID=27077171 nlink=1 alloc=1048576 PRIVATE=65536 cloneID=27077171 mayShare=true REFCNT=1 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+edited-clone(+64K)     fileID=27077172 nlink=1 alloc=1048576 PRIVATE=65536 cloneID=27077173 mayShare=true REFCNT=1 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+hard-1                 fileID=27077174 nlink=2 alloc=1048576 PRIVATE=1048576 cloneID=27077174 mayShare=false REFCNT=1 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+hard-2                 fileID=27077174 nlink=2 alloc=1048576 PRIVATE=1048576 cloneID=27077174 mayShare=false REFCNT=1 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+=== after deleting family-c (does REFCNT follow?) ===
+family-a               fileID=27077165 nlink=1 alloc=1048576 PRIVATE=0 cloneID=27077165 mayShare=true REFCNT=2 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+family-b               fileID=27077166 nlink=1 alloc=1048576 PRIVATE=0 cloneID=27077165 mayShare=true REFCNT=2 ret[file]=0x5 ret[ext]=0x1308  layout_vs_lstat=OK
+=== getattrlistbulk with FSOPT_ATTR_CMN_EXTENDED ===
+bulk entries=9 errno=-
+  edited-src.bin       retExt=0x1308 PRIVATE=65536 cloneID=27077171 REFCNT=1 fileID_ok=true alloc_ok=true
+  hard-2.bin           retExt=0x1308 PRIVATE=1048576 cloneID=27077174 REFCNT=1 fileID_ok=true alloc_ok=true
+  hard-1.bin           retExt=0x1308 PRIVATE=1048576 cloneID=27077174 REFCNT=1 fileID_ok=true alloc_ok=true
+  family-b.bin         retExt=0x1308 PRIVATE=0 cloneID=27077165 REFCNT=2 fileID_ok=true alloc_ok=true
+  plain.bin            retExt=0x1308 PRIVATE=1048576 cloneID=27077164 REFCNT=1 fileID_ok=true alloc_ok=true
+  family-a.bin         retExt=0x1308 PRIVATE=0 cloneID=27077165 REFCNT=2 fileID_ok=true alloc_ok=true
+  pair-a.bin           retExt=0x1308 PRIVATE=0 cloneID=27077168 REFCNT=2 fileID_ok=true alloc_ok=true
+  edited-clone.bin     retExt=0x1308 PRIVATE=65536 cloneID=27077173 REFCNT=1 fileID_ok=true alloc_ok=true
+  pair-b.bin           retExt=0x1308 PRIVATE=0 cloneID=27077168 REFCNT=2 fileID_ok=true alloc_ok=true

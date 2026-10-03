@@ -29,13 +29,13 @@ struct BreadcrumbBar: View {
                 ForEach(Array(chain.enumerated()), id: \.element) { index, id in
                     if index > 0 {
                         Image(systemName: "chevron.right")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .font(DiskMapType.micro)
+                            .foregroundStyle(DiskMapTheme.mutedLabel.opacity(0.7))
                     }
                     Button(tree.name(of: id)) { jump(id) }
                         .buttonStyle(.plain)
                         .font(id == currentNode ? .headline : .body)
-                        .foregroundStyle(id == currentNode ? .primary : .secondary)
+                        .foregroundStyle(id == currentNode ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
                 }
             }
         }
@@ -54,7 +54,7 @@ struct DrillHeader: View {
             Spacer(minLength: 8)
             if currentNode >= 0, Int(currentNode) < totals.count {
                 Text(diskByteString(totals[Int(currentNode)]))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
             }
         }
         .padding(8)

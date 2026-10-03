@@ -5,68 +5,156 @@ import DiskMapCore
 
 struct CleanupQueueView: View {
     @ObservedObject var model: ScanModel
-    @State private var confirming = false
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmingTrash = false
+    @State private var pendingRemove: CleanupQueue.StagedItem?
+    @State private var confirmRemove = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Will free \(diskByteString(model.reclaimableBytes))")
-                    .font(.headline)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cleanup Queue")
+                        .font(DiskMapType.headline)
+                        .foregroundStyle(DiskMapTheme.ink)
+                    Text(freeSummary)
+                        .font(DiskMapType.smallMedium)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                    if model.reclaimEstimate.heldByUnqueuedCopies > 0 {
+                        Text("\(diskByteString(model.reclaimEstimate.heldByUnqueuedCopies)) stays in use by copies or links that aren’t queued")
+                            .font(DiskMapType.caption)
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                    }
+                }
                 Spacer()
-                Button("Move to Trash…") { confirming = true }
-                    .disabled(model.stagedItems.isEmpty)
+                if model.reclaimEstimate.isCalculating {
+                    ProgressView().controlSize(.small)
+                }
+                // Never offer the destructive action on a provisional figure.
+                Button("Move to Trash…") { confirmingTrash = true }
+                    .buttonStyle(.borderedProminent)
+                    .tint(DiskMapTheme.ink)
+                    .disabled(model.stagedItems.isEmpty || model.reclaimEstimate.isCalculating)
+                    .help(model.reclaimEstimate.isCalculating ? "Measuring what these items share on disk…" : "")
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .buttonStyle(.bordered)
+                    .tint(DiskMapTheme.ink)
             }
-            .padding(8)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Divider().overlay(DiskMapTheme.cardStroke)
 
             if model.stagedItems.isEmpty {
-                Text("Nothing staged. Duplicates, Quick Wins, and app leftovers land here for review. Confirm moves them to the Trash — nothing is deleted directly.")
-                    .foregroundStyle(.secondary)
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 10) {
+                    Image(systemName: "tray")
+                        .font(.system(size: DiskMapType.scaled(28), weight: .light))
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                    Text("Nothing staged")
+                        .font(DiskMapType.callout)
+                        .foregroundStyle(DiskMapTheme.ink)
+                    Text("Duplicates, Quick Wins, and app leftovers land here for review. Confirm moves them to the Trash — nothing is deleted directly.")
+                        .font(DiskMapType.small)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 420)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(24)
             } else {
                 List {
                     ForEach(grouped.keys.sorted(), id: \.self) { reason in
-                        Section(reason) {
+                        Section {
                             ForEach(grouped[reason] ?? []) { item in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.url.path).lineLimit(1)
-                                        if item.sharesStorageGroup != nil {
-                                            Text("Shared storage. Counted as free only if every copy of this group is in the queue.")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        } else {
-                                            Text(diskByteString(item.size))
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                HStack(alignment: .center, spacing: 12) {
+                                    FileIdentityIcon(url: item.url, size: 34)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(item.url.lastPathComponent)
+                                            .font(DiskMapType.bodyMedium)
+                                            .foregroundStyle(DiskMapTheme.ink)
+                                            .lineLimit(1)
+                                        Text(item.url.path)
+                                            .font(DiskMapType.caption)
+                                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                        Text(rowCaption(for: item))
+                                            .font(DiskMapType.caption.monospacedDigit())
+                                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                                        // Staged from any screen (Biggest Files
+                                        // can surface Docker.raw): warn where
+                                        // the Trash would damage a tool's state.
+                                        if let recipe = CleanupRecipes.recipe(forPath: item.url.path), recipe.trashIsUnsafe {
+                                            Text("Moving this to the Trash damages \(recipe.id == "docker" ? "Docker" : "the tool")’s data. Use `\(recipe.command)` instead.")
+                                                .font(DiskMapType.caption)
+                                                .foregroundStyle(DiskMapTheme.danger)
+                                                .fixedSize(horizontal: false, vertical: true)
                                         }
                                     }
-                                    Spacer()
+                                    Spacer(minLength: 8)
                                     Button("Quick Look") { QuickLookPresenter.shared.present(item.url) }
-                                    Button("Remove") {
-                                        Task {
-                                            await model.cleanupQueue.unstage(id: item.id)
-                                            await model.refreshQueue()
-                                        }
+                                        .buttonStyle(.bordered)
+                                        .tint(DiskMapTheme.ink)
+                                    Button("Remove", role: .destructive) {
+                                        pendingRemove = item
+                                        confirmRemove = true
                                     }
+                                    .buttonStyle(.bordered)
                                 }
+                                .padding(.vertical, 4)
+                                .listRowBackground(DiskMapTheme.cardFill)
                             }
+                        } header: {
+                            Text(reason.capitalized)
+                                .foregroundStyle(DiskMapTheme.mutedLabel)
                         }
                     }
                 }
+                .scrollContentBackground(.hidden)
+                .background(DiskMapTheme.cream)
             }
 
+            if let last = model.lastCleanup, !last.items.isEmpty {
+                // TASK-080: the last Move to Trash can be undone from here.
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.uturn.backward.circle")
+                        .foregroundStyle(DiskMapTheme.info)
+                        .accessibilityHidden(true)
+                    Text("\(last.items.count) item\(last.items.count == 1 ? "" : "s") moved to the Trash \(last.date.formatted(.relative(presentation: .named))).")
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                    Spacer()
+                    Button("Put Back \(last.items.count) Item\(last.items.count == 1 ? "" : "s")") {
+                        Task { await model.putBackLastCleanup() }
+                    }
+                    .help("Move them from the Trash back where they were. Nothing that is there now is replaced.")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(DiskMapTheme.inspectorFill)
+            }
             if !model.lastCommitLines.isEmpty {
-                Text(model.lastCommitLines.joined(separator: "\n"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(8)
+                // PR #16: a big commit reports one line per item — bound it so
+                // the receipt can't push the staged list out of the window.
+                ScrollView {
+                    Text(model.lastCommitLines.joined(separator: "\n"))
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .textSelection(.enabled)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 140)
+                .background(DiskMapTheme.inspectorFill)
             }
         }
+        .background(DiskMapTheme.cream)
+        .frame(minWidth: 640, minHeight: 480)
         .task { await model.refreshQueue() }
         .confirmationDialog(
             "Move staged items to the Trash?",
-            isPresented: $confirming,
+            isPresented: $confirmingTrash,
             titleVisibility: .visible
         ) {
             Button("Move to Trash", role: .destructive) {
@@ -74,7 +162,31 @@ struct CleanupQueueView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will free about \(diskByteString(model.reclaimableBytes)). Items go to the Trash, not a permanent delete.")
+            Text(confirmMessage)
+        }
+        .confirmationDialog(
+            "Remove from Cleanup Queue?",
+            isPresented: $confirmRemove,
+            titleVisibility: .visible
+        ) {
+            Button("Remove from Queue", role: .destructive) {
+                guard let item = pendingRemove else { return }
+                let name = item.url.lastPathComponent
+                Task {
+                    await model.unstageFromCleanup(item)
+                    model.showToast("Removed “\(name)” from Cleanup")
+                    pendingRemove = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingRemove = nil
+            }
+        } message: {
+            if let item = pendingRemove {
+                Text(item.url.path)
+            } else {
+                Text("This item will stay on disk. Only the queue entry is removed.")
+            }
         }
     }
 
@@ -83,24 +195,156 @@ struct CleanupQueueView: View {
     }
 }
 
-final class QuickLookPresenter: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
+/// Quick Look from SwiftUI sheets needs a real NSResponder in the chain.
+/// Folders used to no-op; we preview the largest suitable child file instead.
+final class QuickLookPresenter: NSResponder, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     static let shared = QuickLookPresenter()
     private var url: URL?
 
     func present(_ url: URL) {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else { return }
-        self.url = url
-        guard let panel = QLPreviewPanel.shared() else { return }
+        let target = resolvePreviewURL(url)
+        guard let target else {
+            NSWorkspace.shared.activateFileViewerSelecting([url.standardizedFileURL])
+            return
+        }
+        self.url = target
+        NSApp.activate(ignoringOtherApps: true)
+        if nextResponder == nil, let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            nextResponder = window.nextResponder
+            window.nextResponder = self
+        }
+        windowMakeFirstResponder()
+        guard let panel = QLPreviewPanel.shared() else {
+            NSWorkspace.shared.activateFileViewerSelecting([target])
+            return
+        }
         panel.dataSource = self
         panel.delegate = self
+        panel.currentPreviewItemIndex = 0
         panel.reloadData()
-        panel.makeKeyAndOrderFront(nil)
+        if panel.isVisible {
+            panel.refreshCurrentPreviewItem()
+        } else {
+            panel.makeKeyAndOrderFront(nil)
+        }
     }
+
+    private func windowMakeFirstResponder() {
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            _ = window.makeFirstResponder(self)
+        }
+    }
+
+    /// Files preview as-is. Directories resolve to the largest previewable child
+    /// (video/image/PDF/archive/disk image) so movie folders Quick Look usefully.
+    private func resolvePreviewURL(_ url: URL) -> URL? {
+        let standardized = url.standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: standardized.path, isDirectory: &isDirectory) else {
+            return nil
+        }
+        if !isDirectory.boolValue { return standardized }
+        return largestPreviewableChild(in: standardized) ?? standardized
+    }
+
+    private static let previewExtensions: Set<String> = [
+        "mkv", "mp4", "mov", "m4v", "avi", "webm",
+        "jpg", "jpeg", "png", "heic", "gif", "webp", "tiff", "tif",
+        "pdf", "txt", "rtf", "md",
+        "zip", "dmg", "iso", "pkg", "rar", "7z",
+        "mp3", "m4a", "wav", "aac",
+    ]
+
+    private func largestPreviewableChild(in directory: URL) -> URL? {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return nil }
+        var best: (URL, Int64)?
+        var scanned = 0
+        for case let fileURL as URL in enumerator {
+            scanned += 1
+            if scanned > 2_000 { break }
+            let ext = fileURL.pathExtension.lowercased()
+            guard Self.previewExtensions.contains(ext) else { continue }
+            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .isDirectoryKey])
+            guard values?.isDirectory != true, values?.isRegularFile == true else { continue }
+            let size = Int64(values?.fileSize ?? 0)
+            if best == nil || size > best!.1 {
+                best = (fileURL, size)
+            }
+        }
+        return best?.0
+    }
+
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = self
+        panel.delegate = self
+    }
+
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {}
 
     func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int { url == nil ? 0 : 1 }
 
     func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem {
         (url ?? URL(fileURLWithPath: "/")) as NSURL
+    }
+}
+
+
+extension CleanupQueueView {
+    /// Moving to the Trash frees nothing on its own; say when it does.
+    var freeSummary: String {
+        let estimate = model.reclaimEstimate
+        if estimate.isCalculating { return "Calculating what emptying the Trash will free…" }
+        let amount = diskByteString(estimate.bytes)
+        return estimate.isLowerBound
+            ? "At least \(amount) freed when you empty the Trash"
+            : "\(amount) freed when you empty the Trash"
+    }
+
+    var confirmMessage: String {
+        let estimate = model.reclaimEstimate
+        let count = model.stagedItems.count
+        var text = "Moves \(count) item\(count == 1 ? "" : "s") to the Trash — nothing is deleted permanently. "
+        text += estimate.isLowerBound ? "At least " : "About "
+        text += "\(diskByteString(estimate.bytes)) is freed once you empty the Trash."
+        if estimate.heldByUnqueuedCopies > 0 {
+            text += " \(diskByteString(estimate.heldByUnqueuedCopies)) stays in use because other copies or links of these files aren’t queued."
+        }
+        let unsafe = model.stagedItems.compactMap { CleanupRecipes.recipe(forPath: $0.url.path) }.filter(\.trashIsUnsafe)
+        if let first = unsafe.first {
+            text += " Warning: the queue includes data a tool manages itself — `\(first.command)` is the safe way to clean it."
+        }
+        return text
+    }
+
+    /// What this row contributes, and why it may be less than its size.
+    func rowCaption(for item: CleanupQueue.StagedItem) -> String {
+        if item.isMeasuring { return "\(diskByteString(item.size)) · measuring…" }
+        let freed = model.reclaimEstimate.perItem[item.id] ?? item.size
+        let path = item.url.path
+        let insideQueuedFolder = model.stagedItems.contains { other in
+            other.id != item.id && path.hasPrefix(other.url.path.hasSuffix("/") ? other.url.path : other.url.path + "/")
+        }
+        if insideQueuedFolder {
+            return "Included in a queued folder — counted there"
+        }
+        let occupied = item.sharing?.allocatedBytes ?? item.size
+        if freed == 0 && occupied > 0 {
+            return "\(diskByteString(occupied)) · shared — freed only when every copy or link is queued"
+        }
+        let base = freed + 4_096 < occupied
+            ? "Frees \(diskByteString(freed)) of \(diskByteString(occupied)) — the rest is shared"
+            : diskByteString(freed)
+        // TASK-082: measured from the last scan (checked unchanged since).
+        if case .scan(let date) = item.measurementSource {
+            return base + " · from the scan at \(date.formatted(date: .omitted, time: .shortened))"
+        }
+        return base
     }
 }

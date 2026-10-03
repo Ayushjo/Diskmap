@@ -12,6 +12,8 @@
 - **Want the feature target / what "done" means?** `docs/PRD.md`.
 - **Want the design rationale / why things are built this way?**
   `docs/ARCHITECTURE.md`.
+- **Want scan timing / how to bench?** `docs/PERF.md` (raw runs in
+  `docs/perf-results/`).
 
 ---
 
@@ -47,6 +49,17 @@ needs a build-and-fix pass on your Mac," especially:
 cd DiskMap
 swift test    # run this first — checks the treemap math
 swift run DiskMapApp   # launches a window; SwiftUI App executables work fine via SPM on macOS 13+
+```
+
+The same engine as a read-only command-line tool (`diskmap --help`):
+
+```bash
+swift run -c release diskmap scan ~/code --top 10
+swift run -c release diskmap dev --reclaimable --older-than 6m
+swift run -c release diskmap scan ~ --incremental   # later runs re-read only what changed
+swift run -c release diskmap find ~ ext:mp4,mov size\>500MB age\>1y       # same query language as Find / ⌘K
+swift run -c release diskmap check ~/Library/Developer --fail-over 50GB   # exit 1 when over
+swift run -c release diskmap export ~ --format ncdu --out home.json      # then: ncdu -f home.json
 ```
 
 Once it's stable, convert to a proper `.xcodeproj` (File → New → Project
@@ -151,6 +164,7 @@ depending on Czkawka's MIT-licensed core without a license conflict.
    clone pair.
 3. Remaining visualizations (sunburst, flame, bubbles, mind map, top
    sizes, age map, folders) — same underlying data, different layout math.
-4. `AppLeftoverFinder` + Finder-drag-to-scan + `CleanupQueue` UI.
+4. `AppLeftoverFinder` + Finder-drag-to-scan (done: drop a folder on the
+   window or the Dock icon) + `CleanupQueue` UI.
 5. Snapshots (serialize `FileTree` + totals to disk, diff two scans).
 6. Notarization, signing, update mechanism, icon/polish.

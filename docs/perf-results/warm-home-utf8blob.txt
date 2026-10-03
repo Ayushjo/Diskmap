@@ -1,0 +1,11 @@
+DiskMap scan: items=1769679 elapsed=10.236s rss_during_walk_peak=264519680 rss_after_enumerator_release=326025216 not_downloaded=17
+run=1/5 label=warm-home-utf8blob items=1769679 nodes=1736599 scan=10.236s rollup=0.030s walk_rss=264519680 after_rss=326025216 names=683561 name_utf8=26296977
+DiskMap scan: items=1769624 elapsed=10.770s rss_during_walk_peak=334856192 rss_after_enumerator_release=335118336 not_downloaded=17
+run=2/5 label=warm-home-utf8blob items=1769624 nodes=1736544 scan=10.770s rollup=0.038s walk_rss=334856192 after_rss=335118336 names=683520 name_utf8=26295259
+DiskMap scan: items=1769661 elapsed=9.859s rss_during_walk_peak=336281600 rss_after_enumerator_release=336314368 not_downloaded=17
+run=3/5 label=warm-home-utf8blob items=1769661 nodes=1736581 scan=9.859s rollup=0.039s walk_rss=336281600 after_rss=336314368 names=683544 name_utf8=26296276
+DiskMap scan: items=1769679 elapsed=5.891s rss_during_walk_peak=336330752 rss_after_enumerator_release=337444864 not_downloaded=17
+run=4/5 label=warm-home-utf8blob items=1769679 nodes=1736599 scan=5.891s rollup=0.024s walk_rss=336330752 after_rss=337444864 names=683561 name_utf8=26296977
+DiskMap scan: items=1769679 elapsed=5.874s rss_during_walk_peak=339804160 rss_after_enumerator_release=333676544 not_downloaded=17
+run=5/5 label=warm-home-utf8blob items=1769679 nodes=1736599 scan=5.874s rollup=0.022s walk_rss=339804160 after_rss=333676544 names=683561 name_utf8=26296977
+summary label=warm-home-utf8blob n=5 scan_min=5.874 scan_median=9.859 scan_max=10.770 walk_rss_median=336281600

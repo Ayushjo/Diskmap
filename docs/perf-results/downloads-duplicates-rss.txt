@@ -1,0 +1,4 @@
+DiskMap scan: items=23724 elapsed=0.084s rss_during_walk_peak=62111744 rss_after_enumerator_release=63324160 not_downloaded=0
+duplicates label=downloads-dups candidates=20080 groups=281 full_hash_calls=748 elapsed=0.331s rss_before=75907072 rss_peak_sampled=146751488 rss_after=146751488 task_peak=146751488
+run=1/1 label=downloads-dups items=23724 nodes=23723 scan=0.084s walk_rss=62111744 after_rss=63324160 names=17937 name_utf8=424261
+summary label=downloads-dups n=1 scan_min=0.084 scan_median=0.084 scan_max=0.084 walk_rss_median=62111744

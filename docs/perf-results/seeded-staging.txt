@@ -1,0 +1,14 @@
+# TASK-082 — staging measured from the scan tree vs walked, 2026-10-03
+# DISKMAP_SCAN_SHARING=<mode> DiskMapScanBench --seeded <folder> ~   (release; one full home scan per line, then
+# StorageSharing.seededMeasurement vs StorageSharing.profile(atPath:) on the same folder; equal = Profile ==)
+
+seeded path=/Users/jochannnn/FreeCAD sharing=full seeded=true seeded_seconds=0.063 walk_seconds=4.677 files=147226 equal=true
+seeded path=/Users/jochannnn/FreeCAD sharing=full seeded=true seeded_seconds=0.103 walk_seconds=4.632 files=147226 equal=true
+seeded path=/Users/jochannnn/FreeCAD sharing=full seeded=true seeded_seconds=0.142 walk_seconds=4.692 files=147226 equal=true
+seeded path=/Users/jochannnn/Downloads sharing=full seeded=true seeded_seconds=0.042 walk_seconds=2.771 files=18332 equal=true
+# A folder written to during the scan is walked (correctly):
+seeded walk_needed reason=2 folders changed since the scan
+seeded path=/Users/jochannnn/Library/Caches sharing=full seeded=false seeded_seconds=0.063 walk_seconds=13.256 files=429372 equal=false
+# Without every sharing fact on APFS it is walked (would overstate edited clones):
+seeded walk_needed reason=the scan did not read every sharing fact
+seeded path=/Users/jochannnn/FreeCAD sharing=refcount seeded=false seeded_seconds=0.000 walk_seconds=4.711 files=147226 equal=false

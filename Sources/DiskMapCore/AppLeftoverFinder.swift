@@ -1,12 +1,43 @@
 import Foundation
 
+public struct AppLeftoverEntry: Sendable, Equatable {
+    public let url: URL
+    public let bytes: Int64
+
+    public init(url: URL, bytes: Int64) {
+        self.url = url
+        self.bytes = bytes
+    }
+}
+
 public struct AppLeftovers: Sendable {
     public let bundleID: String?
     public let appName: String
     public let bundlePath: URL
     public let bundleSize: Int64
     public let leftoverPaths: [URL]
+    public let leftoverEntries: [AppLeftoverEntry]
     public let leftoverSize: Int64
+
+    public init(
+        bundleID: String?,
+        appName: String,
+        bundlePath: URL,
+        bundleSize: Int64,
+        leftoverPaths: [URL],
+        leftoverEntries: [AppLeftoverEntry] = [],
+        leftoverSize: Int64
+    ) {
+        self.bundleID = bundleID
+        self.appName = appName
+        self.bundlePath = bundlePath
+        self.bundleSize = bundleSize
+        self.leftoverPaths = leftoverPaths
+        self.leftoverEntries = leftoverEntries.isEmpty
+            ? leftoverPaths.map { AppLeftoverEntry(url: $0, bytes: 0) }
+            : leftoverEntries
+        self.leftoverSize = leftoverSize
+    }
 }
 
 /// Finds files an app scattered outside its own .app bundle when it was
@@ -59,7 +90,7 @@ public enum AppLeftoverFinder {
         return apps.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 
-    public static func findLeftovers(for appURL: URL) -> AppLeftovers {
+    public static func findLeftovers(for appURL: URL, measureRelated: Bool = true) -> AppLeftovers {
         let bundle = Bundle(url: appURL)
         let bundleID = bundle?.bundleIdentifier
         let appName = appURL.deletingPathExtension().lastPathComponent
@@ -76,23 +107,24 @@ public enum AppLeftoverFinder {
 
             for item in contents {
                 let itemName = item.lastPathComponent
-
-                if let bid = bundleID, itemName.localizedCaseInsensitiveContains(bid) {
-                    matches.append(item)
-                } else if bundleID == nil, appName.count > 3,
-                          itemName.localizedCaseInsensitiveContains(appName) {
-                    // appName.count > 3 guards against generic short
-                    // names ("Mail", "Maps", "Chat") producing
-                    // false-positive matches against unrelated files.
-                    // Still imperfect — exactly why this needs a human
-                    // review step, not an automatic delete.
+                if matchesApp(itemName: itemName, bundleID: bundleID, appName: appName) {
                     matches.append(item)
                 }
             }
         }
 
         let bundleSize = allocatedSize(of: appURL)
-        let leftoverSize = matches.reduce(Int64(0)) { $0 + allocatedSize(of: $1) }
+        var entries: [AppLeftoverEntry] = []
+        var leftoverSize: Int64 = 0
+        if measureRelated {
+            for url in matches {
+                let bytes = allocatedSize(of: url)
+                leftoverSize += bytes
+                entries.append(AppLeftoverEntry(url: url, bytes: bytes))
+            }
+        } else {
+            entries = matches.map { AppLeftoverEntry(url: $0, bytes: 0) }
+        }
 
         return AppLeftovers(
             bundleID: bundleID,
@@ -100,8 +132,26 @@ public enum AppLeftoverFinder {
             bundlePath: appURL,
             bundleSize: bundleSize,
             leftoverPaths: matches,
+            leftoverEntries: entries,
             leftoverSize: leftoverSize
         )
+    }
+
+
+    /// Prefer exact / prefix bundle-ID matches. Name fallback only when no
+    /// bundle ID, and only for reasonably specific names (avoids "Mail").
+    private static func matchesApp(itemName: String, bundleID: String?, appName: String) -> Bool {
+        let item = itemName.lowercased()
+        if let bid = bundleID?.lowercased(), !bid.isEmpty {
+            if item == bid { return true }
+            if item.hasPrefix(bid + ".") || item.hasPrefix(bid + "-") { return true }
+            // Containers sometimes use the reverse-DNS alone with a UUID suffix
+            if item.hasPrefix(bid) { return true }
+            return false
+        }
+        let name = appName.lowercased()
+        guard name.count >= 5 else { return false }
+        return item == name || item.hasPrefix(name + ".") || item.hasPrefix(name + "-")
     }
 
     public static func allocatedSize(of url: URL) -> Int64 {

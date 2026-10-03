@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 110" role="img" aria-labelledby="title desc">
+  <title id="title">DiskMap</title>
+  <desc id="desc">DiskMap wordmark with a segmented D.</desc>
+  <path d="M17 16h16a4 4 0 0 1 4 4v70a4 4 0 0 1-4 4H17a4 4 0 0 1-4-4V20a4 4 0 0 1 4-4Z" fill="#252B31"/>
+  <path d="M45 16h10c24 0 41.8 16.4 43 38H57c-6.6 0-12-5.4-12-12V16Z" fill="#7966DA"/>
+  <path d="M45 62h53C96.8 82.6 79 94 55 94H45V75c0-7.2 5.8-13 13-13Z" fill="#252B31"/>
+  <text x="105" y="88" fill="#252B31" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif" font-size="78" font-weight="700" letter-spacing="-5">iskMap</text>
+</svg>

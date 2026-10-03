@@ -1,0 +1,392 @@
+{
+  "_comment": "Developer Storage rules (AGENTS.md rule 6: patterns are data). Matched against directory names, case-insensitive; a later rule wins for a duplicate name. See DeveloperCatalog.swift.",
+  "rules": [
+    {
+      "names": [
+        "node_modules"
+      ],
+      "category": "dependencies",
+      "ecosystem": "node",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": false,
+      "projectFromParent": true,
+      "whyLarge": "Installed npm/yarn/pnpm packages for a project. Size grows with dependency trees.",
+      "rebuildCost": "networked",
+      "lockEcosystem": "node"
+    },
+    {
+      "names": [
+        ".npm"
+      ],
+      "category": "caches",
+      "ecosystem": "node",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Global npm package cache speeds installs by keeping downloaded tarballs.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        ".pnpm-store",
+        ".pnpm"
+      ],
+      "category": "caches",
+      "ecosystem": "node",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "pnpm content-addressable store shared across projects.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        ".yarn"
+      ],
+      "category": "caches",
+      "ecosystem": "node",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Yarn cache / Berry install state.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        ".nvm",
+        ".fnm",
+        ".volta"
+      ],
+      "category": "sdksSimulators",
+      "ecosystem": "node",
+      "reclaimability": "keep",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Node version managers keep multiple runtimes on disk.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        "DerivedData"
+      ],
+      "category": "buildArtifacts",
+      "ecosystem": "xcode",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Xcode intermediate build products and indexes. Regenerated on next build.",
+      "rebuildCost": "cheap"
+    },
+    {
+      "names": [
+        "CoreSimulator"
+      ],
+      "category": "sdksSimulators",
+      "ecosystem": "xcode",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "iOS Simulator runtimes and device data. Unused runtimes are often reclaimable.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        "iOS DeviceSupport",
+        "watchOS DeviceSupport",
+        "tvOS DeviceSupport"
+      ],
+      "category": "sdksSimulators",
+      "ecosystem": "xcode",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Device symbols downloaded when debugging physical devices.",
+      "rebuildCost": "cheap"
+    },
+    {
+      "names": [
+        "Xcode"
+      ],
+      "category": "other",
+      "ecosystem": "xcode",
+      "reclaimability": "keep",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Xcode support files under Developer — inspect before clearing.",
+      "rebuildCost": "cheap"
+    },
+    {
+      "names": [
+        ".cocoapods"
+      ],
+      "category": "caches",
+      "ecosystem": "xcode",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "CocoaPods specs and download cache.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        "Pods"
+      ],
+      "category": "dependencies",
+      "ecosystem": "xcode",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": false,
+      "projectFromParent": true,
+      "whyLarge": "CocoaPods installed pods for an Xcode project.",
+      "rebuildCost": "networked",
+      "lockEcosystem": "cocoapods"
+    },
+    {
+      "names": [
+        ".build",
+        "build",
+        ".next",
+        "dist",
+        "out"
+      ],
+      "category": "buildArtifacts",
+      "ecosystem": "other",
+      "reclaimability": "reclaimable",
+      "isToolRoot": false,
+      "projectFromParent": true,
+      "whyLarge": "Compiled or bundled output that tools recreate.",
+      "rebuildCost": "cheap"
+    },
+    {
+      "names": [
+        "target"
+      ],
+      "category": "buildArtifacts",
+      "ecosystem": "rust",
+      "reclaimability": "reclaimable",
+      "isToolRoot": false,
+      "projectFromParent": true,
+      "whyLarge": "Cargo build output for a Rust project.",
+      "rebuildCost": "cheap"
+    },
+    {
+      "names": [
+        ".cargo"
+      ],
+      "category": "caches",
+      "ecosystem": "rust",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Cargo registry and git checkouts for Rust crates.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        ".rustup"
+      ],
+      "category": "sdksSimulators",
+      "ecosystem": "rust",
+      "reclaimability": "keep",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Installed Rust toolchains via rustup.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        ".venv",
+        "venv",
+        ".tox",
+        ".conda"
+      ],
+      "category": "dependencies",
+      "ecosystem": "python",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": false,
+      "projectFromParent": true,
+      "whyLarge": "Python virtual environments — recreatable from requirements/lockfiles.",
+      "rebuildCost": "networked",
+      "lockEcosystem": "python"
+    },
+    {
+      "names": [
+        "site-packages",
+        "dist-packages"
+      ],
+      "category": "dependencies",
+      "ecosystem": "python",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": false,
+      "projectFromParent": true,
+      "rebuildCost": "networked",
+      "lockEcosystem": "python",
+      "whyLarge": "Installed Python packages (pip/uv/poetry) for an environment — the libraries, not your code. Recreatable from requirements or a lockfile."
+    },
+    {
+      "names": [
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache"
+      ],
+      "category": "buildArtifacts",
+      "ecosystem": "python",
+      "reclaimability": "reclaimable",
+      "isToolRoot": false,
+      "projectFromParent": true,
+      "whyLarge": "Python bytecode or type-check caches.",
+      "rebuildCost": "free"
+    },
+    {
+      "names": [
+        ".pub-cache"
+      ],
+      "category": "caches",
+      "ecosystem": "flutter",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Dart/Flutter pub package cache.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        ".gradle"
+      ],
+      "category": "caches",
+      "ecosystem": "jvm",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Gradle dependency and build caches.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        ".m2"
+      ],
+      "category": "caches",
+      "ecosystem": "jvm",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Maven local repository cache.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        ".docker"
+      ],
+      "category": "containers",
+      "ecosystem": "docker",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Docker desktop data: images, layers, and volumes.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        "Android",
+        "sdk"
+      ],
+      "category": "sdksSimulators",
+      "ecosystem": "android",
+      "reclaimability": "keep",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Android SDK / platform tools — large and slow to re-download.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        ".android"
+      ],
+      "category": "sdksSimulators",
+      "ecosystem": "android",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Android emulator AVDs and SDK extras.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        ".cursor",
+        ".codex",
+        ".vscode",
+        ".idea"
+      ],
+      "category": "other",
+      "ecosystem": "ideAI",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "IDE or AI-tool caches, indexes, and local state.",
+      "rebuildCost": "cheap"
+    },
+    {
+      "names": [
+        "com.docker.docker"
+      ],
+      "category": "containers",
+      "ecosystem": "docker",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "rebuildCost": "networked",
+      "whyLarge": "Docker Desktop’s data: one disk image holding every image, container and volume. Often the largest single file on a developer’s Mac."
+    }
+  ],
+  "_rebuildCost": "free: regenerated automatically and offline the next time the tool runs. cheap: an offline rebuild (CPU time). networked: re-downloaded from a registry or vendor. A dependency folder whose project has no lockfile is reported as networked-unpinned: reinstalling may not reproduce what you have.",
+  "manifests": {
+    "_comment": "A folder containing one of these is a project root (TASK-051).",
+    "names": [
+      "package.json",
+      "Cargo.toml",
+      "go.mod",
+      "pyproject.toml",
+      "setup.py",
+      "Pipfile",
+      "requirements.txt",
+      "Package.swift",
+      "Podfile",
+      "pubspec.yaml",
+      "pom.xml",
+      "build.gradle",
+      "build.gradle.kts",
+      "settings.gradle",
+      "settings.gradle.kts",
+      "Gemfile",
+      "composer.json",
+      "mix.exs",
+      "deno.json",
+      "CMakeLists.txt"
+    ],
+    "suffixes": [
+      ".xcodeproj",
+      ".xcworkspace"
+    ]
+  },
+  "lockfiles": {
+    "_comment": "Searched in the project root and every folder above it up to the repository root, because workspace managers keep one lockfile at the top. requirements.txt counts for Python: it is usually pinned, and a missed warning costs less than a false one (AGENTS.md: bias toward fewer false positives).",
+    "node": [
+      "package-lock.json",
+      "npm-shrinkwrap.json",
+      "yarn.lock",
+      "pnpm-lock.yaml",
+      "bun.lockb",
+      "bun.lock"
+    ],
+    "cocoapods": [
+      "Podfile.lock"
+    ],
+    "python": [
+      "poetry.lock",
+      "uv.lock",
+      "Pipfile.lock",
+      "pdm.lock",
+      "requirements.txt"
+    ]
+  }
+}

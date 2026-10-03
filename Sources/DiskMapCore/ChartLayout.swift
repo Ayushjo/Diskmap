@@ -9,14 +9,19 @@ public struct ChartSlice: Sendable, Equatable, Identifiable {
     public let label: String
     public let drillable: Bool
     public let children: [ChartSlice]
+    /// How many items this slice stands for: 1, or the number of small items
+    /// folded into an "Other" slice.
+    public let collapsedCount: Int
 
-    public init(id: String, nodeID: Int32?, size: Int64, label: String, drillable: Bool, children: [ChartSlice]) {
+    public init(id: String, nodeID: Int32?, size: Int64, label: String, drillable: Bool, children: [ChartSlice],
+                collapsedCount: Int = 1) {
         self.id = id
         self.nodeID = nodeID
         self.size = size
         self.label = label
         self.drillable = drillable
         self.children = children
+        self.collapsedCount = collapsedCount
     }
 }
 
@@ -27,9 +32,22 @@ public struct ChartSlice: Sendable, Equatable, Identifiable {
 public enum ChartLayout {
     public static let otherFraction = 0.005
 
-    public static func slices(of node: Int32, in tree: FileTree, totals: [Int64]) -> [ChartSlice] {
+    public static func slices(
+        of node: Int32,
+        in tree: FileTree,
+        totals: [Int64],
+        otherFraction fraction: Double = otherFraction
+    ) -> [ChartSlice] {
         guard node >= 0, node < tree.count, totals.count == tree.count else { return [] }
-        return collapse(tree.children(of: node, totals: totals), parentSize: totals[Int(node)], tree: tree, totals: totals, includeChildren: true, idPrefix: "\(node)")
+        return collapse(
+            tree.children(of: node, totals: totals),
+            parentSize: totals[Int(node)],
+            tree: tree,
+            totals: totals,
+            includeChildren: true,
+            idPrefix: "\(node)",
+            otherFraction: fraction
+        )
     }
 
     private static func collapse(
@@ -38,7 +56,8 @@ public enum ChartLayout {
         tree: FileTree,
         totals: [Int64],
         includeChildren: Bool,
-        idPrefix: String
+        idPrefix: String,
+        otherFraction: Double
     ) -> [ChartSlice] {
         let threshold = Double(parentSize) * otherFraction
         var visible: [(id: Int32, size: Int64)] = []
@@ -62,7 +81,8 @@ public enum ChartLayout {
                     tree: tree,
                     totals: totals,
                     includeChildren: false,
-                    idPrefix: "\(idPrefix).\(item.id)"
+                    idPrefix: "\(idPrefix).\(item.id)",
+                    otherFraction: otherFraction
                 )
             } else {
                 nested = []
@@ -83,7 +103,8 @@ public enum ChartLayout {
                 size: otherSize,
                 label: "Other (\(otherCount))",
                 drillable: false,
-                children: []
+                children: [],
+                collapsedCount: otherCount
             ))
         }
         return slices

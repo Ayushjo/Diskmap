@@ -6,6 +6,49 @@ import Testing
 
 struct FileTreeTests {
 
+    @Test func descendantCountsRollUp() {
+        var tree = FileTree()
+        let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        let dir = tree.addNode(name: "dir", parent: root, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "a.txt", parent: dir, isDirectory: false, logicalSize: 1, allocatedSize: 1, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "b.txt", parent: dir, isDirectory: false, logicalSize: 1, allocatedSize: 1, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "c.txt", parent: root, isDirectory: false, logicalSize: 1, allocatedSize: 1, modifiedDaysSinceEpoch: 0)
+        let counts = tree.rollUpDescendantCounts()
+        #expect(counts.files[Int(root)] == 3)
+        #expect(counts.folders[Int(root)] == 1)
+        #expect(counts.files[Int(dir)] == 2)
+        #expect(counts.folders[Int(dir)] == 0)
+    }
+
+    @Test func createdDayStoresBirthtimeDays() {
+        var tree = FileTree()
+        let root = tree.addNode(
+            name: "root",
+            parent: -1,
+            isDirectory: true,
+            logicalSize: 0,
+            allocatedSize: 0,
+            modifiedDaysSinceEpoch: 100,
+            createdDaysSinceEpoch: 50
+        )
+        let file = tree.addNode(
+            name: "a.txt",
+            parent: root,
+            isDirectory: false,
+            logicalSize: 1,
+            allocatedSize: 1,
+            modifiedDaysSinceEpoch: 200,
+            createdDaysSinceEpoch: 150
+        )
+        #expect(tree.createdDay[Int(root)] == 50)
+        #expect(tree.createdDay[Int(file)] == 150)
+        #expect(tree.modifiedDay[Int(file)] == 200)
+        tree.compact()
+        #expect(tree.createdDay[Int(file)] == 150)
+        #expect(tree.count == tree.createdDay.count)
+    }
+
+
     @Test func rollUpSizesSumsCorrectly() {
         var tree = FileTree()
         let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
@@ -18,6 +61,27 @@ struct FileTreeTests {
 
         #expect(totals[Int(sub)] == 250)   // b.txt + c.txt
         #expect(totals[Int(root)] == 350)  // a.txt + sub's subtree
+    }
+
+    @Test func rollUpBothMatchesSeparateRollups() {
+        var tree = FileTree()
+        let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        let sub = tree.addNode(name: "sub", parent: root, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "a.txt", parent: root, isDirectory: false, logicalSize: 100, allocatedSize: 4096, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "b.txt", parent: sub, isDirectory: false, logicalSize: 200, allocatedSize: 8192, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(
+            name: "cloud",
+            parent: sub,
+            isDirectory: false,
+            logicalSize: 50,
+            allocatedSize: 0,
+            modifiedDaysSinceEpoch: 0,
+            flags: NodeFlags.notDownloaded
+        )
+
+        let both = tree.rollUpBoth()
+        #expect(both.logical == tree.rollUpSizes(basis: .logical))
+        #expect(both.allocated == tree.rollUpSizes(basis: .allocated))
     }
 
     @Test func logicalRollupKeepsCloudSizeWhenAllocatedIsZero() {
@@ -70,9 +134,10 @@ struct FileTreeTests {
         _ = tree.addNode(name: "node_modules", parent: root, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
         _ = tree.addNode(name: "node_modules", parent: root, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
 
-        // Both nodes should point at the SAME interned string entry,
-        // proving we didn't allocate "node_modules" twice.
-        #expect(tree.nameTable.filter { $0 == "node_modules" }.count == 1)
+        // Both nodes share one interned name id; packed blob stores it once.
+        #expect(tree.nameIndex[1] == tree.nameIndex[2])
+        #expect(tree.uniqueNameCount == 2) // root + node_modules
+        #expect(tree.name(of: 1) == "node_modules")
     }
 
     @Test func ancestorChainIsRootFirstAndStopsAtRoot() {
@@ -238,6 +303,45 @@ struct CloneDetectorTests {
 
         #expect(!CloneDetector.areLikelyClones(fixture.original, fixture.clone))
     }
+
+    /// A clone edited moments ago must not read as a clone. APFS allocates
+    /// the copy-on-write block at writeback, so without the reader-side
+    /// `fsync` the extent map briefly still shows the shared extent. Under
+    /// concurrent load the unfixed detector got 22 of 200 of these wrong;
+    /// the odds of 0/200 by luck at that rate are about 1 in 10^10.
+    @Test func freshlyEditedClonesAreNeverReportedAsClones() async throws {
+        let wrong = await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<200 {
+                group.addTask {
+                    let dir = NSTemporaryDirectory() + "DiskMap-cow-\(UUID().uuidString)"
+                    guard (try? FileManager.default.createDirectory(
+                        atPath: dir, withIntermediateDirectories: true)) != nil else { return false }
+                    defer { try? FileManager.default.removeItem(atPath: dir) }
+                    let original = dir + "/a.bin", clone = dir + "/b.bin"
+                    FileManager.default.createFile(atPath: original, contents: Data(repeating: 0xAB, count: 65_536))
+                    // `/bin/cp -c`, not `clonefile()` directly: the in-process
+                    // call never reproduced the stale map (0/600 unfixed), the
+                    // cp path does (22/200 unfixed). The process launch shifts
+                    // writeback timing into the window that matters.
+                    let cp = Process()
+                    cp.executableURL = URL(fileURLWithPath: "/bin/cp")
+                    cp.arguments = ["-c", original, clone]
+                    guard (try? cp.run()) != nil else { return false }
+                    cp.waitUntilExit()
+                    guard cp.terminationStatus == 0,
+                          let handle = FileHandle(forWritingAtPath: clone) else { return false }
+                    try? handle.seek(toOffset: 32_768)
+                    try? handle.write(contentsOf: Data(repeating: 0x22, count: 4_096))
+                    try? handle.close()     // no flush: that is the point
+                    return CloneDetector.areLikelyClones(original, clone)
+                }
+            }
+            var count = 0
+            for await reportedClone in group where reportedClone { count += 1 }
+            return count
+        }
+        #expect(wrong == 0, "\(wrong) of 200 edited clones were reported as byte-identical clones")
+    }
 }
 
 private struct CloneCopyFailed: Error {
@@ -278,5 +382,34 @@ private struct CloneFixture {
         var info = stat()
         guard lstat(path, &info) == 0 else { return nil }
         return info.st_ino
+    }
+}
+
+struct VolumeStatsTests {
+    @Test func homePathReportsPositiveCapacity() {
+        let stats = VolumeStats.forPath(NSHomeDirectory())
+        #expect(stats != nil)
+        #expect(stats!.totalBytes > 0)
+        #expect(stats!.freeBytes <= stats!.totalBytes)
+        #expect(stats!.usedBytes + stats!.freeBytes == stats!.totalBytes || stats!.usedBytes <= stats!.totalBytes)
+    }
+}
+
+struct FileTypeCatalogTests {
+    @Test func bundledCategoriesLoadAndClassify() {
+        let cats = FileTypeCatalog.loadBundled()
+        #expect(cats.count >= 6)
+        #expect(cats.contains { $0.id == "video" && $0.extensions.contains("mp4") })
+
+        var tree = FileTree()
+        let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "clip.mp4", parent: root, isDirectory: false, logicalSize: 100, allocatedSize: 100, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "song.mp3", parent: root, isDirectory: false, logicalSize: 40, allocatedSize: 40, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "readme.txt", parent: root, isDirectory: false, logicalSize: 10, allocatedSize: 10, modifiedDaysSinceEpoch: 0)
+        let sizes = tree.rollUpSizes(basis: .allocated)
+        let totals = FileTypeCatalog.totals(in: tree, sizes: sizes, categories: cats)
+        #expect(totals.contains { $0.categoryID == "video" && $0.bytes == 100 })
+        #expect(totals.contains { $0.categoryID == "audio" && $0.bytes == 40 })
+        #expect(totals.contains { $0.categoryID == "document" && $0.bytes == 10 })
     }
 }

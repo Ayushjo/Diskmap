@@ -1,0 +1,8 @@
+# diskmap check ~ --fail-over 10TB --incremental, release, Mac16,13, 2026-09-29. Run 1 has no cache (full walk).
+# Wall time includes loading the cached tree, the update, rollup, and writing the cache back.
+full scan: no earlier scan of this folder real 9.30 
+updated from the last scan: 15 folders re-read, 0 walked, 65 spot-checked, 1.30 s real 1.97 
+updated from the last scan: 6 folders re-read, 0 walked, 65 spot-checked, 0.80 s real 1.49 
+updated from the last scan: 6 folders re-read, 0 walked, 65 spot-checked, 0.80 s real 1.52 
+updated from the last scan: 8 folders re-read, 0 walked, 65 spot-checked, 0.76 s real 1.45 
+updated from the last scan: 6 folders re-read, 0 walked, 65 spot-checked, 2.59 s real 3.23 

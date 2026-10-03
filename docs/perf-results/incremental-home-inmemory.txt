@@ -1,0 +1,11 @@
+# DiskMapScanBench --incremental 7 ~ (release, Mac16,13, 2026-09-29): one full walk, then 7 quick updates
+# from the in-memory tree, as the app's Rescan does. Machine under memory pressure (~19 GB swap in use).
+incremental full_walk_seconds=8.017 items=2259179
+incremental run=1 seconds=0.797 relisted=6 walked=0 spot_checked=65
+incremental run=2 seconds=0.247 relisted=4 walked=0 spot_checked=64
+incremental run=3 seconds=0.257 relisted=2 walked=0 spot_checked=65
+incremental run=4 seconds=0.253 relisted=0 walked=0 spot_checked=65
+incremental run=5 seconds=0.234 relisted=2 walked=0 spot_checked=65
+incremental run=6 seconds=0.233 relisted=0 walked=0 spot_checked=65
+incremental run=7 seconds=0.210 relisted=0 walked=0 spot_checked=65
+incremental_summary min=0.210 median=0.247 max=0.797

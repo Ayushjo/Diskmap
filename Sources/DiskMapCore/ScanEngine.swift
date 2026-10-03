@@ -6,6 +6,26 @@ import Foundation
 /// enumerator built a `URL` and a resource-value object per file; on a
 /// home folder that was about 373 s. Bulk attributes plus a handful of
 /// worker threads is the macOS API for this.
+/// What a scan has found so far, a few times a second (TASK-044). Byte
+/// figures are running sums of on-disk size and are approximate until the
+/// walk ends (hard links are de-duplicated only in the final rollup).
+public struct ScanProgress: Sendable, Equatable {
+    public struct Folder: Sendable, Equatable {
+        public var name: String
+        public var bytes: Int64
+    }
+    public var itemCount: Int
+    public var bytesFound: Int64
+    public var elapsedSeconds: Double
+    public var currentFolder: String
+    /// Largest folders directly inside the scan root, largest first (≤ 12).
+    public var topFolders: [Folder]
+
+    public var itemsPerSecond: Double {
+        elapsedSeconds > 0 ? Double(itemCount) / elapsedSeconds : 0
+    }
+}
+
 public actor ScanEngine {
 
     public struct Result: Sendable {
@@ -20,6 +40,22 @@ public actor ScanEngine {
         /// enumerator is released and the tree is still retained.
         public var residentBytesAfterEnumeratorRelease: UInt64?
         public var notDownloadedCount: Int
+        /// Files with ATTR_FILE_LINKCOUNT > 1. These are the only nodes the
+        /// hard-link rollup correction has to consider (TASK-037).
+        public var hardLinkCount: Int
+        /// Directories recorded but not walked because they live on another
+        /// volume. Non-zero means these totals deliberately exclude a mount.
+        public var crossMountSkipCount: Int
+        /// Directories the walk could not open for lack of permission. They
+        /// are in the tree with no children, so every total above them is
+        /// short. Usually TCC-protected folders without Full Disk Access.
+        public var deniedDirectoryIDs: [Int32]
+        /// Deleted between being listed and being opened — not an error.
+        public var vanishedDirectoryCount: Int
+        public var otherUnopenedDirectoryCount: Int
+        /// FSEvents id read just before the walk began: the point an
+        /// incremental update replays from (TASK-061).
+        public var eventIDAtStart: UInt64 = 0
     }
 
     /// What to store for one enumerated item. Split out so the iCloud
@@ -34,15 +70,37 @@ public actor ScanEngine {
 
     public init() {}
 
-    public func scan(root: URL, progress: (@Sendable (Int) -> Void)? = nil) async -> Result {
+    /// - Parameter crossMounts: when false (the default) the walk records a
+    ///   directory that sits on another volume but does not descend into it,
+    ///   so a "/" scan does not silently absorb every mounted disk. Pass true
+    ///   only when the caller genuinely wants every reachable filesystem.
+    /// - Parameter sharing: read APFS clone facts so clone families count
+    ///   once (TASK-077). Off by default: it lengthens the walk.
+    public func scan(
+        root: URL,
+        crossMounts: Bool = false,
+        sharing: SharingMode = .off,
+        progress: (@Sendable (Int) -> Void)? = nil,
+        live: (@Sendable (ScanProgress) -> Void)? = nil
+    ) async -> Result {
         let started = ContinuousClock.now
+        let eventIDAtStart = FSEventHistory.currentEventID()
         // `walk` owns the enumerator. Measuring after it returns is the
         // steady state: tree retained, enumerator and per-item
         // resourceValues released. The during-walk peak is sampled only
         // inside `walk` and is not updated here.
-        let walked = await Task.detached(priority: .userInitiated) {
-            BulkScan.walk(root: root, progress: progress)
-        }.value
+        // `walk` blocks until the scan is done. It must not do that on a
+        // Swift-concurrency thread: that pool assumes its threads never block,
+        // and enough parallel scans parked there starved the walk's own
+        // workers into a permanent hang. Run it on a dedicated thread and
+        // resume when it finishes.
+        let walked = await withCheckedContinuation { (continuation: CheckedContinuation<BulkScan.Result, Never>) in
+            BulkScan.startScanThread(name: "DiskMap.scan.coordinator") {
+                continuation.resume(returning: BulkScan.walk(
+                    root: root, crossMounts: crossMounts, sharing: sharing, progress: progress, live: live
+                ))
+            }
+        }
         var tree = walked.tree
         tree.compact()
         let afterRelease = ProcessMemory.current()
@@ -53,7 +111,13 @@ public actor ScanEngine {
             elapsedSeconds: seconds(elapsed),
             peakResidentBytesDuringWalk: walked.peakResidentBytesDuringWalk,
             residentBytesAfterEnumeratorRelease: afterRelease?.residentBytes,
-            notDownloadedCount: walked.notDownloadedCount
+            notDownloadedCount: walked.notDownloadedCount,
+            hardLinkCount: walked.hardLinkCount,
+            crossMountSkipCount: walked.crossMountSkipCount,
+            deniedDirectoryIDs: walked.deniedDirectoryIDs,
+            vanishedDirectoryCount: walked.vanishedDirectoryCount,
+            otherUnopenedDirectoryCount: walked.otherUnopenedDirectoryCount,
+            eventIDAtStart: eventIDAtStart
         )
         logSummary(result)
         return result
@@ -107,9 +171,10 @@ public actor ScanEngine {
 
     private func logSummary(_ result: Result) {
         let after = result.residentBytesAfterEnumeratorRelease.map(String.init) ?? "unavailable"
-        let line = "DiskMap scan: items=\(result.itemCount) elapsed=\(String(format: "%.3f", result.elapsedSeconds))s rss_during_walk_peak=\(result.peakResidentBytesDuringWalk) rss_after_enumerator_release=\(after) not_downloaded=\(result.notDownloadedCount)"
-        print(line)
-        fflush(stdout)
+        let line = "DiskMap scan: items=\(result.itemCount) elapsed=\(String(format: "%.3f", result.elapsedSeconds))s rss_during_walk_peak=\(result.peakResidentBytesDuringWalk) rss_after_enumerator_release=\(after) not_downloaded=\(result.notDownloadedCount) hard_links=\(result.hardLinkCount) cross_mount_skips=\(result.crossMountSkipCount) denied_dirs=\(result.deniedDirectoryIDs.count) sharing_rows=\(result.tree.sharing.count) sharing_read=\(result.tree.hasSharingInfo)"
+        // Diagnostics go to stderr: stdout belongs to whoever embeds the
+        // engine (the diskmap CLI's --json output must stay parseable).
+        FileHandle.standardError.write(Data((line + "\n").utf8))
     }
 
     private func seconds(_ duration: Duration) -> Double {

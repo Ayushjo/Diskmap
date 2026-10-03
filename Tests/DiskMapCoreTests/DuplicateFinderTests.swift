@@ -7,7 +7,7 @@ struct DuplicateFinderTests {
         let fixture = try DuplicateFixture()
         defer { fixture.tearDown() }
 
-        let clones = await DuplicateFinder.scan([
+        let clones = try await DuplicateFinder.scan([
             (0, URL(fileURLWithPath: fixture.original), fixture.byteCount),
             (1, URL(fileURLWithPath: fixture.clone), fixture.byteCount),
         ])
@@ -18,7 +18,7 @@ struct DuplicateFinderTests {
         #expect(clones.groups[0].reclaimableBytes(deleting: [0]) == 0)
         #expect(clones.groups[0].reclaimableBytes(deleting: [0, 1]) == fixture.byteCount)
 
-        let copies = await DuplicateFinder.scan([
+        let copies = try await DuplicateFinder.scan([
             (2, URL(fileURLWithPath: fixture.original), fixture.byteCount),
             (3, URL(fileURLWithPath: fixture.unrelated), fixture.byteCount),
         ])
@@ -38,7 +38,7 @@ struct DuplicateFinderTests {
         try handle.write(contentsOf: Data(repeating: 0x22, count: 4096))
         try handle.close()
 
-        let result = await DuplicateFinder.scan([
+        let result = try await DuplicateFinder.scan([
             (0, URL(fileURLWithPath: fixture.original), fixture.byteCount),
             (1, URL(fileURLWithPath: fixture.clone), fixture.byteCount),
         ])
@@ -65,6 +65,19 @@ struct DuplicateFinderTests {
         #expect(found.count == 1)
         #expect(folder > 0)
     }
+
+    @Test func sizeCollidingCandidatesSkipUniqueSizes() {
+        var tree = FileTree()
+        let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        let a = tree.addNode(name: "a.txt", parent: root, isDirectory: false, logicalSize: 8, allocatedSize: 8, modifiedDaysSinceEpoch: 1)
+        let b = tree.addNode(name: "b.txt", parent: root, isDirectory: false, logicalSize: 8, allocatedSize: 8, modifiedDaysSinceEpoch: 1)
+        _ = tree.addNode(name: "unique.txt", parent: root, isDirectory: false, logicalSize: 7, allocatedSize: 7, modifiedDaysSinceEpoch: 1)
+        // Not-downloaded files must not create phantom collisions either.
+        _ = tree.addNode(name: "cloud.txt", parent: root, isDirectory: false, logicalSize: 8, allocatedSize: 0, modifiedDaysSinceEpoch: 1, flags: NodeFlags.notDownloaded)
+
+        let found = DuplicateFinder.sizeCollidingCandidates(in: tree, root: URL(fileURLWithPath: "/tmp/diskmap-candidates", isDirectory: true))
+        #expect(Set(found.map(\.id)) == [a, b])
+    }
 }
 
 struct CleanupQueueReclaimTests {
@@ -73,12 +86,15 @@ struct CleanupQueueReclaimTests {
         let a = URL(fileURLWithPath: "/tmp/diskmap-clone-a")
         let b = URL(fileURLWithPath: "/tmp/diskmap-clone-b")
         #expect(await queue.stage(a, size: 800, reason: "shared clone", sharesStorageGroup: "g", groupCopyCount: 2) == true)
+        await queue.waitForMeasurements()
         #expect(await queue.totalSize() == 0)
 
         #expect(await queue.stage(b, size: 800, reason: "shared clone", sharesStorageGroup: "g", groupCopyCount: 2) == true)
+        await queue.waitForMeasurements()
         #expect(await queue.totalSize() == 800)
 
         #expect(await queue.stage(URL(fileURLWithPath: "/tmp/diskmap-real-copy"), size: 100, reason: "duplicate") == true)
+        await queue.waitForMeasurements()
         #expect(await queue.totalSize() == 900)
     }
 
