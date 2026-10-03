@@ -990,3 +990,37 @@ build without `SUFeedURL` and `SUPublicEDKey` cannot check at all and says so.
 other source file. Rejected: a home-grown version check (still networking,
 without signature verification) and auto-checks on by default (breaks the
 offline promise for everyone to save some a click).
+
+### Calm UI: one grammar, one kit (2026-10-03)
+
+Most pages showed too much at once: free space four times on Overview,
+the current folder three times in File Browser, six accent colours, two
+competing "primary" buttons, ten private inspectors and five copies of a
+chip. The redesign (branch `feat/calm-ui`, after the launch site in
+`design/website-motion-v1` and designeer.xyz) gives every page one grammar
+— header, one figure strip, one filter row, one flat list, one selection
+bar, one inspector — built from `Sources/DiskMapApp/Kit/`:
+
+- **Tokens** (`DesignSystem.swift`): paper canvas `#F8F7F4` / near-black
+  `#0B0B0C`, ink in three steps, one violet accent for selection, focus and
+  links; safe/review/danger only as a dot and a word; one muted data
+  palette for every chart and bar. Type is 13 for names, 12 for secondary
+  text, SF Mono for figures and 10 pt mono labels, one 20 pt title and at
+  most one 28 pt display figure per page.
+- **Shared parts:** `KitRow` (hover actions, accent selection), `FileInspector`
+  and `FolderInspector` (the latter builds `FolderInsight` off the main
+  thread), `ReviewableInspector`, `SelectionToolbar`/`ReviewFooter`,
+  `Chip`, `KitTabs`, `FigureStrip`, `SafetyLabel`, `RelativeAge`.
+- **One primary per screen** (ink), everything else secondary, quiet, icon
+  or link. Adding to Cleanup always toasts and never opens the sheet on its
+  own; the Cleanup sheet is the only place anything moves to the Trash.
+- **Fewer destinations:** Search folded into Find (a single bare word runs
+  through `FileSearchIndex`, see the search-index entry); Regenerable Data
+  became Developer Storage's "By tool" tab. 17 sidebar items → 14.
+- **Brand:** the logo's "D" is drawn as shapes (`DiskMapMark`, and a copy in
+  `IconRender` variant 4, the default icon), so it scales and inverts.
+
+Rejected: restyling page by page without shared parts (the copies were the
+problem), a second accent for "safe" actions (green buttons read as "go"
+next to a destructive flow), and cards as the default container (hairlines
+and space separate sections; a box now means a different kind of thing).
