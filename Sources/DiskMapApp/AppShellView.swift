@@ -17,7 +17,7 @@ struct AppShellView: View {
     /// Destinations whose list lives in its own scroll view under a fixed
     /// header. Pages that already scroll as a whole are not listed.
     static let pageScrollsWhenShort: Set<AppDestination> = [
-        .find, .search, .biggestFiles, .biggestFolders, .forgottenFiles, .duplicates,
+        .find, .biggestFiles, .biggestFolders, .forgottenFiles, .duplicates,
         .cleanSafe, .cleanCaches, .fileBrowser, .visualize, .regenerableData, .applications,
     ]
 
@@ -303,16 +303,27 @@ struct AppShellView: View {
                     .font(.system(size: DiskMapType.scaled(11.5), weight: .regular))
                     .foregroundStyle(selected ? DiskMapTheme.accent : DiskMapTheme.ink3)
                     .frame(width: 16)
-                Text(dest.label)
+                let label = Text(dest.label)
                     .font(selected ? DiskMapType.bodyEmphasis : DiskMapType.body)
                     .foregroundStyle(locked ? DiskMapTheme.ink3 : selected ? DiskMapTheme.ink : DiskMapTheme.ink2)
                     .lineLimit(1)
-                Spacer(minLength: 4)
-                if !locked, let figure = navFigure(dest) {
-                    Text(figure)
-                        .font(DiskMapType.figureSmall)
-                        .foregroundStyle(DiskMapTheme.ink3)
-                        .lineLimit(1)
+                // The figure gives way when the name needs the room.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) {
+                        label.fixedSize()
+                        Spacer(minLength: 4)
+                        if !locked, let figure = navFigure(dest) {
+                            Text(figure)
+                                .font(DiskMapType.figureSmall)
+                                .foregroundStyle(DiskMapTheme.ink3)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                    }
+                    HStack(spacing: 0) {
+                        label
+                        Spacer(minLength: 0)
+                    }
                 }
             }
             .padding(.horizontal, 10)
@@ -375,18 +386,13 @@ struct AppShellView: View {
                 },
                 onOpenBiggestFiles: { model.destination = .biggestFiles }
             )
-        case .search:
-            if let tree = model.tree, let root = model.rootURL {
-                SearchView(model: model, tree: tree, totals: model.selectedTotals, rootURL: root,
-                           currentNode: $model.currentNode) { model.destination = .visualize }
-            } else { needsScan }
         case .regenerableData:
             if let tree = model.tree, let root = model.rootURL {
                 DeveloperView(model: model, tree: tree, totals: model.selectedTotals, rootURL: root)
             } else { needsScan }
         case .find:
             if let tree = model.tree, let root = model.rootURL {
-                FindView(model: model, tree: tree, rootURL: root, onOpenCleanup: { model.isCleanupQueuePresented = true })
+                FindView(model: model, tree: tree, rootURL: root)
             } else { needsScan }
         case .fileBrowser:
             if let tree = model.tree, let root = model.rootURL {

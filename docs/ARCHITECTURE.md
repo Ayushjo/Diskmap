@@ -320,8 +320,10 @@ The alternative — building paths up front — would spend O(depth) string
 work per node to answer a question about names only. Paths are built on
 demand for the ≤300 shown results.
 
-**Status:** implemented. `FileSearchIndex` is built once per scan and
-shared by the Search page.
+**Status:** implemented. `FileSearchIndex` is built once per scan. The
+Search page folded into Find (calm-UI pass): a query of one bare word
+(optionally with `type:`) sorted by size runs through the index, anything
+else through `FileQuery` — see `FindView.indexNeedle`.
 
 ### Quick Wins patterns are categorized data, not a flat list
 

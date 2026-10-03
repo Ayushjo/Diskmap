@@ -33,4 +33,22 @@ struct FindViewTests {
         FindView.recordChipUse("old", defaults: defaults)
         #expect(defaults.dictionary(forKey: FindView.chipUseKey) as? [String: Int] == ["large": 2, "old": 1])
     }
+
+    /// Search merged into Find: one bare word (with or without type:) goes
+    /// to the name index; anything else, or another sort, to FileQuery.
+    @Test func bareWordsUseTheNameIndex() {
+        func needle(_ text: String, _ sort: FileQuery.Sort = .largest) -> (String, FileSearchIndex.KindFilter)? {
+            FindView.indexNeedle(for: FileQuery.parse(text, home: "/Users/x", root: "/Users/x").query, sort: sort)
+        }
+        #expect(needle("report")?.0 == "report")
+        #expect(needle("report")?.1 == .all)
+        #expect(needle("type:folder node_modules")?.1 == .folders)
+        #expect(needle("type:file report")?.1 == .files)
+        #expect(needle("report", .oldest) == nil)
+        #expect(needle("two words") == nil)
+        #expect(needle("report size>1GB") == nil)
+        #expect(needle("-report") == nil)
+        #expect(FindView.examples.allSatisfy { needle($0) == nil || $0.hasPrefix("type:") })
+        #expect(FindView.examples.count == FindView.exampleMeanings.count)
+    }
 }

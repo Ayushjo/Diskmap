@@ -247,6 +247,7 @@ struct KitTabs<ID: Hashable>: View {
                                 .fill(on ? DiskMapTheme.ink : .clear)
                                 .frame(height: 1.5)
                         }
+                        .fixedSize()
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

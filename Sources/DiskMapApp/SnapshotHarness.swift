@@ -85,6 +85,9 @@ enum SnapshotHarness {
             model.refreshSavedSearchTotals()
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
+        // `--find-duplicates`: run the duplicate search first, so Duplicates
+        // (and Overview's review list) render with groups.
+        if arguments.contains("--find-duplicates") { await model.findDuplicates() }
         // `--start-mode "Mind Map"`: the Visualize mode to open with.
         if let mode = value(after: "--start-mode").flatMap(ExploreViewMode.init(rawValue:)) { model.exploreMode = mode }
 
@@ -274,7 +277,7 @@ enum SnapshotHarness {
     }
 
     private static let all: [(String, AppDestination)] = [
-        ("overview", .overview), ("find", .find), ("search", .search), ("regenerableData", .regenerableData), ("biggestFiles", .biggestFiles), ("biggestFolders", .biggestFolders),
+        ("overview", .overview), ("find", .find), ("regenerableData", .regenerableData), ("biggestFiles", .biggestFiles), ("biggestFolders", .biggestFolders),
         ("forgottenFiles", .forgottenFiles), ("duplicates", .duplicates), ("cleanSafe", .cleanSafe),
         ("cleanCaches", .cleanCaches), ("cleanDownloads", .cleanDownloads), ("cleanMedia", .cleanMedia),
         ("fileBrowser", .fileBrowser), ("visualize", .visualize), ("developerStorage", .developerStorage),

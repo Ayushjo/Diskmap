@@ -25,17 +25,19 @@ struct BreadcrumbBar: View {
     var body: some View {
         let chain = tree.ancestorIDs(of: currentNode)
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 ForEach(Array(chain.enumerated()), id: \.element) { index, id in
                     if index > 0 {
-                        Image(systemName: "chevron.right")
-                            .font(DiskMapType.micro)
-                            .foregroundStyle(DiskMapTheme.mutedLabel.opacity(0.7))
+                        Text("/")
+                            .font(DiskMapType.figureSmall)
+                            .foregroundStyle(DiskMapTheme.ink3)
+                            .accessibilityHidden(true)
                     }
                     Button(tree.name(of: id)) { jump(id) }
                         .buttonStyle(.plain)
-                        .font(id == currentNode ? .headline : .body)
-                        .foregroundStyle(id == currentNode ? DiskMapTheme.ink : DiskMapTheme.mutedLabel)
+                        .font(id == currentNode ? DiskMapType.bodyEmphasis : DiskMapType.body)
+                        .foregroundStyle(id == currentNode ? DiskMapTheme.ink : DiskMapTheme.ink2)
+                        .lineLimit(1)
                 }
             }
         }

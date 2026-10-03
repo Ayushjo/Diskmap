@@ -110,6 +110,8 @@ struct FileInspector: View {
     var extraFacts: [(String, String)] = []
     /// Replaces the "why it's large" note (e.g. Forgotten Files' reasons).
     var note: (label: String, text: String)? = nil
+    /// False where the page has its own reason not to offer cleanup.
+    var allowStage = true
 
     private var usedDenominator: Int64 {
         if let vol = model.analysis.volume { return max(1, Int64(vol.usedBytes)) }
@@ -123,7 +125,7 @@ struct FileInspector: View {
         let kind = FileKind.classify(fileName: name, path: abs)
         let safety = SafetyClassifier.assess(path: abs, name: name, isDirectory: false)
         let share = Double(size) / Double(usedDenominator)
-        let allowTrash = safety.level != .protected && kind != .virtualDisk
+        let allowTrash = allowStage && safety.level != .protected && kind != .virtualDisk
         let staged = model.isStaged(url)
 
         return InspectorColumn {
@@ -181,5 +183,140 @@ struct FileInspector: View {
         let pct = fraction * 100
         if pct > 0 && pct < 0.1 { return "<0.1%" }
         return String(format: "%.1f%%", min(100, pct))
+    }
+}
+
+// MARK: - The one folder inspector
+
+/// Used by every page that inspects a folder: header, composition, largest
+/// files, why, safety, actions.
+struct FolderInspector: View {
+    @ObservedObject var model: ScanModel
+    let tree: FileTree
+    let rootURL: URL
+    let id: Int32
+    /// Cleanup reason recorded with the staged folder.
+    var reason: String? = nil
+
+    private var usedDenominator: Int64 {
+        if let vol = model.analysis.volume { return max(1, Int64(vol.usedBytes)) }
+        return max(1, model.analysis.scannedBytes)
+    }
+
+    var body: some View {
+        if let insight = FolderInsight.build(
+            nodeID: id, tree: tree, root: rootURL, totals: model.selectedTotals,
+            fileCounts: model.descendantFileCounts, folderCounts: model.descendantFolderCounts,
+            categories: model.fileTypeCategories
+        ) {
+            content(insight)
+        } else {
+            DiskMapEmptyState(symbol: "folder", title: "Select a folder", message: "Its details and actions appear here.")
+        }
+    }
+
+    private func content(_ insight: FolderInsight) -> some View {
+        let url = URL(fileURLWithPath: insight.absolutePath, isDirectory: true)
+        let staged = model.isStaged(url)
+        let share = Double(insight.bytes) / Double(usedDenominator)
+        return InspectorColumn {
+            InspectorHeader(name: insight.name, size: ByteFormat.string(insight.bytes),
+                            detail: countLabel(insight.fileCount, "file") + " · " + countLabel(insight.folderCount, "folder") + " · \(FileInspector.percent(share)) of used") {
+                Image(systemName: "folder")
+                    .font(.system(size: DiskMapType.scaled(17), weight: .regular))
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .frame(width: 40, height: 40)
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(DiskMapTheme.ink.opacity(0.06)))
+                    .accessibilityHidden(true)
+            }
+            Hairline()
+            FactRow(label: "Location", value: insight.displayPath)
+            if !insight.composition.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    MonoLabel("Made of")
+                    SegmentedStorageBar(segments: insight.composition.map {
+                        (DiskMapTheme.hex($0.colorHex), Double($0.bytes) / Double(max(1, insight.bytes)))
+                    })
+                    ForEach(insight.composition.prefix(5), id: \.categoryID) { row in
+                        HStack(spacing: 8) {
+                            Circle().fill(DiskMapTheme.hex(row.colorHex)).frame(width: 6, height: 6)
+                            Text(row.label)
+                                .font(DiskMapType.secondary)
+                                .foregroundStyle(DiskMapTheme.ink)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(ByteFormat.string(row.bytes))
+                                .font(DiskMapType.figureSmall)
+                                .foregroundStyle(DiskMapTheme.ink2)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+            if !insight.largestFiles.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        MonoLabel("Largest files")
+                        Spacer()
+                        Button("View all") {
+                            model.folderFilterPath = insight.absolutePath
+                            model.destination = .biggestFiles
+                        }
+                        .buttonStyle(LinkButtonStyle())
+                        .font(DiskMapType.secondary)
+                    }
+                    ForEach(insight.largestFiles.prefix(5), id: \.id) { file in
+                        HStack {
+                            Text(file.name)
+                                .font(DiskMapType.secondary)
+                                .foregroundStyle(DiskMapTheme.ink)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 6)
+                            Text(ByteFormat.string(file.bytes))
+                                .font(DiskMapType.figureSmall)
+                                .foregroundStyle(DiskMapTheme.ink2)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+            Hairline()
+            Note(label: "Why it's large", text: insight.whyLarge)
+            if insight.reviewableBytes > 0 {
+                Note(label: "Reviewable", text: "\(ByteFormat.string(insight.reviewableBytes)) — "
+                     + (insight.safety.level == .safe ? "looks like regenerable cache or temp data."
+                        : "files under here not modified in over a year."))
+            }
+            SafetyLine(assessment: insight.safety)
+            InspectorActions(
+                primaryTitle: staged ? "In Cleanup" : "Add to Cleanup",
+                primaryDone: staged,
+                primaryEnabled: insight.safety.level != .protected,
+                primary: {
+                    if staged { model.isCleanupQueuePresented = true } else {
+                        model.stageRow(path: insight.absolutePath, size: insight.bytes,
+                                       reason: reason ?? "Folder: " + insight.name)
+                    }
+                },
+                path: insight.absolutePath
+            ) {
+                Button("Open in File Browser") {
+                    model.currentNode = id
+                    model.selectedNode = id
+                    model.destination = .fileBrowser
+                }
+                Button("Show in Visualize") {
+                    model.currentNode = id
+                    model.selectedNode = id
+                    model.destination = .visualize
+                }
+                Button("Biggest Files in This Folder") {
+                    model.folderFilterPath = insight.absolutePath
+                    model.destination = .biggestFiles
+                }
+            }
+            .padding(.top, 4)
+        }
     }
 }
