@@ -40,6 +40,8 @@ final class ScanModel: ObservableObject {
                                   recordsLastScan: true)
 
     @Published var tree: FileTree?
+    /// What grew since about a week ago, from the storage history (TASK-079).
+    @Published var weekComparison: StorageHistory.Comparison?
     @Published var allocatedTotals: [Int64] = []
     @Published var logicalTotals: [Int64] = []
     @Published var isScanning = false
@@ -352,6 +354,10 @@ final class ScanModel: ObservableObject {
             barrierMarker: scanCache?.directory.appendingPathComponent(".event-barrier"),
             capturedAt: Date())
         Task { await cleanupQueue.setScanContext(context) }
+        if recordsLastScan {
+            recordHistory(root: url, tree: scannedTree, allocated: prepared.allocated,
+                          deniedCount: result.deniedDirectoryIDs.count)
+        }
         if recordsLastScan, let volume = VolumeStats.forPath(url.path) {
             LastScanRecord(rootPath: url.path, scannedAt: Date(), freeBytes: volume.freeBytes,
                            scannedBytes: prepared.allocated.first ?? 0).save()
@@ -364,6 +370,42 @@ final class ScanModel: ObservableObject {
         let postWalk = postWalkStarted.duration(to: .now).components
         let postWalkSeconds = Double(postWalk.seconds) + Double(postWalk.attoseconds) / 1e18
         log("scan finished items=\(result.itemCount) walk_seconds=\(String(format: "%.3f", result.elapsedSeconds)) post_walk_seconds=\(String(format: "%.3f", postWalkSeconds))")
+    }
+
+    static let keepHistoryKey = "KeepStorageHistory"
+
+    /// The app's history store. `-StorageHistoryDirectory <dir>` on the
+    /// command line (argument domain, never persisted) points the snapshot
+    /// harness at a scratch folder instead of the user's.
+    nonisolated static func appHistory() -> StorageHistory {
+        UserDefaults.standard.string(forKey: "StorageHistoryDirectory")
+            .map { StorageHistory(directory: URL(fileURLWithPath: $0, isDirectory: true)) } ?? StorageHistory()
+    }
+
+    /// One small history entry per completed scan (TASK-079), written off the
+    /// main thread; then the week's comparison for Overview and the menu bar.
+    /// With history off nothing is written, but what is there still compares.
+    private func recordHistory(root: URL, tree: FileTree, allocated: [Int64], deniedCount: Int) {
+        let keep = UserDefaults.standard.object(forKey: Self.keepHistoryKey) as? Bool ?? true
+        let volume = VolumeStats.forPath(root.path)
+        Task { [weak self] in
+            let comparison = await Task.detached(priority: .utility) { () -> StorageHistory.Comparison? in
+                let entry = StorageHistory.Entry(
+                    date: Date(), freeBytes: Int64(volume?.freeBytes ?? 0), totalBytes: Int64(volume?.totalBytes ?? 0),
+                    scannedBytes: allocated.first ?? 0, deniedCount: deniedCount, sharingMode: tree.sharingMode.rawValue,
+                    folders: StorageHistory.folders(tree: tree, totals: allocated))
+                let history = ScanModel.appHistory()
+                var entries = history.entries(for: root.path)
+                if keep {
+                    do { entries = try history.record(entry, rootPath: root.path) } catch {
+                        ScanModel.appendLog("storage history write failed: \(error.localizedDescription)")
+                    }
+                }
+                return StorageHistory.compare(entries, latest: entry)
+            }.value
+            guard let self, self.rootURL == root else { return }
+            self.weekComparison = comparison
+        }
     }
 
     /// Writes the cache off the main thread, one save at a time, so the

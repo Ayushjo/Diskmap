@@ -929,3 +929,15 @@ there, and its shared blocks would count as freed (an overestimate);
 parallelising the walk instead (ruled out earlier). Accepted window: a file
 here cloned or hard-linked *from another folder* after the scan raises no
 event here — the same window every scan-based number has.
+
+### Storage history: folder sizes, not trees (2026-10-03)
+
+"What grew this week" needs last week's sizes, not last week's tree. Each
+scan appends a few hundred root-relative folder sizes (~15 KB) to one JSON
+file per scanned root; retention keeps ~80 entries (a day each for a month, a
+week each for a year). Rejected: keeping snapshots for this (hundreds of MB a
+week) and diffing trees (Snapshot compare already does that, on request).
+Entries remember the clone accounting they were counted with and are compared
+only with entries counted the same way. The file is written with
+`Data.write(.atomic)` and never removed; a damaged one is left in place and a
+`.v2.json` beside it is used instead.

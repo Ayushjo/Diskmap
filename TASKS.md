@@ -1418,3 +1418,24 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   out, a clone family across the boundary, an edited clone, a symlink;
   change after scan; limit; non-full modes; unreadable subfolder; file /
   unknown path; queue source). 277 tests green.
+- [x] **TASK-079: Storage history and "What grew this week"**
+  `StorageHistory` (core, Foundation only): after every completed scan the
+  app records one entry per root — free/total/scanned bytes, unreadable
+  count, the clone accounting used, and folder sizes (root children ≥ 50 MB,
+  plus the 20 largest children of any top-level folder ≥ 5 GB or ≥ 5%; cap
+  300) — in `~/Library/Application Support/DiskMap/History/<fnv>.json`,
+  rewritten atomically, never deleted. Retention: one entry per day (the
+  last), every day for 30 days, the last per ISO week for a year, nothing
+  older. A damaged file is left alone; `<fnv>.v2.json` takes over.
+  Comparison: the entry nearest 7 days back among those ≥ 5 days old, else
+  the oldest ≥ 2 days old ("since …"), only between entries counted the
+  same way (clones on/off would read as a fake 80 GB shrink); growers ≥
+  100 MB, second-level folders only when both scans looked inside the
+  parent, a parent dropped when a listed child explains 80% of it; a caveat
+  when the unreadable count differs. Overview card (rows open File
+  Browser), menu bar line ("Free space −12 GB this week · Library +8 GB"),
+  Settings ▸ Keep storage history (default on; off stops writing). Only the
+  app's own model writes (`ScanModel()` in tests never does);
+  `-StorageHistoryDirectory` points the harness at a scratch folder.
+  Verified with a seeded week-old entry for ~/Downloads (render). 10 tests.
+  287 tests green.

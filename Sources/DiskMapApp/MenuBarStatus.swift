@@ -36,6 +36,19 @@ enum MenuBarText {
         return change < 0 ? "\(amount) less free than at your last scan." : "\(amount) more free than at your last scan."
     }
 
+    /// "Free space −12 GB this week · Library +8 GB" (TASK-079).
+    static func week(_ comparison: StorageHistory.Comparison) -> String? {
+        var parts: [String] = []
+        let period = comparison.isWeek ? "this week" : "since \(comparison.since.formatted(date: .abbreviated, time: .omitted))"
+        if abs(comparison.freeDelta) >= noise {
+            parts.append("Free space \(comparison.freeDelta < 0 ? "−" : "+")\(ByteFormat.string(abs(comparison.freeDelta))) \(period)")
+        }
+        if let top = comparison.growers.first {
+            parts.append("\(top.path) +\(ByteFormat.string(top.delta))")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     /// Low enough to say so in the menu bar itself.
     static func isLow(_ volume: VolumeStats) -> Bool {
         volume.totalBytes > 0 && Double(volume.freeBytes) / Double(volume.totalBytes) < 0.10
@@ -84,6 +97,7 @@ struct MenuBarStatusView: View {
     // Read up front so the first layout already has its real height.
     @State private var volume: VolumeStats? = VolumeStats.forPath("/")
     @State private var record: LastScanRecord? = LastScanRecord.load()
+    @State private var week: StorageHistory.Comparison?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -112,6 +126,12 @@ struct MenuBarStatusView: View {
                     if let volume {
                         Text(MenuBarText.delta(previousFree: record.freeBytes, currentFree: volume.freeBytes))
                             .font(DiskMapType.body)
+                            .foregroundStyle(DiskMapTheme.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let week, let line = MenuBarText.week(week) {
+                        Text(line)
+                            .font(DiskMapType.caption)
                             .foregroundStyle(DiskMapTheme.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -157,6 +177,11 @@ struct MenuBarStatusView: View {
     private func refresh() {
         volume = VolumeStats.forPath("/")
         record = LastScanRecord.load()
+        week = model.weekComparison ?? record.flatMap { record in
+            // Before any scan this launch: the history file says it.
+            let entries = ScanModel.appHistory().entries(for: record.rootPath)
+            return entries.last.flatMap { StorageHistory.compare(entries, latest: $0) }
+        }
         MenuBarVolume.shared.refresh()
     }
 

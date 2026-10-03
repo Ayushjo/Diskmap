@@ -47,6 +47,7 @@ struct OverviewView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 12) {
                     healthCard
+                    growthCard
                     insightCard
                     findingsCard
                     recoverCard
@@ -98,6 +99,71 @@ struct OverviewView: View {
                 }
             }
         }
+    }
+
+    /// TASK-079: what grew since about a week ago, from the scan history.
+    @ViewBuilder
+    private var growthCard: some View {
+        if let comparison = model.weekComparison {
+            PanelCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(comparison.isWeek ? "What grew this week"
+                         : "What grew since \(comparison.since.formatted(date: .abbreviated, time: .omitted))")
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                    Text(Self.freeDeltaText(comparison.freeDelta))
+                        .font(DiskMapType.body)
+                        .foregroundStyle(comparison.freeDelta < -Self.growthNoise ? DiskMapTheme.danger : DiskMapTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if comparison.growers.isEmpty {
+                        Text("No folder here grew by more than 100 MB.")
+                            .font(DiskMapType.caption)
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                    }
+                    ForEach(comparison.growers, id: \.path) { growth in
+                        Button { openGrown(growth.path) } label: {
+                            HStack {
+                                Text(growth.path)
+                                    .font(DiskMapType.body)
+                                    .foregroundStyle(DiskMapTheme.ink)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer(minLength: 6)
+                                Text("+" + ByteFormat.string(growth.delta))
+                                    .font(DiskMapType.small.monospacedDigit())
+                                    .foregroundStyle(DiskMapTheme.review)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open in File Browser · \(ByteFormat.string(growth.before)) → \(ByteFormat.string(growth.after))")
+                        .accessibilityLabel("\(growth.path) grew \(ByteFormat.string(growth.delta))")
+                    }
+                    if comparison.deniedChanged {
+                        Text("Some folders were readable in one scan and not the other, so small changes may be the reading, not the disk.")
+                            .font(DiskMapType.micro)
+                            .foregroundStyle(DiskMapTheme.mutedLabel)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .accessibilityIdentifier("growth-card")
+        }
+    }
+
+    static let growthNoise: Int64 = 50_000_000
+
+    static func freeDeltaText(_ delta: Int64) -> String {
+        if abs(delta) < growthNoise { return "Free space is about the same." }
+        return delta < 0 ? "\(ByteFormat.string(-delta)) less free space." : "\(ByteFormat.string(delta)) more free space."
+    }
+
+    private func openGrown(_ relativePath: String) {
+        guard let tree = model.tree, let root = model.rootURL,
+              case .found(let id) = FileQuery.node(atPath: root.path + "/" + relativePath, tree: tree, rootPath: root.path) else { return }
+        model.currentNode = id
+        model.selectedNode = id
+        model.destination = .fileBrowser
     }
 
     /// TASK-077: what counting each clone family once changed — or, when it

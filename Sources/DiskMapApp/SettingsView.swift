@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage("ShowMenuBarExtra") private var showMenuBarExtra = true
     @AppStorage(CloneAccounting.key) private var cloneMode = CloneAccounting.defaultMode.rawValue
+    @AppStorage(ScanModel.keepHistoryKey) private var keepHistory = true
 
     var body: some View {
         Form {
@@ -21,6 +22,15 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
                 Text("Scanning")
+            }
+            Section {
+                Toggle("Keep storage history", isOn: $keepHistory)
+                Text("After each scan DiskMap notes a few hundred folder sizes, so it can say what grew this week. Kept for a year in ~/Library/Application Support/DiskMap/History, never sent anywhere. Turning this off stops new notes; what is there stays.")
+                    .font(DiskMapType.caption)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("History")
             }
             Section {
                 Toggle("Show in Menu Bar", isOn: $showMenuBarExtra)
