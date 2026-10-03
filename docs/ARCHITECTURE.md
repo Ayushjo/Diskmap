@@ -869,3 +869,49 @@ instead (`CategoryMode.folder`), reusing the File Types totals the scan already
 computes. A root that *looks* like a home (two of Library/Downloads/Documents/
 Desktop) — an old account on a backup drive — is treated as one. Rows always
 add up to the scanned total; "Other" is what no type claims, never padding.
+
+### APFS clones: a sparse side table, one member carries the blocks (2026-10-03)
+
+A file copied by Finder, `cp -c`, or tools that clone on write (pnpm, uv,
+Xcode) shares every block with the original until one of them is edited. The
+walk used to charge each copy its full allocated size. On the development
+machine's home folder that counted **80.1 GB** more than once (266,344
+families with more than one member inside the home; 884k clone rows).
+
+**What the scan reads.** `getattrlistbulk` can return
+`ATTR_CMNEXT_CLONEID` and `ATTR_CMNEXT_CLONE_REFCNT` (and `PRIVATESIZE`) with
+`FSOPT_ATTR_CMN_EXTENDED`. Each mask has its own record layout, measured by
+`AttrProbe --extended [--refcount-only]` (`docs/perf-results/attr-probe-ext.txt`)
+— dropping PRIVATESIZE moves CLONEID from 116 to 108. `SharingLayout` holds
+one measured layout per mask. Only APFS (by `f_fstypename`, because FSKit
+ExFAT claims these attributes and returns zeros), and only on the scan
+root's own device.
+
+**Refcount is enough for families.** Members with refcount > 1 had no
+private bytes at all (0 of 884k): APFS gives an edited clone a new clone id
+and drops it from the family. So the cheaper request (CLONEID + REFCNT) finds
+every family; PRIVATESIZE adds only the edited copies that still share some
+blocks with a family they left (328 files, 38 MB here), which are counted in
+full and reported, never guessed away.
+
+**Storage.** A sorted side table on `FileTree` (node, clone id, private
+bytes, refcount) — no new per-node array, 24 bytes per clone row — and the
+`apfsClone` flag bit (defined since TASK-001, set for the first time now).
+Snapshot codec v4 appends it; v1–v3 decode with `hasSharingInfo == false`
+("unknown", not "none"). Quick rescans copy rows with their nodes and refuse
+to mix a tree with clone facts and one without.
+
+**Rollups.** Per family (deduplicated by inode, so a hard-linked clone is one
+member), the member with the lowest inode carries its allocated size; the
+others carry their private bytes. Lowest inode, not lowest path as for hard
+links: clones each have their own inode, which is stable between scans, and
+building ~900k paths would cost seconds. Logical sizes are unchanged.
+
+**Why it is a setting, off by default.** Asking for CLONEID + REFCNT made a
+home walk +14% slower at the median and +22% at p95 (8 alternating rounds,
+`docs/perf-results/clone-scan-ab.txt`); adding PRIVATESIZE made it ~1.9×. The
+plan's budget for a default was +10% at p95. The kernel does the extra work
+per file, so there is no cheaper way to ask; a second pass would cost a whole
+walk.
+Overview says plainly that clones are counted per copy when it is off, and
+links to Settings.

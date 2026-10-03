@@ -435,3 +435,25 @@ of spot checks, 28 ms for the event barrier and replay. Wall time for
 `diskmap check ~ --incremental` is 1.45–1.97 s against 9.3 s for a walk
 (`docs/perf-results/incremental-home.txt`).
 
+
+## Clone accounting (TASK-077, 2026-10-03)
+
+`DISKMAP_SCAN_SHARING=off|refcount|full DiskMapScanBench ~` (release, ~2.58M
+items, modes alternated, 8 rounds on an otherwise idle machine —
+`docs/perf-results/clone-scan-ab.txt`):
+
+| walk | min | median | p95 | max |
+|---|---|---|---|---|
+| off | 13.76 s | 16.97 s | 20.42 s | 21.04 s |
+| refcount (CLONEID + REFCNT) | 16.03 s | 19.78 s | 24.98 s | 25.77 s |
+| full (+ PRIVATESIZE) | 27.32 s | 31.47 s | 38.18 s | 40.13 s |
+
+Paired per round, refcount costs +14% at the median (p95 of totals +22%) and
+full ~1.9×: over the 10% budget, so clone accounting is a setting, off by
+default. With it on, `rollUpBoth` goes from 0.06 s to 0.13–0.17 s (a sort of
+884k clone rows; dictionaries took 0.8 s) and AnalysisSnapshot +0.04 s. The
+side table is 24 bytes per clone row — 884k rows, ~21 MB, on this home.
+
+What it changes: `diskmap scan ~` reports 353.45 GB without it and 270.36 GB
+with it (83.09 GB in 715,110 cloned copies counted once; ~/Library 152.19 →
+85.3 GB).

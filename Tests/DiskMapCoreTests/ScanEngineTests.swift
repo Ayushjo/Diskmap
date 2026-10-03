@@ -446,9 +446,13 @@ struct EdgeCaseRobustnessTests {
         if FileManager.default.fileExists(atPath: a.path), FileManager.default.fileExists(atPath: b.path) {
             #expect(CloneDetector.areLikelyClones(a.path, b.path) == false)
         }
-        let result = await ScanEngine().scan(root: vol.appendingPathComponent("edge-cases", isDirectory: true))
+        // Clone accounting asked for on ExFAT reads nothing (TASK-077): the
+        // volume would claim the extended attributes and return zeros.
+        let result = await ScanEngine().scan(root: vol.appendingPathComponent("edge-cases", isDirectory: true), sharing: .full)
         #expect(result.itemCount > 0)
         #expect(result.elapsedSeconds < 120)
+        #expect(result.tree.hasSharingInfo == false)
+        #expect(result.tree.sharing.isEmpty)
     }
 }
 

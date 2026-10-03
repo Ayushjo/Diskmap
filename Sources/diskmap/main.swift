@@ -28,6 +28,10 @@ USAGE
                  [--min-size SIZE] [--max-depth N]
       The whole scan, for jq, spreadsheets, or `ncdu -f FILE`.
 
+--clones (any command): count each APFS clone family once — a file copied
+    by Finder, cp -c or tools like pnpm shares blocks with the original.
+    Without it every copy counts. Makes the scan roughly 15–20% longer.
+
 --incremental (any command): start from the last scan of the same folder
     and re-read only what macOS reports as changed; falls back to a full
     walk when that can't be trusted. The cache lives in
@@ -63,7 +67,7 @@ var flags: [String: String] = [:]
 var switches = Set<String>()
 var positional: [String] = []
 let valued: Set<String> = ["--sort", "--limit", "--top", "--older-than", "--min-size", "--fail-over", "--format", "--out", "--max-depth"]
-let booleans: Set<String> = ["--json", "--reclaimable", "--incremental"]
+let booleans: Set<String> = ["--json", "--reclaimable", "--incremental", "--clones"]
 while !arguments.isEmpty {
     let token = arguments.removeFirst()
     if valued.contains(token) {
@@ -80,6 +84,7 @@ while !arguments.isEmpty {
 }
 let json = switches.contains("--json")
 let incremental = switches.contains("--incremental")
+let sharing: SharingMode = switches.contains("--clones") ? .refcount : .off
 
 func rootURL(default fallback: String? = nil) -> URL {
     guard let raw = positional.first ?? fallback else { fail("\(command) needs a path", .usage) }
@@ -99,7 +104,7 @@ func display(_ path: String) -> String { CanonicalPath.displayPath(absolutePath:
 func scan(_ root: URL) async -> ScanEngine.Result {
     let cache = ScanCache(directory: ScanCache.defaultDirectory(), slot: "cli")
     if incremental {
-        switch await IncrementalScan.update(root: root, cache: cache) {
+        switch await IncrementalScan.update(root: root, cache: cache, sharing: sharing) {
         case .updated(let update):
             FileHandle.standardError.write(Data(("updated from the last scan: \(update.changedDirectories) folders re-read, "
                 + "\(update.rewalkedSubtrees) walked, \(update.spotChecked) spot-checked, "
@@ -111,7 +116,7 @@ func scan(_ root: URL) async -> ScanEngine.Result {
         }
     }
     let interactive = isatty(STDERR_FILENO) != 0
-    let result = await ScanEngine().scan(root: root, progress: { count in
+    let result = await ScanEngine().scan(root: root, sharing: sharing, progress: { count in
         guard interactive else { return }
         FileHandle.standardError.write(Data("\rScanning… \(count.formatted()) items".utf8))
     })
@@ -156,12 +161,15 @@ case "scan":
     let files = TopSizes.rankedFiles(tree: tree, totals: totals.allocated, limit: top)
     let denied = deniedPaths(result, root: root)
     let correction = tree.hardLinkCorrection()
+    let clones = tree.sharingCorrection()
     if json {
         emitJSON([
             "schema": 1, "root": root.path,
             "sizeBytes": totals.allocated[0], "logicalBytes": totals.logical[0],
             "items": result.itemCount, "elapsedSeconds": result.elapsedSeconds,
             "hardLinkBytesNotDoubleCounted": correction.allocatedBytes,
+            "clonesCountedOnce": tree.hasSharingInfo,
+            "cloneBytesNotDoubleCounted": clones.bytes,
             "unreadableFolders": denied,
             "largestFolders": children.map { ["path": tree.path(of: $0.id, root: root).path, "sizeBytes": $0.size] },
             "largestFiles": files.map { ["path": tree.path(of: $0, root: root).path, "sizeBytes": totals.allocated[Int($0)]] },
@@ -171,6 +179,9 @@ case "scan":
             + " · \(result.itemCount.formatted()) items · \(String(format: "%.1f", result.elapsedSeconds)) s")
         if correction.allocatedBytes > 0 {
             say("  (hard links: \(HumanUnits.format(correction.allocatedBytes)) counted once, not \(correction.duplicateNameCount + correction.inodeCount) times)")
+        }
+        if clones.bytes > 0 {
+            say("  (APFS clones: \(HumanUnits.format(clones.bytes)) in \(clones.cloneCount.formatted()) copies counted once)")
         }
         say("\nLargest folders")
         for child in children where tree.isDirectory[Int(child.id)] {

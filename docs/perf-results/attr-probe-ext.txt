@@ -1,0 +1,162 @@
+# TASK-077 — BulkScan's mask plus APFS extended attributes, measured 2026-10-03
+# swift run AttrProbe --extended   (macOS 26.5.2, MacOSX.sdk)
+#
+# Derived layout (same for file AND directory records, because the dir
+# section LINKCOUNT+ALLOCSIZE+DATALENGTH is as wide as the file section):
+#   0 length · 4 returned_attrs (5 × u32; [4] = ext returned) · 24 ERROR · 28 NAME ref
+#   36 DEVID · 40 OBJTYPE · 44 CRTIME · 60 MODTIME · 76 FLAGS · 80 FILEID
+#   88 LINKCOUNT · 92 TOTALSIZE|DIR ALLOC · 100 ALLOCSIZE|DIR DATALENGTH
+#   108 PRIVATESIZE (i64) · 116 CLONEID (u64) · 124 EXT_FLAGS (u64) · 132 CLONE_REFCNT (u32) · 136 end of fixed part
+# Without the extended request the fixed part ends at 108 (attr-probe.txt).
+# Directory records: PRIVATESIZE 0, CLONEID = own inode, REFCNT 0 — ignored.
+# Edited clone: refcount 1, a NEW cloneID, private = the rewritten block only.
+
+=== TASK-077 extended: ground truth (getattrlist single object) ===
+clone-a.bin: isDir=false ino=29754434 alloc=81920 private=0 cloneID=29754434 refcnt=2 returnedExt=0x1308
+clone-b.bin: isDir=false ino=29754435 alloc=81920 private=0 cloneID=29754434 refcnt=2 returnedExt=0x1308
+clone-edited.bin: isDir=false ino=29754436 alloc=81920 private=16384 cloneID=29754437 refcnt=1 returnedExt=0x1308
+a-dir: isDir=true ino=29754438 alloc=0 private=-1 cloneID=0 refcnt=0 returnedExt=0x1308
+mask: common=0xa204060b dir=0x29 file=0x7 fork(ext)=0x1308 options=0x29
+
+=== bulk record for clone-a.bin (isDir=false) — length 152 ===
+  0000  98 00 00 00 0b 06 04 a2 00 00 00 00 00 00 00 00
+  0016  07 00 00 00 08 13 00 00 00 00 00 00 6c 00 00 00
+  0032  0c 00 00 00 10 00 00 01 01 00 00 00 12 92 c0 6a
+  0048  00 00 00 00 b0 4d 9f 23 00 00 00 00 12 92 c0 6a
+  0064  00 00 00 00 b6 bc a0 23 00 00 00 00 00 00 00 00
+  0080  42 04 c6 01 00 00 00 00 01 00 00 00 00 40 01 00
+  0096  00 00 00 00 00 40 01 00 00 00 00 00 00 00 00 00
+  0112  00 00 00 00 42 04 c6 01 00 00 00 00 41 00 00 00
+  0128  00 00 00 00 02 00 00 00 63 6c 6f 6e 65 2d 61 2e
+  0144  62 69 6e 00 00 00 00 00
+
+  returned_attrs (common, vol, dir, file, fork/ext): ["0xa204060b", "0x0", "0x0", "0x7", "0x1308"]
+  FILEID (u64)             80, 116
+  alloc (i64)              92, 100
+  PRIVATESIZE (i64)        8, 72, 104, 108
+  CLONEID (u64)            80, 116
+  CLONE_REFCNT (u32)       132
+
+=== bulk record for clone-b.bin (isDir=false) — length 152 ===
+  0000  98 00 00 00 0b 06 04 a2 00 00 00 00 00 00 00 00
+  0016  07 00 00 00 08 13 00 00 00 00 00 00 6c 00 00 00
+  0032  0c 00 00 00 10 00 00 01 01 00 00 00 12 92 c0 6a
+  0048  00 00 00 00 b0 4d 9f 23 00 00 00 00 12 92 c0 6a
+  0064  00 00 00 00 b6 bc a0 23 00 00 00 00 00 00 00 00
+  0080  43 04 c6 01 00 00 00 00 01 00 00 00 00 40 01 00
+  0096  00 00 00 00 00 40 01 00 00 00 00 00 00 00 00 00
+  0112  00 00 00 00 42 04 c6 01 00 00 00 00 41 00 00 00
+  0128  00 00 00 00 02 00 00 00 63 6c 6f 6e 65 2d 62 2e
+  0144  62 69 6e 00 00 00 00 00
+
+  returned_attrs (common, vol, dir, file, fork/ext): ["0xa204060b", "0x0", "0x0", "0x7", "0x1308"]
+  FILEID (u64)             80
+  alloc (i64)              92, 100
+  PRIVATESIZE (i64)        8, 72, 104, 108
+  CLONEID (u64)            116
+  CLONE_REFCNT (u32)       132
+
+=== bulk record for a-dir (isDir=true) — length 144 ===
+  0000  90 00 00 00 0b 06 04 a2 00 00 00 00 29 00 00 00
+  0016  00 00 00 00 08 13 00 00 00 00 00 00 6c 00 00 00
+  0032  06 00 00 00 10 00 00 01 02 00 00 00 12 92 c0 6a
+  0048  00 00 00 00 db 87 b7 23 00 00 00 00 12 92 c0 6a
+  0064  00 00 00 00 db 87 b7 23 00 00 00 00 00 00 00 00
+  0080  46 04 c6 01 00 00 00 00 01 00 00 00 00 00 00 00
+  0096  00 00 00 00 40 00 00 00 00 00 00 00 00 00 00 00
+  0112  00 00 00 00 46 04 c6 01 00 00 00 00 00 00 00 00
+  0128  00 00 00 00 00 00 00 00 61 2d 64 69 72 00 00 00
+
+  returned_attrs (common, vol, dir, file, fork/ext): ["0xa204060b", "0x0", "0x29", "0x0", "0x1308"]
+  FILEID (u64)             80, 116
+  alloc (i64)              72, 92, 104, 108, 120, 124, 128
+
+=== bulk record for clone-edited.bin (isDir=false) — length 160 ===
+  0000  a0 00 00 00 0b 06 04 a2 00 00 00 00 00 00 00 00
+  0016  07 00 00 00 08 13 00 00 00 00 00 00 6c 00 00 00
+  0032  11 00 00 00 10 00 00 01 01 00 00 00 12 92 c0 6a
+  0048  00 00 00 00 b0 4d 9f 23 00 00 00 00 12 92 c0 6a
+  0064  00 00 00 00 59 f1 b1 23 00 00 00 00 00 00 00 00
+  0080  44 04 c6 01 00 00 00 00 01 00 00 00 00 40 01 00
+  0096  00 00 00 00 00 40 01 00 00 00 00 00 00 40 00 00
+  0112  00 00 00 00 45 04 c6 01 00 00 00 00 01 00 00 00
+  0128  00 00 00 00 01 00 00 00 63 6c 6f 6e 65 2d 65 64
+  0144  69 74 65 64 2e 62 69 6e 00 00 00 00 00 00 00 00
+
+  returned_attrs (common, vol, dir, file, fork/ext): ["0xa204060b", "0x0", "0x0", "0x7", "0x1308"]
+  FILEID (u64)             80
+  alloc (i64)              92, 100
+  PRIVATESIZE (i64)        108
+  CLONEID (u64)            116
+  CLONE_REFCNT (u32)       40, 88, 124, 132
+
+
+# --- CLONEID + CLONE_REFCNT only (swift run AttrProbe --extended --refcount-only), 2026-10-03 ---
+# Derived: 108 CLONEID (u64) · 116 CLONE_REFCNT (u32) · 120 end of fixed part (files and directories).
+mask: common=0xa204060b dir=0x29 file=0x7 fork(ext)=0x1100 options=0x29
+
+=== bulk record for clone-a.bin (isDir=false) — length 136 ===
+  0000  88 00 00 00 0b 06 04 a2 00 00 00 00 00 00 00 00
+  0016  07 00 00 00 00 11 00 00 00 00 00 00 5c 00 00 00
+  0032  0c 00 00 00 10 00 00 01 01 00 00 00 06 95 c0 6a
+  0048  00 00 00 00 24 76 7d 27 00 00 00 00 06 95 c0 6a
+  0064  00 00 00 00 9a a8 7e 27 00 00 00 00 00 00 00 00
+  0080  3e b6 c6 01 00 00 00 00 01 00 00 00 00 40 01 00
+  0096  00 00 00 00 00 40 01 00 00 00 00 00 3e b6 c6 01
+  0112  00 00 00 00 02 00 00 00 63 6c 6f 6e 65 2d 61 2e
+  0128  62 69 6e 00 00 00 00 00
+
+  returned_attrs (common, vol, dir, file, fork/ext): ["0xa204060b", "0x0", "0x0", "0x7", "0x1100"]
+  FILEID (u64)             80, 108
+  alloc (i64)              92, 100
+  CLONEID (u64)            80, 108
+  CLONE_REFCNT (u32)       116
+
+=== bulk record for clone-b.bin (isDir=false) — length 136 ===
+  0000  88 00 00 00 0b 06 04 a2 00 00 00 00 00 00 00 00
+  0016  07 00 00 00 00 11 00 00 00 00 00 00 5c 00 00 00
+  0032  0c 00 00 00 10 00 00 01 01 00 00 00 06 95 c0 6a
+  0048  00 00 00 00 24 76 7d 27 00 00 00 00 06 95 c0 6a
+  0064  00 00 00 00 9a a8 7e 27 00 00 00 00 00 00 00 00
+  0080  3f b6 c6 01 00 00 00 00 01 00 00 00 00 40 01 00
+  0096  00 00 00 00 00 40 01 00 00 00 00 00 3e b6 c6 01
+  0112  00 00 00 00 02 00 00 00 63 6c 6f 6e 65 2d 62 2e
+  0128  62 69 6e 00 00 00 00 00
+
+  returned_attrs (common, vol, dir, file, fork/ext): ["0xa204060b", "0x0", "0x0", "0x7", "0x1100"]
+  FILEID (u64)             80
+  alloc (i64)              92, 100
+  CLONEID (u64)            108
+  CLONE_REFCNT (u32)       116
+
+=== bulk record for a-dir (isDir=true) — length 128 ===
+  0000  80 00 00 00 0b 06 04 a2 00 00 00 00 29 00 00 00
+  0016  00 00 00 00 00 11 00 00 00 00 00 00 5c 00 00 00
+  0032  06 00 00 00 10 00 00 01 02 00 00 00 06 95 c0 6a
+  0048  00 00 00 00 1d 4c 93 27 00 00 00 00 06 95 c0 6a
+  0064  00 00 00 00 1d 4c 93 27 00 00 00 00 00 00 00 00
+  0080  42 b6 c6 01 00 00 00 00 01 00 00 00 00 00 00 00
+  0096  00 00 00 00 40 00 00 00 00 00 00 00 42 b6 c6 01
+  0112  00 00 00 00 00 00 00 00 61 2d 64 69 72 00 00 00
+
+  returned_attrs (common, vol, dir, file, fork/ext): ["0xa204060b", "0x0", "0x29", "0x0", "0x1100"]
+  FILEID (u64)             80, 108
+  alloc (i64)              72, 92, 112
+
+=== bulk record for clone-edited.bin (isDir=false) — length 144 ===
+  0000  90 00 00 00 0b 06 04 a2 00 00 00 00 00 00 00 00
+  0016  07 00 00 00 00 11 00 00 00 00 00 00 5c 00 00 00
+  0032  11 00 00 00 10 00 00 01 01 00 00 00 06 95 c0 6a
+  0048  00 00 00 00 24 76 7d 27 00 00 00 00 06 95 c0 6a
+  0064  00 00 00 00 fb 94 8b 27 00 00 00 00 00 00 00 00
+  0080  40 b6 c6 01 00 00 00 00 01 00 00 00 00 40 01 00
+  0096  00 00 00 00 00 40 01 00 00 00 00 00 41 b6 c6 01
+  0112  00 00 00 00 01 00 00 00 63 6c 6f 6e 65 2d 65 64
+  0128  69 74 65 64 2e 62 69 6e 00 00 00 00 00 00 00 00
+
+  returned_attrs (common, vol, dir, file, fork/ext): ["0xa204060b", "0x0", "0x0", "0x7", "0x1100"]
+  FILEID (u64)             80
+  alloc (i64)              92, 100
+  CLONEID (u64)            108
+  CLONE_REFCNT (u32)       40, 88, 116
+

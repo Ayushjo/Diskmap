@@ -149,16 +149,18 @@ public enum IncrementalScan {
 
     /// Runs on a dedicated thread (the walk engine's rule: blocking work never
     /// sits on the cooperative pool).
-    public static func update(root: URL, cache: ScanCache, base: Base? = nil,
+    public static func update(root: URL, cache: ScanCache, base: Base? = nil, sharing: SharingMode = .off,
                               policy: Policy = Policy(), now: Date = Date()) async -> Outcome {
         await withCheckedContinuation { continuation in
             BulkScan.startScanThread(name: "DiskMap.incremental") {
-                continuation.resume(returning: updateSync(root: root, cache: cache, base: base, policy: policy, now: now))
+                continuation.resume(returning: updateSync(root: root, cache: cache, base: base, sharing: sharing,
+                                                          policy: policy, now: now))
             }
         }
     }
 
-    static func updateSync(root: URL, cache: ScanCache, base: Base? = nil, policy: Policy, now: Date) -> Outcome {
+    static func updateSync(root: URL, cache: ScanCache, base: Base? = nil, sharing: SharingMode = .off,
+                           policy: Policy, now: Date) -> Outcome {
         let started = Date()
         let rootPath = root.path
         guard !CanonicalPath.mayContainFirmlinkTwins(scanRootPath: rootPath) else {
@@ -204,10 +206,19 @@ public enum IncrementalScan {
         guard let old = inMemory?.tree ?? cache.loadTree(for: rootPath), old.count > 0 else {
             return .fullScanNeeded(reason: "the saved scan could not be read")
         }
+        // Clone accounting must match the saved tree's, or the totals would
+        // mix counted-once and counted-per-copy clones (TASK-077).
+        let layout = BulkScan.sharingLayout(rootPath: rootPath, requested: sharing)
+        if (layout != nil) != old.hasSharingInfo {
+            return .fullScanNeeded(reason: layout != nil ? "the saved scan predates clone accounting"
+                                                         : "clone accounting was turned off")
+        }
 
         var rootInfo = stat()
         guard lstat(rootPath, &rootInfo) == 0 else { return .fullScanNeeded(reason: "the folder can't be read") }
         var rebuild = Rebuild(old: old, rootPath: rootPath, rootDevID: Int32(rootInfo.st_dev))
+        rebuild.sharing = layout
+        rebuild.sharingMode = sharing
         for path in changed { rebuild.markChanged(relativePath: path, subtree: false) }
         for path in subtrees { rebuild.markChanged(relativePath: path, subtree: true) }
         rebuild.carriedDenied = Set(baseline.deniedPaths)
@@ -256,6 +267,9 @@ public enum IncrementalScan {
         var freshIDs = Set<Int32>()
         var relisted = 0
         var rewalked = 0
+        /// Read and carry APFS sharing facts (TASK-077).
+        var sharing: SharingLayout?
+        var sharingMode: SharingMode = .off
 
         init(old: FileTree, rootPath: String, rootDevID: Int32) {
             self.old = old
@@ -293,6 +307,7 @@ public enum IncrementalScan {
         }
 
         mutating func run(rootModifiedDay: Int32) {
+            new.hasSharingInfo = sharing != nil
             let rootID = new.appendNodeReusingName(
                 old.nameIndex[0], parent: -1, isDirectory: true,
                 logicalSize: old.logicalSize[0], allocatedSize: old.allocatedSize[0],
@@ -318,19 +333,30 @@ public enum IncrementalScan {
 
         mutating func copy(_ oldID: Int32, under parent: Int32) -> Int32 {
             let i = Int(oldID)
-            return new.appendNodeReusingName(
+            let id = new.appendNodeReusingName(
                 old.nameIndex[i], parent: parent, isDirectory: old.isDirectory[i],
                 logicalSize: old.logicalSize[i], allocatedSize: old.allocatedSize[i],
                 modifiedDaysSinceEpoch: old.modifiedDay[i], createdDaysSinceEpoch: old.createdDay[i],
-                flags: old.flags[i], fileID: old.fileID[i]
+                flags: old.flags[i] & ~NodeFlags.apfsClone, fileID: old.fileID[i]
             )
+            carrySharing(from: old, oldID, to: id)
+            return id
+        }
+
+        /// The sharing row of `sourceID` in `source`, re-recorded for `newID`.
+        /// Rows stay sorted because nodes are appended in id order.
+        mutating func carrySharing(from source: FileTree, _ sourceID: Int32, to newID: Int32) {
+            guard sharing != nil, source.flags[Int(sourceID)] & NodeFlags.apfsClone != 0,
+                  let row = source.sharing.row(of: sourceID) else { return }
+            new.appendSharing(node: newID, cloneID: source.sharing.cloneID[row],
+                              privateBytes: source.sharing.privateBytes[row], refcount: source.sharing.refcount[row])
         }
 
         mutating func relist(oldID: Int32, newID: Int32, stack: inout [(old: Int32, new: Int32)]) {
             let folder = path(newID)
             relisted += 1
             freshIDs.insert(newID)
-            switch BulkScan.list(directoryPath: folder) {
+            switch BulkScan.list(directoryPath: folder, sharing: sharing) {
             case .unopened(let code):
                 if code == EACCES || code == EPERM { newDenied.append(newID) }
                 carriedDenied.remove(folder)
@@ -350,6 +376,10 @@ public enum IncrementalScan {
                         modifiedDaysSinceEpoch: entry.day, createdDaysSinceEpoch: entry.createdDay,
                         flags: entry.flags, fileID: entry.fileID
                     )
+                    if sharing != nil, entry.sharesBlocks, entry.devID == rootDevID {
+                        new.appendSharing(node: id, cloneID: entry.cloneID, privateBytes: entry.privateBytes,
+                                          refcount: entry.cloneRefcount)
+                    }
                     // Same descent rules as the walk: not across volumes, not
                     // into cloud placeholders or symlinks.
                     guard entry.isDirectory, entry.descend, entry.devID == rootDevID else { continue }
@@ -367,7 +397,8 @@ public enum IncrementalScan {
             rewalked += 1
             freshIDs.insert(newID)
             carriedDenied = carriedDenied.filter { $0 != folder && !$0.hasPrefix(folder + "/") }
-            let result = BulkScan.walk(root: URL(fileURLWithPath: folder, isDirectory: true), progress: nil)
+            let result = BulkScan.walk(root: URL(fileURLWithPath: folder, isDirectory: true),
+                                       sharing: sharing != nil ? sharingMode : .off, progress: nil)
             let fresh = result.tree
             guard fresh.count > 1 else {
                 if result.deniedDirectoryIDs.contains(0) { newDenied.append(newID) }
@@ -382,8 +413,9 @@ public enum IncrementalScan {
                     nameID, parent: parentID, isDirectory: fresh.isDirectory[index],
                     logicalSize: fresh.logicalSize[index], allocatedSize: fresh.allocatedSize[index],
                     modifiedDaysSinceEpoch: fresh.modifiedDay[index], createdDaysSinceEpoch: fresh.createdDay[index],
-                    flags: fresh.flags[index], fileID: fresh.fileID[index]
+                    flags: fresh.flags[index] & ~NodeFlags.apfsClone, fileID: fresh.fileID[index]
                 )
+                carrySharing(from: fresh, Int32(index), to: map[index])
                 if fresh.isDirectory[index] { freshIDs.insert(map[index]) }
             }
             newDenied += result.deniedDirectoryIDs.compactMap { $0 >= 0 && Int($0) < map.count ? map[Int($0)] : nil }

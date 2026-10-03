@@ -347,6 +347,44 @@ for run in 1...args.repeats {
         layoutSeconds = durationSeconds(from: started)
     }
 
+    if result.tree.hasSharingInfo {
+        // TASK-077: what the sharing table holds, by kind.
+        let tree = result.tree
+        let table = tree.sharing
+        var families: [UInt64: Int] = [:]
+        var refcountRows = 0, partialRows = 0, compressedLike = 0
+        var familyShared: Int64 = 0, partialShared: Int64 = 0
+        var gapHistogram: [String: Int] = [:]
+        for row in 0..<table.count {
+            let id = Int(table.node[row])
+            let gap = tree.allocatedSize[id] - table.privateBytes[row]
+            if table.refcount[row] > 1 {
+                refcountRows += 1
+                families[table.cloneID[row], default: 0] += 1
+                familyShared += gap
+            } else {
+                partialRows += 1
+                partialShared += gap
+                if tree.allocatedSize[id] > tree.logicalSize[id] * 2 { compressedLike += 1 }
+                let bucket = gap <= 4096 ? "<=4K" : gap <= 65536 ? "<=64K" : gap <= 1 << 20 ? "<=1M" : ">1M"
+                gapHistogram[bucket, default: 0] += 1
+            }
+        }
+        // Bytes counted more than once: per family, its shared bytes × (members here − 1).
+        var familyMembers: [UInt64: (count: Int, shared: Int64)] = [:]
+        var refcountWithPrivate = 0
+        for row in 0..<table.count where table.refcount[row] > 1 {
+            let id = Int(table.node[row])
+            let shared = tree.allocatedSize[id] - table.privateBytes[row]
+            if table.privateBytes[row] > 0 { refcountWithPrivate += 1 }
+            let current = familyMembers[table.cloneID[row]] ?? (0, 0)
+            familyMembers[table.cloneID[row]] = (current.count + 1, max(current.shared, shared))
+        }
+        let overcount = familyMembers.values.reduce(Int64(0)) { $0 + $1.shared * Int64($1.count - 1) }
+        print("sharing overcount_bytes=\(overcount) refcount>1_rows_with_private>0=\(refcountWithPrivate)")
+        print("sharing rows=\(table.count) of \(tree.count) nodes (\(String(format: "%.2f", Double(table.count) * 100 / Double(max(1, tree.count))))%) refcount>1 rows=\(refcountRows) families=\(families.count) families_in_tree>1=\(families.values.filter { $0 > 1 }.count) family_gap_bytes=\(familyShared) partial_rows=\(partialRows) partial_gap_bytes=\(partialShared) partial_gap_histogram=\(gapHistogram.sorted { $0.key < $1.key })")
+    }
+
     if args.duplicates {
         let tree = result.tree
         // The app's path: only sizes that collide become candidates (PR #16).

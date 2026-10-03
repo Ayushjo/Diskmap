@@ -194,3 +194,118 @@ while true {
 }
 
 print("records examined: \(recordsSeen)")
+
+// MARK: - TASK-077: the scan mask plus APFS extended attributes
+
+/// `swift run AttrProbe --extended`: BulkScan's exact mask, plus
+/// forkattr = PRIVATESIZE | CLONEID | EXT_FLAGS | CLONE_REFCNT with
+/// FSOPT_ATTR_CMN_EXTENDED, on a fixture holding a pure clone pair and an
+/// edited clone. Ground truth for the extended values comes from single-object
+/// `getattrlist` at the offsets StorageSharingTests verified against lstat.
+if CommandLine.arguments.contains("--extended") {
+    let ATTR_CMNEXT_PRIVATESIZE_: UInt32 = 0x0000_0008
+    let ATTR_CMNEXT_CLONEID_: UInt32     = 0x0000_0100
+    let ATTR_CMNEXT_EXT_FLAGS_: UInt32   = 0x0000_0200
+    let ATTR_CMNEXT_CLONE_REFCNT_: UInt32 = 0x0000_1000
+    let FSOPT_ATTR_CMN_EXTENDED_: UInt32 = 0x0000_0020
+    // `--refcount-only`: CLONEID + CLONE_REFCNT alone (the cheaper request).
+    let refcountOnly = CommandLine.arguments.contains("--refcount-only")
+    let extMask = refcountOnly
+        ? ATTR_CMNEXT_CLONEID_ | ATTR_CMNEXT_CLONE_REFCNT_
+        : ATTR_CMNEXT_PRIVATESIZE_ | ATTR_CMNEXT_CLONEID_ | ATTR_CMNEXT_EXT_FLAGS_ | ATTR_CMNEXT_CLONE_REFCNT_
+    let truthMask = ATTR_CMNEXT_PRIVATESIZE_ | ATTR_CMNEXT_CLONEID_ | ATTR_CMNEXT_EXT_FLAGS_ | ATTR_CMNEXT_CLONE_REFCNT_
+
+    let extRoot = root.appendingPathComponent("ext")
+    try fm.createDirectory(at: extRoot, withIntermediateDirectories: true)
+    // 5 × 16 KiB of distinct blocks, so an edit unshares exactly one block.
+    var payload = Data()
+    for block in 0..<5 { payload.append(Data(repeating: UInt8(0x30 + block), count: 16_384)) }
+    let original = extRoot.appendingPathComponent("clone-a.bin")
+    try payload.write(to: original)
+    let twin = extRoot.appendingPathComponent("clone-b.bin")
+    guard clonefile(original.path, twin.path, 0) == 0 else { fatalError("clonefile failed: \(String(cString: strerror(errno)))") }
+    let edited = extRoot.appendingPathComponent("clone-edited.bin")
+    guard clonefile(original.path, edited.path, 0) == 0 else { fatalError("clonefile failed") }
+    let handle = try FileHandle(forWritingTo: edited)
+    try handle.seek(toOffset: 16_384)
+    try handle.write(contentsOf: Data(repeating: 0xEE, count: 16_384))
+    try handle.synchronize()
+    try handle.close()
+    let extDir = extRoot.appendingPathComponent("a-dir")
+    try fm.createDirectory(at: extDir, withIntermediateDirectories: true)
+
+    struct ExtTruth { var name: String; var ino: UInt64; var isDir: Bool; var alloc: Int64; var priv: Int64; var cloneID: UInt64; var refcnt: UInt32; var returned: UInt32 }
+    func extTruth(_ url: URL) -> ExtTruth {
+        var st = stat()
+        guard lstat(url.path, &st) == 0 else { fatalError("lstat") }
+        var list = attrlist()
+        list.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
+        list.commonattr = ATTR_CMN_RETURNED_ATTRS_ | ATTR_CMN_DEVID_ | ATTR_CMN_OBJTYPE_ | ATTR_CMN_FILEID_
+        list.fileattr = ATTR_FILE_LINKCOUNT_ | ATTR_FILE_ALLOCSIZE_
+        list.forkattr = truthMask   // the verified single-object layout needs all four
+        var buf = [UInt8](repeating: 0, count: 256)
+        let rc = buf.withUnsafeMutableBytes { getattrlist(url.path, &list, $0.baseAddress, $0.count, UInt32(FSOPT_NOFOLLOW) | UInt32(FSOPT_PACK_INVAL_ATTRS) | FSOPT_ATTR_CMN_EXTENDED_) }
+        guard rc == 0 else { fatalError("getattrlist failed") }
+        let isDir = (st.st_mode & S_IFMT) == S_IFDIR
+        // Single-object layout (StorageSharing.facts, verified by its tests):
+        // 52 PRIVATESIZE · 60 CLONEID · 76 CLONE_REFCNT. Directories carry no
+        // file section, so their numbers are not looked up here.
+        return ExtTruth(name: url.lastPathComponent, ino: UInt64(st.st_ino), isDir: isDir,
+                        alloc: Int64(st.st_blocks) * 512,
+                        priv: isDir ? -1 : load(Int64.self, buf, 52) ?? -1,
+                        cloneID: isDir ? 0 : load(UInt64.self, buf, 60) ?? 0,
+                        refcnt: isDir ? 0 : load(UInt32.self, buf, 76) ?? 0,
+                        returned: load(UInt32.self, buf, 20) ?? 0)
+    }
+    let extTruths = [original, twin, edited, extDir].map(extTruth)
+    print("\n=== TASK-077 extended: ground truth (getattrlist single object) ===")
+    for t in extTruths {
+        print("\(t.name): isDir=\(t.isDir) ino=\(t.ino) alloc=\(t.alloc) private=\(t.priv) cloneID=\(t.cloneID) refcnt=\(t.refcnt) returnedExt=0x\(String(t.returned, radix: 16))")
+    }
+
+    var extList = attrlist()
+    memset(&extList, 0, MemoryLayout<attrlist>.size)
+    extList.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
+    extList.commonattr = list.commonattr
+    extList.dirattr = list.dirattr
+    extList.fileattr = list.fileattr
+    extList.forkattr = extMask
+    let extOptions = UInt64(FSOPT_NOFOLLOW | FSOPT_PACK_INVAL_ATTRS) | UInt64(FSOPT_ATTR_CMN_EXTENDED_)
+    let efd = extRoot.path.withCString { open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC) }
+    guard efd >= 0 else { fatalError("open ext") }
+    defer { close(efd) }
+    print("mask: common=0x\(String(extList.commonattr, radix: 16)) dir=0x\(String(extList.dirattr, radix: 16)) file=0x\(String(extList.fileattr, radix: 16)) fork(ext)=0x\(String(extList.forkattr, radix: 16)) options=0x\(String(extOptions, radix: 16))\n")
+    while true {
+        let count = buffer.withUnsafeMutableBytes { getattrlistbulk(efd, &extList, $0.baseAddress, $0.count, extOptions) }
+        if count <= 0 {
+            if count < 0 { print("getattrlistbulk failed: \(String(cString: strerror(errno)))") }
+            break
+        }
+        var offset = 0
+        for _ in 0..<Int(count) {
+            guard let lengthRaw = load(UInt32.self, buffer, offset) else { break }
+            let length = Int(lengthRaw)
+            defer { offset += length }
+            // FILEID sits at 80 in this mask (measured in the first part). A
+            // clone's CLONEID can equal another file's inode, so match there.
+            guard let fileID = load(UInt64.self, buffer, offset + 80),
+                  let t = extTruths.first(where: { $0.ino == fileID }) else { continue }
+            print("=== bulk record for \(t.name) (isDir=\(t.isDir)) — length \(length) ===")
+            print(hexdump(buffer, start: offset, count: length))
+            let s = offset, e = offset + length
+            func report(_ label: String, _ offs: [Int]) {
+                print("  \(label.padding(toLength: 24, withPad: " ", startingAt: 0)) \(offs.isEmpty ? "NOT FOUND" : offs.map(String.init).joined(separator: ", "))")
+            }
+            let returned = (0..<5).compactMap { load(UInt32.self, buffer, s + 4 + $0 * 4) }
+            print("  returned_attrs (common, vol, dir, file, fork/ext): \(returned.map { "0x" + String($0, radix: 16) })")
+            report("FILEID (u64)", findAll(t.ino, UInt64.self, in: buffer, start: s, end: e))
+            report("alloc (i64)", findAll(t.alloc, Int64.self, in: buffer, start: s, end: e))
+            if !t.isDir {
+                if !refcountOnly { report("PRIVATESIZE (i64)", findAll(t.priv, Int64.self, in: buffer, start: s, end: e)) }
+                report("CLONEID (u64)", findAll(t.cloneID, UInt64.self, in: buffer, start: s, end: e))
+                report("CLONE_REFCNT (u32)", findAll(t.refcnt, UInt32.self, in: buffer, start: s, end: e))
+            }
+            print("")
+        }
+    }
+}

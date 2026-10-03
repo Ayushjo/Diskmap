@@ -74,9 +74,12 @@ public actor ScanEngine {
     ///   directory that sits on another volume but does not descend into it,
     ///   so a "/" scan does not silently absorb every mounted disk. Pass true
     ///   only when the caller genuinely wants every reachable filesystem.
+    /// - Parameter sharing: read APFS clone facts so clone families count
+    ///   once (TASK-077). Off by default: it lengthens the walk.
     public func scan(
         root: URL,
         crossMounts: Bool = false,
+        sharing: SharingMode = .off,
         progress: (@Sendable (Int) -> Void)? = nil,
         live: (@Sendable (ScanProgress) -> Void)? = nil
     ) async -> Result {
@@ -94,7 +97,7 @@ public actor ScanEngine {
         let walked = await withCheckedContinuation { (continuation: CheckedContinuation<BulkScan.Result, Never>) in
             BulkScan.startScanThread(name: "DiskMap.scan.coordinator") {
                 continuation.resume(returning: BulkScan.walk(
-                    root: root, crossMounts: crossMounts, progress: progress, live: live
+                    root: root, crossMounts: crossMounts, sharing: sharing, progress: progress, live: live
                 ))
             }
         }
@@ -168,7 +171,7 @@ public actor ScanEngine {
 
     private func logSummary(_ result: Result) {
         let after = result.residentBytesAfterEnumeratorRelease.map(String.init) ?? "unavailable"
-        let line = "DiskMap scan: items=\(result.itemCount) elapsed=\(String(format: "%.3f", result.elapsedSeconds))s rss_during_walk_peak=\(result.peakResidentBytesDuringWalk) rss_after_enumerator_release=\(after) not_downloaded=\(result.notDownloadedCount) hard_links=\(result.hardLinkCount) cross_mount_skips=\(result.crossMountSkipCount) denied_dirs=\(result.deniedDirectoryIDs.count)"
+        let line = "DiskMap scan: items=\(result.itemCount) elapsed=\(String(format: "%.3f", result.elapsedSeconds))s rss_during_walk_peak=\(result.peakResidentBytesDuringWalk) rss_after_enumerator_release=\(after) not_downloaded=\(result.notDownloadedCount) hard_links=\(result.hardLinkCount) cross_mount_skips=\(result.crossMountSkipCount) denied_dirs=\(result.deniedDirectoryIDs.count) sharing_rows=\(result.tree.sharing.count) sharing_read=\(result.tree.hasSharingInfo)"
         // Diagnostics go to stderr: stdout belongs to whoever embeds the
         // engine (the diskmap CLI's --json output must stay parseable).
         FileHandle.standardError.write(Data((line + "\n").utf8))

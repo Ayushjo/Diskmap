@@ -293,7 +293,7 @@ public enum StorageSharing {
     /// Only APFS has clones and private-size accounting. Checked by name
     /// because FSKit ExFAT claims to return the extended attributes and fills
     /// them with zeros (see header).
-    static func isAPFS(_ path: String) -> Bool {
+    public static func isAPFS(_ path: String) -> Bool {
         var fs = statfs()
         guard statfs(path, &fs) == 0 else { return false }
         let name = withUnsafeBytes(of: fs.f_fstypename) { raw in

@@ -31,7 +31,11 @@ enum SnapshotCodec {
     /// v3 adds the per-node fileID array (TASK-036). v1 and v2 stay
     /// readable; their nodes decode with fileID 0 ("unknown"), which the
     /// hard-link correction treats as "nothing to correct".
-    static let version: UInt32 = 3
+    /// v4 (TASK-077) appends the APFS sharing table after the fileIDs: one
+    /// byte "sharing was read", a row count, then node ids, clone ids,
+    /// private bytes and refcounts. v1–v3 decode with an empty table and
+    /// `hasSharingInfo == false` ("not known", not "no clones").
+    static let version: UInt32 = 4
 
     static func encode(_ snapshot: DiskSnapshot) -> Data {
         var writer = Writer()
@@ -53,6 +57,13 @@ enum SnapshotCodec {
         writer.flags(tree.isDirectory.map { $0 ? UInt8(1) : 0 })
         writer.flags(tree.flags)
         writer.u64s(tree.fileID)
+        writer.flags([tree.hasSharingInfo ? 1 : 0])
+        let sharing = tree.sharing
+        writer.i32(Int32(sharing.count))
+        writer.i32s(sharing.node)
+        writer.u64s(sharing.cloneID)
+        writer.i64s(sharing.privateBytes)
+        writer.i32s(sharing.refcount.map { Int32(bitPattern: $0) })
         for name in tree.nameTable { writer.string(name) }
         return writer.data
     }
@@ -91,6 +102,20 @@ enum SnapshotCodec {
         } else {
             fileID = []   // replacePacked fills zeros
         }
+        var sharing = SharingTable()
+        var hasSharingInfo = false
+        if fileVersion >= 4 {
+            hasSharingInfo = try reader.flags(1).first == 1
+            let rows = Int(try reader.i32())
+            guard rows >= 0, rows <= count else { throw SnapshotError.corrupt }
+            guard let table = SharingTable(
+                node: try reader.i32s(rows),
+                cloneID: try reader.u64s(rows),
+                privateBytes: try reader.i64s(rows),
+                refcount: try reader.i32s(rows).map { UInt32(bitPattern: $0) }
+            ) else { throw SnapshotError.corrupt }
+            sharing = table
+        }
         var nameTable: [String] = []
         nameTable.reserveCapacity(nameCount)
         for _ in 0..<nameCount { nameTable.append(try reader.string()) }
@@ -109,6 +134,7 @@ enum SnapshotCodec {
             flags: flags,
             fileID: fileID
         ) else { throw SnapshotError.corrupt }
+        guard tree.replaceSharing(sharing, hasSharingInfo: hasSharingInfo) else { throw SnapshotError.corrupt }
         return DiskSnapshot(rootPath: rootPath, capturedAt: capturedAt, tree: tree)
     }
 }

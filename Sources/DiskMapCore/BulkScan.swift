@@ -17,6 +17,16 @@ import Foundation
 /// Tuning (optional, for benches only):
 /// - `DISKMAP_SCAN_WORKERS` — worker count (default: min(CPU count, 8))
 /// - `DISKMAP_SCAN_BUFFER_MB` — getattrlistbulk buffer megabytes (default 4)
+/// Whether a scan reads APFS clone facts (TASK-077).
+public enum SharingMode: String, Sendable, CaseIterable {
+    /// Clones count once per copy, as before.
+    case off
+    /// Clone families counted once (CLONEID + CLONE_REFCNT).
+    case refcount
+    /// Also finds edited clones (adds PRIVATESIZE); slowest.
+    case full
+}
+
 enum BulkScan {
     struct Result: Sendable {
         var tree: FileTree
@@ -36,11 +46,14 @@ enum BulkScan {
         /// Any other open(2) failure.
         var otherUnopenedDirectoryCount: Int
         var peakResidentBytesDuringWalk: UInt64
+        /// Files recorded in the tree's sharing table (TASK-077).
+        var sharingCount: Int = 0
     }
 
     static func walk(
         root: URL,
         crossMounts: Bool = false,
+        sharing: SharingMode = .off,
         progress: (@Sendable (Int) -> Void)?,
         live: (@Sendable (ScanProgress) -> Void)? = nil
     ) -> Result {
@@ -71,6 +84,10 @@ enum BulkScan {
             state.scanRootDevID = Int32(rootStat.st_dev)
             state.hasRootDevID = true
         }
+        // Clone accounting (TASK-077): APFS only, and only for the root's
+        // own volume — another filesystem may claim the extended attributes
+        // and return zeros (FSKit ExFAT does).
+        state.sharingLayout = hasRootStat ? sharingLayout(rootPath: root.path, requested: sharing) : nil
         // shouldSkipDescend only ever returns true when the root is "/" or
         // under /System/Volumes. Evaluate that once here instead of building
         // and discarding a path String for every directory in publish().
@@ -105,6 +122,15 @@ enum BulkScan {
         thread.name = name
         thread.qualityOfService = .userInitiated
         thread.start()
+    }
+
+    /// The layout to request on `rootPath`'s volume, or nil (not APFS, or
+    /// off). `DISKMAP_SCAN_SHARING=off|refcount|full` overrides the caller
+    /// for bench A/B runs.
+    static func sharingLayout(rootPath: String, requested: SharingMode) -> SharingLayout? {
+        let mode = ProcessInfo.processInfo.environment["DISKMAP_SCAN_SHARING"].flatMap(SharingMode.init(rawValue:)) ?? requested
+        guard mode != .off, StorageSharing.isAPFS(rootPath) else { return nil }
+        return mode == .full ? .full : .refcount
     }
 
     private static func configuredWorkers() -> Int {
@@ -156,6 +182,8 @@ enum BulkScan {
         // for a directory with children (docs/perf-results/attr-probe.txt).
         list.dirattr = attrDirLinkCount | attrDirAlloc | attrDirData
         list.fileattr = attrFileLinkCount | attrFileTotal | attrFileAlloc
+        var layout = state.sharingLayout
+        list.forkattr = layout?.mask ?? 0
 
         var names = [UInt8]()
         names.reserveCapacity(64 * 1024)
@@ -164,7 +192,7 @@ enum BulkScan {
 
         while true {
             let count = buffer.withUnsafeMutableBytes { raw -> Int32 in
-                getattrlistbulk(fd, &list, raw.baseAddress, raw.count, options)
+                getattrlistbulk(fd, &list, raw.baseAddress, raw.count, layout != nil ? extendedOptions : options)
             }
             if count == 0 { break }
             if count < 0 {
@@ -172,9 +200,15 @@ enum BulkScan {
                     buffer = [UInt8](repeating: 0, count: buffer.count * 2)
                     continue
                 }
+                // A volume that refuses the extended request: read it plain.
+                if errno == EINVAL, layout != nil, entries.isEmpty {
+                    layout = nil
+                    list.forkattr = 0
+                    continue
+                }
                 break
             }
-            parse(buffer: buffer, count: Int(count), names: &names, entries: &entries)
+            parse(buffer: buffer, count: Int(count), sharing: layout, names: &names, entries: &entries)
         }
         state.submit(Batch(
             parentPathUTF8: job.pathUTF8, parent: job.nodeID, topLevel: job.topLevel,
@@ -197,6 +231,15 @@ enum BulkScan {
         var fileID: UInt64
         var devID: Int32
         var isHardLink: Bool
+        /// Sharing facts (TASK-077); `privateBytes` is -1 when not read.
+        var privateBytes: Int64 = -1
+        var cloneID: UInt64 = 0
+        var cloneRefcount: UInt32 = 0
+
+        /// Worth a row in the sharing table.
+        var sharesBlocks: Bool {
+            Entry.sharesBlocks(isDirectory: isDirectory, allocated: allocated, privateBytes: privateBytes, refcount: cloneRefcount)
+        }
 
         var flags: UInt8 {
             (notDownloaded ? NodeFlags.notDownloaded : 0) | (isHardLink ? NodeFlags.hardLink : 0)
@@ -208,7 +251,7 @@ enum BulkScan {
         case unopened(errno: Int32)
     }
 
-    static func list(directoryPath: String) -> Listing {
+    static func list(directoryPath: String, sharing: SharingLayout? = nil) -> Listing {
         let fd = Darwin.open(directoryPath, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { return .unopened(errno: errno) }
         defer { close(fd) }
@@ -219,12 +262,14 @@ enum BulkScan {
             | attrCrTime | attrModTime | attrFlags | attrFileID
         list.dirattr = attrDirLinkCount | attrDirAlloc | attrDirData
         list.fileattr = attrFileLinkCount | attrFileTotal | attrFileAlloc
+        var layout = sharing
+        list.forkattr = layout?.mask ?? 0
         var buffer = [UInt8](repeating: 0, count: 256 * 1024)
         var names = [UInt8]()
         var entries: [Entry] = []
         while true {
             let count = buffer.withUnsafeMutableBytes { raw -> Int32 in
-                getattrlistbulk(fd, &list, raw.baseAddress, raw.count, options)
+                getattrlistbulk(fd, &list, raw.baseAddress, raw.count, layout != nil ? extendedOptions : options)
             }
             if count == 0 { break }
             if count < 0 {
@@ -232,16 +277,22 @@ enum BulkScan {
                     buffer = [UInt8](repeating: 0, count: buffer.count * 2)
                     continue
                 }
+                if errno == EINVAL, layout != nil, entries.isEmpty {
+                    layout = nil
+                    list.forkattr = 0
+                    continue
+                }
                 break
             }
-            parse(buffer: buffer, count: Int(count), names: &names, entries: &entries)
+            parse(buffer: buffer, count: Int(count), sharing: layout, names: &names, entries: &entries)
         }
         return .listed(entries.filter(\.include).map { entry in
             ListedEntry(
                 name: Array(names[entry.nameStart..<(entry.nameStart + entry.nameCount)]),
                 isDirectory: entry.isDirectory, logical: entry.logical, allocated: entry.allocated,
                 day: entry.day, createdDay: entry.createdDay, notDownloaded: entry.notDownloaded,
-                descend: entry.descend, fileID: entry.fileID, devID: entry.devID, isHardLink: entry.isHardLink
+                descend: entry.descend, fileID: entry.fileID, devID: entry.devID, isHardLink: entry.isHardLink,
+                privateBytes: entry.privateBytes, cloneID: entry.cloneID, cloneRefcount: entry.cloneRefcount
             )
         })
     }
@@ -252,12 +303,18 @@ enum BulkScan {
     /// LINKCOUNT (+4 at 88) moved every later field and took `fixedPrefix`
     /// from 92 to 108. Re-run `swift run AttrProbe` after ANY mask change.
     /// Name is still at `nameRef + dataOffset`, which adapts on its own.
-    private static func parse(buffer: [UInt8], count: Int, names: inout [UInt8], entries: inout [Entry]) {
+    ///
+    /// With an extended request (TASK-077) the record grows by the fields of
+    /// `sharing` (see `SharingLayout`), for files AND directories — measured
+    /// in `docs/perf-results/attr-probe-ext.txt`. Each is read only when the
+    /// record's returned ext bitmap (offset 20) says it was filled.
+    private static func parse(buffer: [UInt8], count: Int, sharing: SharingLayout? = nil, names: inout [UInt8], entries: inout [Entry]) {
+        let prefix = sharing?.fixedPrefix ?? fixedPrefix
         var offset = 0
         for _ in 0..<count {
             guard offset + 4 <= buffer.count else { return }
             let length = Int(load(UInt32.self, buffer, offset))
-            guard length >= fixedPrefix, offset + length <= buffer.count else { return }
+            guard length >= prefix, offset + length <= buffer.count else { return }
             let error = load(UInt32.self, buffer, offset + 24)
             let nameOffset = load(Int32.self, buffer, offset + 28)
             let nameLength = Int(load(UInt32.self, buffer, offset + 32))
@@ -272,6 +329,19 @@ enum BulkScan {
             let linkCount = load(UInt32.self, buffer, offset + 88)
             let firstSize = load(Int64.self, buffer, offset + 92)
             let secondSize = load(Int64.self, buffer, offset + 100)
+            var privateBytes: Int64 = -1
+            var cloneID: UInt64 = 0
+            var cloneRefcount: UInt32 = 0
+            if let sharing {
+                let returnedExt = load(UInt32.self, buffer, offset + 20)
+                if let at = sharing.privateOffset, returnedExt & attrExtPrivateSize != 0 {
+                    privateBytes = max(0, load(Int64.self, buffer, offset + at))
+                }
+                if returnedExt & attrExtCloneID != 0 { cloneID = load(UInt64.self, buffer, offset + sharing.cloneIDOffset) }
+                if returnedExt & attrExtCloneRefcount != 0 { cloneRefcount = load(UInt32.self, buffer, offset + sharing.refcountOffset) }
+                // Refcount-only: a family member shares every block.
+                if sharing.privateOffset == nil, cloneRefcount > 1 { privateBytes = 0 }
+            }
             defer { offset += length }
 
             guard error == 0, nameLength > 1, nameStart >= offset, nameStart + nameLength <= offset + length else {
@@ -311,7 +381,10 @@ enum BulkScan {
                 devID: devID,
                 // Directories are never hard links on APFS, and
                 // ATTR_DIR_LINKCOUNT is not a real link count anyway.
-                isHardLink: !isDirectory && linkCount > 1
+                isHardLink: !isDirectory && linkCount > 1,
+                privateBytes: privateBytes,
+                cloneID: cloneID,
+                cloneRefcount: cloneRefcount
             ))
         }
     }
@@ -367,6 +440,10 @@ enum BulkScan {
         var scanRootDevID: Int32 = 0
         var hasRootDevID = false
         var crossMounts = false
+        /// Read APFS sharing facts (TASK-077); trusted on the root's device only.
+        var readsSharing: Bool { sharingLayout != nil }
+        var sharingLayout: SharingLayout?
+        private var sharingCount = 0
         /// False for the overwhelmingly common home scan, which lets
         /// `publish` skip building a path String per directory entirely.
         var mayHitFirmlinkTwins = false
@@ -513,6 +590,11 @@ enum BulkScan {
                         flags: flags,
                         fileID: entry.fileID
                     )
+                    if self.readsSharing, entry.sharesBlocks, entry.devID == self.scanRootDevID {
+                        tree.appendSharing(node: id, cloneID: entry.cloneID, privateBytes: entry.privateBytes,
+                                           refcount: entry.cloneRefcount)
+                        sharingCount += 1
+                    }
                     // Live view (TASK-044): charge files to their top-level
                     // folder. The root's children start their own bucket.
                     let top = batch.parent == self.rootNodeID ? id : batch.topLevel
@@ -631,6 +713,7 @@ enum BulkScan {
             // The publisher has exited, so the live counters and tree are
             // quiescent: send one final, complete report.
             reportLiveIfDue(lastFolderUTF8: BulkScan.nulTerminatedUTF8(scanRootPath), force: true)
+            tree.hasSharingInfo = readsSharing
             condition.lock()
             let result = Result(
                 tree: tree,
@@ -641,7 +724,8 @@ enum BulkScan {
                 deniedDirectoryIDs: deniedDirectoryIDs,
                 vanishedDirectoryCount: vanishedDirectoryCount,
                 otherUnopenedDirectoryCount: otherUnopenedDirectoryCount,
-                peakResidentBytesDuringWalk: max(peak, ProcessMemory.current()?.residentBytes ?? peak)
+                peakResidentBytesDuringWalk: max(peak, ProcessMemory.current()?.residentBytes ?? peak),
+                sharingCount: sharingCount
             )
             condition.unlock()
             return result
@@ -684,6 +768,22 @@ private struct Entry {
     var devID: Int32
     /// ATTR_FILE_LINKCOUNT > 1. Files only.
     var isHardLink: Bool
+    /// ATTR_CMNEXT_PRIVATESIZE, -1 when not requested or not returned.
+    var privateBytes: Int64 = -1
+    var cloneID: UInt64 = 0
+    var cloneRefcount: UInt32 = 0
+
+    var sharesBlocks: Bool {
+        Entry.sharesBlocks(isDirectory: isDirectory, allocated: allocated, privateBytes: privateBytes, refcount: cloneRefcount)
+    }
+
+    /// A clone-family member, or a file part of whose blocks belong to
+    /// something else. Directories report their own inode as CLONEID and
+    /// refcount 0 (measured), so they never qualify.
+    static func sharesBlocks(isDirectory: Bool, allocated: Int64, privateBytes: Int64, refcount: UInt32) -> Bool {
+        guard !isDirectory, privateBytes >= 0, allocated > 0 else { return false }
+        return refcount > 1 || privateBytes < allocated
+    }
 
     static let skipped = Entry(
         nameStart: 0,
@@ -718,6 +818,37 @@ private let attrFileLinkCount: UInt32 = 0x00000001
 private let attrFileTotal: UInt32 = 0x00000002
 private let attrFileAlloc: UInt32 = 0x00000004
 private let options = UInt64(FSOPT_NOFOLLOW | FSOPT_PACK_INVAL_ATTRS)
+// TASK-077 extended request — constants checked against sys/attr.h (same
+// values as StorageSharing); layout in docs/perf-results/attr-probe-ext.txt.
+private let attrExtPrivateSize: UInt32 = 0x0000_0008
+private let attrExtCloneID: UInt32 = 0x0000_0100
+private let attrExtFlags: UInt32 = 0x0000_0200
+private let attrExtCloneRefcount: UInt32 = 0x0000_1000
+/// Which extended attributes the walk requests, and where they land.
+/// Each layout is measured (docs/perf-results/attr-probe-ext.txt) — never
+/// derive one by hand: dropping an attribute moves every later field.
+struct SharingLayout: Sendable, Equatable {
+    var mask: UInt32
+    var fixedPrefix: Int
+    var privateOffset: Int?
+    var cloneIDOffset: Int
+    var refcountOffset: Int
+
+    /// PRIVATESIZE · CLONEID · EXT_FLAGS · CLONE_REFCNT: also finds edited
+    /// clones (partly shared). About 1.7–2× the walk time on a real home.
+    static let full = SharingLayout(
+        mask: attrExtPrivateSize | attrExtCloneID | attrExtFlags | attrExtCloneRefcount,
+        fixedPrefix: 136, privateOffset: 108, cloneIDOffset: 116, refcountOffset: 132)
+    /// CLONEID · CLONE_REFCNT only: clone families, which share every block
+    /// (measured: 0 of 884k members on a real home had private bytes).
+    static let refcount = SharingLayout(
+        mask: attrExtCloneID | attrExtCloneRefcount,
+        fixedPrefix: 120, privateOffset: nil, cloneIDOffset: 108, refcountOffset: 116)
+}
+
+private let fsoptAttrCmnExtended: UInt64 = 0x0000_0020
+private let extendedOptions = options | fsoptAttrCmnExtended
+
 private let sfDataless: UInt32 = 0x40000000
 private let vdir: UInt32 = 2
 private let vlunk: UInt32 = 5

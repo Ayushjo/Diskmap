@@ -1,0 +1,77 @@
+# TASK-077 — walk time with and without APFS clone facts, home folder (~2.58M items), release build
+# DISKMAP_SCAN_SHARING=off|refcount|full DiskMapScanBench ~ ; modes alternated per round, machine otherwise idle, 2026-10-03
+# Gate from the plan: default-on only if walk p95 grows <= 10%. Result: refcount +14% median / +22% p95 -> opt-in.
+
+## Summary (quiet run, 8 rounds)
+off      n=8 min=13.76 median=16.97 p95=20.42 max=21.04
+refcount n=8 min=16.03 median=19.78 p95=24.98 max=25.77
+full     n=8 min=27.32 median=31.47 p95=38.18 max=40.13
+refcount / off paired ratio: median=1.143 p95=1.504  p95 vs p95: 1.223
+full / off paired ratio: median=1.883 p95=2.175  p95 vs p95: 1.869
+
+## Sharing table on this home (refcount and full find the same families)
+rows=884,689 of 2,540,190 nodes (34.8%) · families=317,483 · families with >1 member here=266,344 · bytes counted more than once without it=80,094,765,056
+refcount>1 rows with private bytes > 0: 0 · partly-shared (edited) rows found only by full: 328 (38 MB)
+
+## Quiet run, raw
+mode=off run=1 speedlimit=na DiskMap scan: items=2718094 elapsed=19.273s rss_during_walk_peak=466845696 rss_after_enumerator_release=609107968 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=refcount run=1 speedlimit=na DiskMap scan: items=2718011 elapsed=22.469s rss_during_walk_peak=460750848 rss_after_enumerator_release=616513536 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1019684 sharing_read=true
+mode=full run=1 speedlimit=na DiskMap scan: items=2718072 elapsed=31.290s rss_during_walk_peak=450215936 rss_after_enumerator_release=614924288 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1020062 sharing_read=true
+mode=off run=2 speedlimit=na DiskMap scan: items=2717935 elapsed=21.042s rss_during_walk_peak=471154688 rss_after_enumerator_release=613367808 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=refcount run=2 speedlimit=na DiskMap scan: items=2718040 elapsed=23.500s rss_during_walk_peak=436502528 rss_after_enumerator_release=616742912 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1019690 sharing_read=true
+mode=full run=2 speedlimit=na DiskMap scan: items=2717877 elapsed=33.473s rss_during_walk_peak=441171968 rss_after_enumerator_release=607698944 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1019820 sharing_read=true
+mode=off run=3 speedlimit=na DiskMap scan: items=2718214 elapsed=18.994s rss_during_walk_peak=379813888 rss_after_enumerator_release=479150080 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=refcount run=3 speedlimit=na DiskMap scan: items=2718223 elapsed=17.582s rss_during_walk_peak=432275456 rss_after_enumerator_release=604733440 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1019779 sharing_read=true
+mode=full run=3 speedlimit=na DiskMap scan: items=2718177 elapsed=40.126s rss_during_walk_peak=421036032 rss_after_enumerator_release=598212608 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1020038 sharing_read=true
+mode=off run=4 speedlimit=na DiskMap scan: items=2718128 elapsed=16.522s rss_during_walk_peak=442597376 rss_after_enumerator_release=584859648 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=refcount run=4 speedlimit=na DiskMap scan: items=2716849 elapsed=25.773s rss_during_walk_peak=473677824 rss_after_enumerator_release=623951872 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1018404 sharing_read=true
+mode=full run=4 speedlimit=na DiskMap scan: items=2718232 elapsed=34.566s rss_during_walk_peak=457015296 rss_after_enumerator_release=608059392 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1020075 sharing_read=true
+mode=off run=5 speedlimit=na DiskMap scan: items=2718254 elapsed=17.412s rss_during_walk_peak=441352192 rss_after_enumerator_release=581959680 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=refcount run=5 speedlimit=na DiskMap scan: items=2718248 elapsed=19.507s rss_during_walk_peak=479313920 rss_after_enumerator_release=645857280 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1019763 sharing_read=true
+mode=full run=5 speedlimit=na DiskMap scan: items=2718182 elapsed=29.785s rss_during_walk_peak=477102080 rss_after_enumerator_release=632848384 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1020029 sharing_read=true
+mode=off run=6 speedlimit=na DiskMap scan: items=2718215 elapsed=14.333s rss_during_walk_peak=445628416 rss_after_enumerator_release=586842112 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=refcount run=6 speedlimit=na DiskMap scan: items=2738611 elapsed=20.055s rss_during_walk_peak=483753984 rss_after_enumerator_release=635060224 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1037538 sharing_read=true
+mode=full run=6 speedlimit=na DiskMap scan: items=2752145 elapsed=31.646s rss_during_walk_peak=453640192 rss_after_enumerator_release=621838336 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1050311 sharing_read=true
+mode=off run=7 speedlimit=na DiskMap scan: items=2752078 elapsed=15.370s rss_during_walk_peak=467156992 rss_after_enumerator_release=597131264 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=refcount run=7 speedlimit=na DiskMap scan: items=2752168 elapsed=16.767s rss_during_walk_peak=454852608 rss_after_enumerator_release=612302848 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1050003 sharing_read=true
+mode=full run=7 speedlimit=na DiskMap scan: items=2752177 elapsed=27.373s rss_during_walk_peak=483508224 rss_after_enumerator_release=635437056 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1050333 sharing_read=true
+mode=off run=8 speedlimit=na DiskMap scan: items=2752149 elapsed=13.759s rss_during_walk_peak=446726144 rss_after_enumerator_release=583008256 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=refcount run=8 speedlimit=na DiskMap scan: items=2752168 elapsed=16.028s rss_during_walk_peak=478396416 rss_after_enumerator_release=627621888 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1050002 sharing_read=true
+mode=full run=8 speedlimit=na DiskMap scan: items=2752115 elapsed=27.322s rss_during_walk_peak=447856640 rss_after_enumerator_release=616153088 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1050262 sharing_read=true
+
+## Earlier runs, kept for the record
+# Round 1 (off vs full only, refcount mask not yet measured — its rows below were the broken layout, items=2, dropped):
+mode=off run=1 DiskMap scan: items=2582141 elapsed=14.392s rss_during_walk_peak=358547456 rss_after_enumerator_release=508215296 not_downloaded=17 hard_links=15581 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=full run=1 DiskMap scan: items=2579967 elapsed=29.896s rss_during_walk_peak=324435968 rss_after_enumerator_release=477003776 not_downloaded=17 hard_links=15581 cross_mount_skips=0 denied_dirs=144 sharing_rows=882464 sharing_read=true
+mode=off run=2 DiskMap scan: items=2582176 elapsed=25.263s rss_during_walk_peak=271335424 rss_after_enumerator_release=388726784 not_downloaded=17 hard_links=15581 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=full run=2 DiskMap scan: items=2582037 elapsed=41.456s rss_during_walk_peak=341229568 rss_after_enumerator_release=491192320 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=884417 sharing_read=true
+mode=off run=3 DiskMap scan: items=2601365 elapsed=18.896s rss_during_walk_peak=346816512 rss_after_enumerator_release=473268224 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=full run=3 DiskMap scan: items=2614893 elapsed=53.323s rss_during_walk_peak=320126976 rss_after_enumerator_release=474562560 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=928428 sharing_read=true
+mode=off run=4 DiskMap scan: items=2616000 elapsed=22.519s rss_during_walk_peak=303972352 rss_after_enumerator_release=298795008 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=full run=4 DiskMap scan: items=2614917 elapsed=47.178s rss_during_walk_peak=325222400 rss_after_enumerator_release=444268544 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=928406 sharing_read=true
+mode=off run=5 DiskMap scan: items=2614614 elapsed=33.613s rss_during_walk_peak=303267840 rss_after_enumerator_release=460701696 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=full run=5 DiskMap scan: items=2615799 elapsed=42.811s rss_during_walk_peak=278282240 rss_after_enumerator_release=471040000 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=929287 sharing_read=true
+mode=off run=6 DiskMap scan: items=2616378 elapsed=20.903s rss_during_walk_peak=363659264 rss_after_enumerator_release=477315072 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false
+mode=full run=6 DiskMap scan: items=2649878 elapsed=33.496s rss_during_walk_peak=298221568 rss_after_enumerator_release=433438720 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=959642 sharing_read=true
+# Round 2: rounds 2-4 overlapped with debug builds on the same machine (scans of 90-190 s) and are not used.
+mode=off run=1 DiskMap scan: items=2649912 elapsed=13.221s rss_during_walk_peak=395476992 rss_after_enumerator_release=474103808 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false 
+mode=refcount run=1 DiskMap scan: items=2649931 elapsed=19.949s rss_during_walk_peak=376717312 rss_after_enumerator_release=532692992 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=959249 sharing_read=true 
+mode=full run=1 DiskMap scan: items=2650045 elapsed=29.829s rss_during_walk_peak=329973760 rss_after_enumerator_release=491552768 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=959699 sharing_read=true 
+mode=off run=2 DiskMap scan: items=2649829 elapsed=15.934s rss_during_walk_peak=319733760 rss_after_enumerator_release=483278848 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false 
+mode=refcount run=2 DiskMap scan: items=2650049 elapsed=21.687s rss_during_walk_peak=335134720 rss_after_enumerator_release=427180032 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=959361 sharing_read=true 
+mode=full run=2 DiskMap scan: items=2682598 elapsed=192.531s rss_during_walk_peak=283295744 rss_after_enumerator_release=443187200 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=988841 sharing_read=true 
+mode=off run=3 DiskMap scan: items=2682449 elapsed=88.880s rss_during_walk_peak=254083072 rss_after_enumerator_release=456441856 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false 
+mode=refcount run=3 DiskMap scan: items=2683759 elapsed=96.205s rss_during_walk_peak=334839808 rss_after_enumerator_release=527384576 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=989500 sharing_read=true 
+mode=full run=3 DiskMap scan: items=2683780 elapsed=97.297s rss_during_walk_peak=425689088 rss_after_enumerator_release=588890112 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=989839 sharing_read=true 
+mode=off run=4 DiskMap scan: items=2681259 elapsed=104.718s rss_during_walk_peak=425164800 rss_after_enumerator_release=557858816 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false 
+mode=refcount run=4 DiskMap scan: items=2684334 elapsed=24.541s rss_during_walk_peak=461176832 rss_after_enumerator_release=625901568 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=989528 sharing_read=true 
+mode=full run=4 DiskMap scan: items=2683610 elapsed=43.987s rss_during_walk_peak=400080896 rss_after_enumerator_release=565854208 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=989583 sharing_read=true 
+mode=off run=5 DiskMap scan: items=2683453 elapsed=23.198s rss_during_walk_peak=472301568 rss_after_enumerator_release=601391104 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false 
+mode=refcount run=5 DiskMap scan: items=2683790 elapsed=26.746s rss_during_walk_peak=460128256 rss_after_enumerator_release=619462656 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=989423 sharing_read=true 
+mode=full run=5 DiskMap scan: items=2677745 elapsed=43.958s rss_during_walk_peak=474628096 rss_after_enumerator_release=635994112 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=984097 sharing_read=true 
+mode=off run=6 DiskMap scan: items=2683863 elapsed=26.235s rss_during_walk_peak=446857216 rss_after_enumerator_release=587759616 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false 
+mode=refcount run=6 DiskMap scan: items=2683886 elapsed=27.262s rss_during_walk_peak=475267072 rss_after_enumerator_release=632848384 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=989401 sharing_read=true 
+mode=full run=6 DiskMap scan: items=2684040 elapsed=32.640s rss_during_walk_peak=461307904 rss_after_enumerator_release=623247360 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=989817 sharing_read=true 
+mode=off run=7 DiskMap scan: items=2683927 elapsed=28.926s rss_during_walk_peak=437403648 rss_after_enumerator_release=568442880 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=0 sharing_read=false 
+mode=refcount run=7 DiskMap scan: items=2693921 elapsed=27.027s rss_during_walk_peak=385597440 rss_after_enumerator_release=518045696 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=997821 sharing_read=true 
+mode=full run=7 DiskMap scan: items=2717891 elapsed=47.462s rss_during_walk_peak=416989184 rss_after_enumerator_release=587694080 not_downloaded=17 hard_links=15602 cross_mount_skips=0 denied_dirs=144 sharing_rows=1020007 sharing_read=true 

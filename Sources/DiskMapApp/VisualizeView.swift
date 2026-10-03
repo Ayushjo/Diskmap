@@ -806,6 +806,13 @@ private struct VisualizeFileInspector: View {
                     }
                 }
                 meta("Location", CanonicalPath.parentDisplay(of: abs))
+                if let shared = tree.sharingInfo(of: nodeID) {
+                    // TASK-077: a clone's blocks are counted once, under one
+                    // member of its family, so its own size here can be 0.
+                    meta("APFS clone", shared.otherCopies > 0
+                         ? "Shares \(ByteFormat.string(shared.sharedBytes)) with \(shared.otherCopies) other cop\(shared.otherCopies == 1 ? "y" : "ies") on this disk. Moving it to the Trash frees only what is its own."
+                         : "Shares \(ByteFormat.string(shared.sharedBytes)) with an earlier copy DiskMap can’t name.")
+                }
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Why is it large?").font(DiskMapType.smallStrong)
                     Text(FileKind.whyLarge(kind: kind, name: name))

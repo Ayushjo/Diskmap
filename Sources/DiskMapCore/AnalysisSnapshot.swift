@@ -107,6 +107,10 @@ public struct AnalysisSnapshot: Sendable, Equatable {
     /// Root total on the ALLOCATED basis whatever `scannedBytes` shows, so it
     /// can be compared with `VolumeStats.usedBytes` (statfs is on-disk too).
     public var scannedOnDiskBytes: Int64 = 0
+    /// Whether the scan read APFS clone facts, and what counting each clone
+    /// family once removed (TASK-077).
+    public var hasSharingInfo = false
+    public var sharingCorrection: FileTree.SharingCorrection = .none
 
     /// Volume "used" versus what this scan accounts for (TASK-040).
     public struct VolumeReconciliation: Sendable, Equatable {
@@ -214,7 +218,9 @@ public struct AnalysisSnapshot: Sendable, Equatable {
             health: health,
             fileCount: files,
             folderCount: folders,
-            scannedOnDiskBytes: allocated[0]
+            scannedOnDiskBytes: allocated[0],
+            hasSharingInfo: tree.hasSharingInfo,
+            sharingCorrection: tree.sharing.isEmpty ? .none : tree.sharingCorrection()
         )
     }
 

@@ -83,6 +83,7 @@ struct OverviewView: View {
                     if let reconciliation = snap.reconciliation {
                         reconciliationRow(reconciliation)
                     }
+                    cloneRow
                     SegmentedStorageBar(segments: categorySegments(total: categorySum))
                         .padding(.top, 4)
                     categoryLegend
@@ -97,6 +98,55 @@ struct OverviewView: View {
                 }
             }
         }
+    }
+
+    /// TASK-077: what counting each clone family once changed — or, when it
+    /// is off on an APFS volume, that clones may be counted more than once.
+    @ViewBuilder
+    private var cloneRow: some View {
+        let correction = snap.sharingCorrection
+        if snap.hasSharingInfo {
+            if let text = Self.cloneText(correction) {
+                Label {
+                    Text(text)
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "square.on.square")
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("clone-accounting")
+            }
+        } else if model.rootURL.map({ StorageSharing.isAPFS($0.path) }) == true {
+            HStack(spacing: 8) {
+                Image(systemName: "square.on.square")
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .accessibilityHidden(true)
+                Text("Cloned files are counted once per copy, so these totals can be higher than the disk really uses.")
+                    .font(DiskMapType.caption)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .fixedSize(horizontal: false, vertical: true)
+                SettingsLink {
+                    Text("Count clones once…")
+                }
+                .buttonStyle(.link)
+                .font(DiskMapType.captionStrong)
+            }
+            .accessibilityIdentifier("clone-accounting-off")
+        }
+    }
+
+    static func cloneText(_ correction: FileTree.SharingCorrection) -> String? {
+        var parts: [String] = []
+        if correction.cloneCount > 0 {
+            parts.append("\(correction.cloneCount.formatted()) cloned cop\(correction.cloneCount == 1 ? "y" : "ies") in \(correction.familyCount.formatted()) group\(correction.familyCount == 1 ? "" : "s") share \(ByteFormat.string(correction.bytes)) with their originals — counted once.")
+        }
+        if correction.partialCount > 0 {
+            parts.append("\(ByteFormat.string(correction.partialSharedBytes)) in \(correction.partialCount.formatted()) edited cop\(correction.partialCount == 1 ? "y" : "ies") is shared with files DiskMap can’t name, and counted in full.")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
 
     /// TASK-061: say whether these numbers come from a full walk or a quick

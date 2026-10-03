@@ -226,7 +226,7 @@ final class ScanModel: ObservableObject {
             let base = tree.flatMap { current in
                 treeBaseline.map { IncrementalScan.Base(tree: current, baseline: $0) }
             }
-            switch await IncrementalScan.update(root: url, cache: scanCache, base: base) {
+            switch await IncrementalScan.update(root: url, cache: scanCache, base: base, sharing: CloneAccounting.mode) {
             case .updated(let update): quickUpdate = update
             case .fullScanNeeded(let reason): fallbackReason = reason
             }
@@ -252,7 +252,7 @@ final class ScanModel: ObservableObject {
         if let quickUpdate {
             result = quickUpdate.scanResult
         } else {
-            result = await engine.scan(root: url, progress: counted, live: live)
+            result = await engine.scan(root: url, sharing: CloneAccounting.mode, progress: counted, live: live)
         }
         guard generation == scanGeneration else {
             log("scan discarded (cancelled) path=\(url.path)")

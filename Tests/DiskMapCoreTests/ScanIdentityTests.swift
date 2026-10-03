@@ -220,6 +220,9 @@ struct SnapshotIdentityTests {
         #expect(decoded.tree.fileID.count == 2)
         #expect(decoded.tree.fileID.allSatisfy { $0 == 0 })
         #expect(decoded.tree.logicalSize[1] == 42)
+        // Pre-v4: clone facts are unknown, not "no clones" (TASK-077).
+        #expect(decoded.tree.hasSharingInfo == false)
+        #expect(decoded.tree.sharing.isEmpty)
     }
 }
 

@@ -16,6 +16,9 @@ struct DiskMapApp: App {
             MenuBarCommands()
             AppearanceCommands()
         }
+        Settings {
+            SettingsView()
+        }
         MenuBarExtra(isInserted: $showMenuBarExtra) {
             MenuBarStatusView(model: ScanModel.shared)
         } label: {

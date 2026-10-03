@@ -1371,3 +1371,28 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   file) — the earlier "charts ignore synthetic clicks" was the harness
   mouse-up bug fixed in TASK-075; trees dumped for File Browser, Find,
   Media, Treemap and Sunburst. 262 tests green.
+- [x] **TASK-077: Clone-aware totals (measurement-gated → opt-in)**
+  Measured first: `AttrProbe --extended [--refcount-only]` gives the record
+  layout for BulkScan's mask plus the APFS extended attributes (PRIVATESIZE
+  108 · CLONEID 116 · REFCNT 132 · prefix 136; refcount-only: CLONEID 108 ·
+  REFCNT 116 · prefix 120 — `docs/perf-results/attr-probe-ext.txt`). Found
+  on this Mac's home: 884,689 clone rows (34.8% of nodes), 317,483
+  families, **80.1 GB counted more than once**; no refcount>1 member had
+  private bytes, so CLONEID + REFCNT is enough for families. The walk reads
+  them (`SharingMode` refcount/full, APFS and the root's device only, EINVAL
+  falls back to plain) into a sorted side table on `FileTree` (no per-node
+  array), sets `apfsClone`, and the allocated rollups charge each family's
+  lowest-inode member in full and the others their private bytes;
+  `sharingCorrection()` reports families, bytes and edited copies (counted
+  in full). Snapshot codec v4 (v1–v3 decode as "unknown"); quick rescans
+  carry rows and refuse to mix trees with and without clone facts.
+  **Gate:** refcount +14% median / +22% p95 on the walk, full ~1.9×
+  (`docs/perf-results/clone-scan-ab.txt`) — over +10%, so it ships as a
+  Settings choice (new Settings window, ⌘,), off by default; Overview says
+  clones are counted per copy and links to it; with it on, Overview shows
+  "715,111 cloned copies in 296,518 groups share 83.09 GB … counted once",
+  the file inspector says what a clone shares, `diskmap --clones` does the
+  same in the CLI (353.45 → 270.36 GB on ~). ExFAT guarded (optional test on
+  the fixture volume). 8 new tests on real `cp -c` clones (family once,
+  split across folders with a stable electee, edited clone, hard-linked
+  clone, plain files, codec, malformed table, quick rescan). 270 tests green.
