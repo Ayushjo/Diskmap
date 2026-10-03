@@ -331,7 +331,7 @@ enum SnapshotCompareText {
 
     /// Growth costs space (review), shrinking frees it (safe).
     static func color(for delta: Int64) -> Color {
-        delta > 0 ? DiskMapTheme.review : delta < 0 ? DiskMapTheme.safe : DiskMapTheme.mutedLabel
+        delta > 0 ? DiskMapTheme.review : delta < 0 ? DiskMapTheme.safe : DiskMapTheme.ink2
     }
 
     /// "1.2 GB → 3.4 GB", "— → 392.9 MB" for new, "1.2 GB → gone" for removed.

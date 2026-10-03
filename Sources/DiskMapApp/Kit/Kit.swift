@@ -36,7 +36,7 @@ struct Kbd: View {
             .foregroundStyle(DiskMapTheme.ink3)
             .padding(.horizontal, 5)
             .frame(height: 18)
-            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(DiskMapTheme.navSelected))
+            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(DiskMapTheme.hover))
             .accessibilityHidden(true)
     }
 }

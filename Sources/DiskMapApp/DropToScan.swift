@@ -45,16 +45,16 @@ struct DropToScan: ViewModifier {
                 if isTargeted {
                     ZStack {
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(DiskMapTheme.info.opacity(0.08))
+                            .fill(DiskMapTheme.accent.opacity(0.08))
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(DiskMapTheme.info, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+                            .strokeBorder(DiskMapTheme.accent, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                         Label(model.isScanning ? "Wait for the current scan to finish" : "Drop a folder to scan it",
                               systemImage: "arrow.down.doc")
-                            .font(DiskMapType.section)
+                            .font(DiskMapType.heading)
                             .foregroundStyle(DiskMapTheme.ink)
                             .padding(.horizontal, 18)
                             .padding(.vertical, 12)
-                            .background(Capsule().fill(DiskMapTheme.cardFill))
+                            .background(Capsule().fill(DiskMapTheme.raised))
                     }
                     .padding(10)
                     .allowsHitTesting(false)

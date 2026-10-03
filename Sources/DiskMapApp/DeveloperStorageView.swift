@@ -627,7 +627,7 @@ enum DeveloperLabels {
     static func rebuildTint(_ cost: RebuildCost) -> Color {
         switch cost {
         case .free, .cheap: return DiskMapTheme.safe
-        case .networked: return DiskMapTheme.mutedLabel
+        case .networked: return DiskMapTheme.ink2
         case .networkedUnpinned: return DiskMapTheme.review
         }
     }
@@ -654,7 +654,7 @@ enum DeveloperLabels {
         switch state {
         case .inSync: return DiskMapTheme.safe
         case .noRemote, .differs: return DiskMapTheme.review
-        case .notARepository, .unknown: return DiskMapTheme.mutedLabel
+        case .notARepository, .unknown: return DiskMapTheme.ink2
         }
     }
 }

@@ -85,8 +85,8 @@ struct UpdateSettingsSection: View {
             Text(Updates.shared.isConfigured
                  ? "Off unless you turn it on. When on, DiskMap asks its update server about once a day — the only time it uses the network. Scans and cleanups never do."
                  : "This build has no update feed, so DiskMap never contacts any server. Download new versions yourself.")
-                .font(DiskMapType.caption)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
+                .font(DiskMapType.secondary)
+                .foregroundStyle(DiskMapTheme.ink2)
                 .fixedSize(horizontal: false, vertical: true)
         } header: {
             Text("Updates")

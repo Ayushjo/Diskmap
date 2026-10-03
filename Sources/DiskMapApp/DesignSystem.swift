@@ -71,19 +71,6 @@ enum DiskMapTheme {
     /// Row hover.
     static let hover = adaptive(light: (37, 43, 49), dark: (255, 255, 255)).opacity(0.045)
 
-    // Older names, now mapped onto the calm palette so screens not yet
-    // rebuilt follow it too. Removed once every page uses the kit.
-    static let cream = canvas
-    static let mutedLabel = ink2
-    static let cardFill = raised
-    static let cardStroke = line
-    static let inspectorFill = canvas
-    static let sidebarFill = canvas
-    /// Neutral selection / secondary fill (sidebar, quiet buttons).
-    static let navSelected = adaptive(light: (37, 43, 49), dark: (255, 255, 255)).opacity(0.065)
-    static let disabledLabel = ink3
-    /// Temporary: Overview's explain banner until the pilot removes it.
-    static let focus = accent
     /// Text drawn on pastel data tiles. Fixed, because the tiles are.
     static let tileLabel = Color(red: 37 / 255, green: 43 / 255, blue: 49 / 255)
 
@@ -108,8 +95,6 @@ enum DiskMapTheme {
     static let review = adaptive(light: (183, 121, 31), dark: (224, 165, 72))
     static let danger = adaptive(light: (194, 69, 61), dark: (238, 122, 112))
     /// Links and highlights: the accent (blue and purple were two more accents).
-    static let info = accent
-    static let developer = accent
 
     static func hex(_ hex: String) -> Color {
         var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -179,14 +164,6 @@ enum DiskMapTheme {
     }
 
     static let treemapFolderPalette = dataPalette
-
-    /// Former tinted panel backgrounds — calm pages use no tinted boxes;
-    /// screens not yet rebuilt get a barely-there wash.
-    static var infoSurface: Color { ink.opacity(0.035) }
-    static var reviewSurface: Color { ink.opacity(0.035) }
-
-    /// Folder glyphs in lists: neutral, not an accent.
-    static let folderTint = ink2
 
     static func categoryColor(_ hint: String) -> Color {
         switch hint {
@@ -320,70 +297,10 @@ enum DiskMapType {
     static var figureSmall: Font { mono(11) }
     /// Uppercase eyebrow and section labels (use `MonoLabel`).
     static var label: Font { mono(10, .medium) }
-
-    // Older names, mapped onto the calm scale while pages migrate.
-    static var micro: Font { text(10) }
-    static var microStrong: Font { text(10, .semibold) }
-    static var microMedium: Font { text(10, .medium) }
-    static var caption: Font { text(11) }
-    static var captionMedium: Font { text(11, .medium) }
-    static var captionStrong: Font { text(11, .semibold) }
-    static var small: Font { text(12) }
-    static var smallMedium: Font { text(12, .medium) }
-    static var smallStrong: Font { text(12, .semibold) }
-    static var bodyMedium: Font { text(13, .medium) }
-    static var bodyStrong: Font { text(13, .semibold) }
-    static var callout: Font { text(13, .semibold) }
-    static var section: Font { text(15, .semibold) }
-    static var headline: Font { text(15, .semibold) }
-    static var heroNumber: Font { display }
 }
 
-/// Uppercase mono label — section labels, eyebrows, column headers.
-struct SectionLabel: View {
-    let title: String
-    var body: some View {
-        MonoLabel(title)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
 
-/// A rare card: hairline on `raised`. Calm pages prefer hairlines and space.
-struct PanelCard<Content: View>: View {
-    var padding: CGFloat = 16
-    @ViewBuilder var content: Content
-    var body: some View {
-        content
-            .padding(padding)
-            .background(
-                RoundedRectangle(cornerRadius: DiskMapRadius.card, style: .continuous)
-                    .fill(DiskMapTheme.raised)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: DiskMapRadius.card, style: .continuous)
-                            .stroke(DiskMapTheme.line, lineWidth: 1)
-                    )
-            )
-    }
-}
 
-/// Label / value row (inspectors). Value in mono.
-struct StatRow: View {
-    let label: String
-    let value: String
-    var emphasize: Bool = false
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(label)
-                .font(DiskMapType.secondary)
-                .foregroundStyle(DiskMapTheme.ink2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(value)
-                .font(emphasize ? DiskMapType.figureStrong : DiskMapType.figure)
-                .foregroundStyle(DiskMapTheme.ink)
-                .multilineTextAlignment(.trailing)
-        }
-    }
-}
 
 /// A thin proportion bar on a hairline track.
 struct ProportionBar: View {
@@ -462,7 +379,7 @@ struct SecondaryButtonStyle: ButtonStyle {
             .foregroundStyle(DiskMapTheme.ink.opacity(isEnabled ? 1 : 0.35))
             .background(
                 RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
-                    .fill(configuration.isPressed ? DiskMapTheme.navSelected : DiskMapTheme.raised.opacity(0.6))
+                    .fill(configuration.isPressed ? DiskMapTheme.ink.opacity(0.08) : DiskMapTheme.raised.opacity(0.6))
                     .overlay(
                         RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
                             .stroke(DiskMapTheme.line, lineWidth: 1)
@@ -494,7 +411,7 @@ struct QuietButtonStyle: ButtonStyle {
                 .opacity(isEnabled ? 1 : 0.4)
                 .background(
                     RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
-                        .fill(configuration.isPressed ? DiskMapTheme.navSelected : hovering ? DiskMapTheme.hover : .clear)
+                        .fill(configuration.isPressed ? DiskMapTheme.ink.opacity(0.08) : hovering ? DiskMapTheme.hover : .clear)
                 )
                 .contentShape(Rectangle())
                 .onHover { hovering = $0 }
@@ -523,7 +440,7 @@ struct IconButtonStyle: ButtonStyle {
                 .opacity(isEnabled ? 1 : 0.35)
                 .background(
                     RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
-                        .fill(configuration.isPressed ? DiskMapTheme.navSelected : hovering ? DiskMapTheme.hover : .clear)
+                        .fill(configuration.isPressed ? DiskMapTheme.ink.opacity(0.08) : hovering ? DiskMapTheme.hover : .clear)
                 )
                 .contentShape(Rectangle())
                 .onHover { hovering = $0 }
@@ -541,23 +458,4 @@ struct LinkButtonStyle: ButtonStyle {
     }
 }
 
-/// Former names: `filled` is the primary, unfilled the secondary.
-struct InkButtonStyle: ButtonStyle {
-    var filled: Bool = true
-    var fullWidth: Bool = false
-    func makeBody(configuration: Configuration) -> some View {
-        if filled {
-            PrimaryButtonStyle(fullWidth: fullWidth).makeBody(configuration: configuration)
-        } else {
-            SecondaryButtonStyle(fullWidth: fullWidth).makeBody(configuration: configuration)
-        }
-    }
-}
 
-/// Former green CTA: now the ink primary everywhere.
-struct PrimaryCTAStyle: ButtonStyle {
-    var fullWidth: Bool = false
-    func makeBody(configuration: Configuration) -> some View {
-        PrimaryButtonStyle(fullWidth: fullWidth).makeBody(configuration: configuration)
-    }
-}

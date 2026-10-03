@@ -97,7 +97,7 @@ struct ExploreTreemapView: View {
                     }
                     Spacer()
                     Text(ByteCountFormatter.string(fromByteCount: currentSize, countStyle: .file))
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .foregroundStyle(DiskMapTheme.ink2)
                 }
                 .padding(8)
             }
@@ -145,7 +145,7 @@ struct ExploreTreemapView: View {
                 if isPreparingLayout && layoutRects.isEmpty {
                     ProgressView("Preparing map…")
                         .controlSize(.small)
-                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .foregroundStyle(DiskMapTheme.ink2)
                 }
             }
             .background {

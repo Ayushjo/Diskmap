@@ -49,7 +49,7 @@ enum ExploreColoring {
         if let cat = categories.first(where: { $0.extensions.contains(ext) }) {
             return DiskMapTheme.hex(cat.colorHex)
         }
-        return DiskMapTheme.mutedLabel.opacity(0.5)
+        return DiskMapTheme.ink2.opacity(0.5)
     }
 
     private static func ageColor(id: Int32, tree: FileTree) -> Color {

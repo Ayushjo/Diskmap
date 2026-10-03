@@ -94,49 +94,6 @@ struct DiskMapMenu<Option: Hashable>: View {
 
 // MARK: - Classification badge (color + text — never color alone)
 
-struct ClassificationBadge: View {
-    enum Kind {
-        case safe
-        case review
-        case protected
-        case unknown
-        case custom(title: String, tint: Color)
-
-        var title: String {
-            switch self {
-            case .safe: return "Generally safe"
-            case .review: return "Review first"
-            case .protected: return "Protected"
-            case .unknown: return "Unknown"
-            case .custom(let title, _): return title
-            }
-        }
-
-        var tint: Color {
-            switch self {
-            case .safe: return DiskMapTheme.safe
-            case .review: return DiskMapTheme.review
-            case .protected: return DiskMapTheme.danger
-            case .unknown: return DiskMapTheme.mutedLabel
-            case .custom(_, let tint): return tint
-            }
-        }
-
-        static func from(safety: SafetyLevel) -> Kind {
-            switch safety {
-            case .safe: return .safe
-            case .review: return .review
-            case .protected: return .protected
-            }
-        }
-    }
-
-    var kind: Kind
-
-    var body: some View {
-        SafetyLabel(level: nil, title: kind.title, tint: kind.tint)
-    }
-}
 
 // MARK: - Empty state
 
@@ -166,11 +123,11 @@ struct DiskMapEmptyState: View {
             HStack(spacing: DiskMapSpace.xs) {
                 if let primaryTitle, let primaryAction {
                     Button(primaryTitle, action: primaryAction)
-                        .buttonStyle(InkButtonStyle())
+                        .buttonStyle(PrimaryButtonStyle())
                 }
                 if let secondaryTitle, let secondaryAction {
                     Button(secondaryTitle, action: secondaryAction)
-                        .buttonStyle(InkButtonStyle(filled: false))
+                        .buttonStyle(SecondaryButtonStyle())
                 }
             }
             .padding(.top, DiskMapSpace.xs)
@@ -213,11 +170,11 @@ struct DiskMapLoadingState: View {
             if let processed, let total, total > 0 {
                 Text("\(processed.formatted()) of \(total.formatted()) size groups")
                     .font(DiskMapType.figureSmall)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .foregroundStyle(DiskMapTheme.ink2)
             }
             if let onCancel {
                 Button("Cancel", action: onCancel)
-                    .buttonStyle(InkButtonStyle(filled: false))
+                    .buttonStyle(SecondaryButtonStyle())
                     .padding(.top, DiskMapSpace.xs)
             }
         }
@@ -328,24 +285,7 @@ struct DiskMapNoticeBanner: View {
     }
 }
 
-/// Former explanation box: now a plain note (mono label + one sentence).
-struct WhyCard: View {
-    var title: String = "Why is this large?"
-    var bodyText: String
 
-    var body: some View {
-        Note(label: title.replacingOccurrences(of: "?", with: ""), text: bodyText)
-    }
-}
-
-/// Former classification box: now the dot-and-word safety line.
-struct SafetyCard: View {
-    var assessment: SafetyAssessment
-
-    var body: some View {
-        SafetyLine(assessment: assessment)
-    }
-}
 
 // MARK: - Layout helpers
 
@@ -444,16 +384,6 @@ struct AdaptiveInspectorSplit<Main: View, Inspector: View>: View {
 
 // MARK: - Page header
 
-struct DiskMapPageHeader: View {
-    var title: String
-    var subtitle: String
-    var symbol: String? = nil
-    var symbolTint: Color = DiskMapTheme.accent
-
-    var body: some View {
-        PageHeader(title: title, subtitle: subtitle)
-    }
-}
 
 // MARK: - File identity
 
@@ -485,7 +415,7 @@ struct FileIdentityIcon: View {
                     .font(.system(size: size * 0.44, weight: .regular))
                     .foregroundStyle(resolvedKind == .other ? DiskMapTheme.ink2 : identityTint)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(resolvedKind == .other ? DiskMapTheme.navSelected : identityTint.opacity(0.16))
+                    .background(resolvedKind == .other ? DiskMapTheme.hover : identityTint.opacity(0.16))
             }
         }
         .frame(width: size, height: size)
@@ -537,7 +467,7 @@ struct MediaThumbnailView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(DiskMapTheme.navSelected)
+                .fill(DiskMapTheme.hover)
             if let image {
                 Image(nsImage: image)
                     .resizable()
