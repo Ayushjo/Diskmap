@@ -116,7 +116,8 @@ struct LargeMediaView: View {
 
     /// The page's one visual: the largest media as thumbnails.
     private var thumbnailStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        let activeID = active?.nodeID
+        return ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 12) {
                 ForEach(catalog.opportunities.prefix(6)) { item in
                     Button { selectedID = item.nodeID } label: {
@@ -129,8 +130,8 @@ struct LargeMediaView: View {
                                 fallsBackToFileIcon: false
                             )
                             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(item.nodeID == active?.nodeID ? DiskMapTheme.accent : DiskMapTheme.line,
-                                        lineWidth: item.nodeID == active?.nodeID ? 2 : 1))
+                                .stroke(item.nodeID == activeID ? DiskMapTheme.accent : DiskMapTheme.line,
+                                        lineWidth: item.nodeID == activeID ? 2 : 1))
                             Text(item.name)
                                 .font(DiskMapType.secondary)
                                 .foregroundStyle(DiskMapTheme.ink)
@@ -173,10 +174,13 @@ struct LargeMediaView: View {
     }
 
     private var list: some View {
-        ScrollView {
+        // Worked out once per draw, not once per row.
+        let items = shown
+        let activeID = active?.nodeID
+        return ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(shown) { item in
-                    row(item)
+                ForEach(items) { item in
+                    row(item, activeID: activeID)
                     RowSeparator(indent: 10 + 18 + 10 + 32 + 12)
                 }
             }
@@ -184,18 +188,18 @@ struct LargeMediaView: View {
             .padding(.vertical, 4)
         }
         .listKeyboard(
-            ids: shown.map(\.nodeID), selection: $selectedID,
+            ids: items.map(\.nodeID), selection: $selectedID,
             path: { id in visible.first { $0.nodeID == id }?.absolutePath },
             stage: { id in
                 if let item = visible.first(where: { $0.nodeID == id }) { Task { await stage([item]) } }
             },
-            selectAll: { checked = Set(shown.map(\.nodeID)) },
+            selectAll: { checked = Set(items.map(\.nodeID)) },
             clearSelection: { checked.removeAll() }
         )
         .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
     }
 
-    private func row(_ item: MediaCandidate) -> some View {
+    private func row(_ item: MediaCandidate, activeID: Int32?) -> some View {
         let isChecked = checked.contains(item.nodeID)
         let stageItem: () -> Void = { Task { await stage([item]) } }
         return CheckRow {
@@ -204,7 +208,7 @@ struct LargeMediaView: View {
             }), label: isChecked ? "Unmark \(item.name)" : "Mark \(item.name)")
             Button { selectedID = item.nodeID } label: {
                 KitRow(title: item.name, subtitle: model.rootURL.map { relativeParent(of: item.absolutePath, root: $0) } ?? parentDisplay(item.displayPath),
-                       selected: item.nodeID == active?.nodeID, path: item.absolutePath, onStage: stageItem) {
+                       selected: item.nodeID == activeID, path: item.absolutePath, onStage: stageItem) {
                     MediaThumbnailView(
                         url: URL(fileURLWithPath: item.absolutePath),
                         size: CGSize(width: 32, height: 22),

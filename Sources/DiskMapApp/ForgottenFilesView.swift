@@ -209,11 +209,14 @@ struct ForgottenFilesView: View {
     }
 
     private var list: some View {
-        let ids = visible.map(\.id)
+        // Worked out once per draw, not once per row.
+        let items = visible
+        let activeID = active?.id
+        let ids = items.map(\.id)
         return ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(visible) { c in
-                    row(c, ordered: ids)
+                ForEach(items) { c in
+                    row(c, ordered: ids, activeID: activeID)
                     RowSeparator(indent: 10 + 14 + 12 + 24 + 12)
                 }
             }
@@ -222,9 +225,9 @@ struct ForgottenFilesView: View {
         }
         .listKeyboard(
             ids: ids, selection: $selectedID,
-            path: { id in visible.first { $0.id == id }?.absolutePath },
+            path: { id in items.first { $0.id == id }?.absolutePath },
             stage: { id in
-                if let candidate = visible.first(where: { $0.id == id }) { stageOne(candidate) }
+                if let candidate = items.first(where: { $0.id == id }) { stageOne(candidate) }
             },
             selectAll: { model.multiSelection = Set(ids) },
             clearSelection: { model.clearMultiSelection() }
@@ -232,7 +235,7 @@ struct ForgottenFilesView: View {
         .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
     }
 
-    private func row(_ c: ForgottenCandidate, ordered: [Int32]) -> some View {
+    private func row(_ c: ForgottenCandidate, ordered: [Int32], activeID: Int32?) -> some View {
         let inMulti = model.multiSelection.contains(c.id)
         let stageable = c.isReviewable && c.safety.level != .protected
         return Button {
@@ -240,7 +243,7 @@ struct ForgottenFilesView: View {
             model.select(c.id, ordered: ordered)
         } label: {
             KitRow(title: c.name, subtitle: relativeParent(of: c.absolutePath, root: rootURL),
-                   selected: c.id == active?.id || inMulti, path: c.absolutePath,
+                   selected: c.id == activeID || inMulti, path: c.absolutePath,
                    onStage: stageable ? { stageOne(c) } : nil) {
                 MultiSelectMark(on: inMulti)
                 FileIdentityIcon(url: URL(fileURLWithPath: c.absolutePath), kind: c.kind, size: 24)

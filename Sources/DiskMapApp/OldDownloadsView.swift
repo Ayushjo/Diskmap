@@ -141,10 +141,13 @@ struct OldDownloadsView: View {
     }
 
     private var list: some View {
-        ScrollView {
+        // Worked out once per draw, not once per row.
+        let items = shown
+        let activeID = active?.nodeID
+        return ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(shown) { item in
-                    row(item)
+                ForEach(items) { item in
+                    row(item, activeID: activeID)
                     RowSeparator(indent: 10 + 18 + 10 + 24 + 12)
                 }
             }
@@ -152,18 +155,18 @@ struct OldDownloadsView: View {
             .padding(.vertical, 4)
         }
         .listKeyboard(
-            ids: shown.map(\.nodeID), selection: $selectedID,
+            ids: items.map(\.nodeID), selection: $selectedID,
             path: { id in visible.first { $0.nodeID == id }?.absolutePath },
             stage: { id in
                 if let item = visible.first(where: { $0.nodeID == id }) { Task { await stage([item]) } }
             },
-            selectAll: { checked = Set(shown.map(\.nodeID)) },
+            selectAll: { checked = Set(items.map(\.nodeID)) },
             clearSelection: { checked.removeAll() }
         )
         .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
     }
 
-    private func row(_ item: OldDownloadsCandidate) -> some View {
+    private func row(_ item: OldDownloadsCandidate, activeID: Int32?) -> some View {
         let isChecked = checked.contains(item.nodeID)
         let stageItem = { Task { await stage([item]) } }
         return CheckRow {
@@ -172,7 +175,7 @@ struct OldDownloadsView: View {
             }), label: isChecked ? "Unmark \(item.name)" : "Mark \(item.name)")
             Button { selectedID = item.nodeID } label: {
                 KitRow(title: item.name, subtitle: model.rootURL.map { relativeParent(of: item.absolutePath, root: $0) } ?? parentDisplay(item.displayPath),
-                       selected: item.nodeID == active?.nodeID, path: item.absolutePath, onStage: { _ = stageItem() }) {
+                       selected: item.nodeID == activeID, path: item.absolutePath, onStage: { _ = stageItem() }) {
                     FileIdentityIcon(url: URL(fileURLWithPath: item.absolutePath), kind: item.kind, size: 24)
                 } trailing: {
                     SafetyLabel(level: item.status == .reviewFirst ? .review : .safe)

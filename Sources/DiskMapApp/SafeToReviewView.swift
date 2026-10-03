@@ -146,12 +146,15 @@ struct SafeToReviewView: View {
     }
 
     private var list: some View {
-        ScrollView {
+        // Worked out once per draw, not once per row.
+        let items = visible
+        let activeID = active?.id
+        return ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(visible) { t in
+                ForEach(items) { t in
                     ReviewTargetRow(
                         target: t, subtitle: "\(t.detail) · \(t.category.title)",
-                        checked: checked.contains(t.id), selected: t.id == active?.id,
+                        checked: checked.contains(t.id), selected: t.id == activeID,
                         onToggle: { toggle(t.id) },
                         onSelect: { selectedID = t.id },
                         onStage: t.isProtected ? nil : { Task { await stage([t]) } }
@@ -163,12 +166,12 @@ struct SafeToReviewView: View {
             .padding(.vertical, 4)
         }
         .listKeyboard(
-            ids: visible.map(\.id), selection: $selectedID,
-            path: { id in visible.first { $0.id == id }?.primaryPath },
+            ids: items.map(\.id), selection: $selectedID,
+            path: { id in items.first { $0.id == id }?.primaryPath },
             stage: { id in
-                if let target = visible.first(where: { $0.id == id }) { Task { await stage([target]) } }
+                if let target = items.first(where: { $0.id == id }) { Task { await stage([target]) } }
             },
-            selectAll: { checked = Set(visible.map(\.id)) },
+            selectAll: { checked = Set(items.map(\.id)) },
             clearSelection: { checked.removeAll() }
         )
     }

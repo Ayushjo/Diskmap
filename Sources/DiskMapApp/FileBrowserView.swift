@@ -90,7 +90,6 @@ struct FileBrowserView: View {
         return selectedID
     }
 
-    private var maxRowSize: Int64 { max(1, rows.map(\.size).max() ?? 1) }
     private var canGoBack: Bool { historyIndex > 0 }
     private var canGoForward: Bool { historyIndex + 1 < history.count }
 
@@ -225,11 +224,14 @@ struct FileBrowserView: View {
     // MARK: List
 
     private var list: some View {
-        let ids = rows.map(\.id)
+        // Sorted and measured once per draw, not once per row.
+        let items = rows
+        let maxSize = max(1, items.map(\.size).max() ?? 1)
+        let ids = items.map(\.id)
         return ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(rows, id: \.id) { row in
-                    browserRow(row, ordered: ids)
+                ForEach(items, id: \.id) { row in
+                    browserRow(row, ordered: ids, maxSize: maxSize)
                     RowSeparator(indent: 10 + 14 + 12 + 24 + 12)
                 }
             }
@@ -247,7 +249,7 @@ struct FileBrowserView: View {
         .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
     }
 
-    private func browserRow(_ row: (id: Int32, size: Int64), ordered: [Int32]) -> some View {
+    private func browserRow(_ row: (id: Int32, size: Int64), ordered: [Int32], maxSize: Int64) -> some View {
         let i = Int(row.id)
         let isDir = tree.isDirectory[i]
         let name = tree.name(of: row.id)
@@ -274,7 +276,7 @@ struct FileBrowserView: View {
             } trailing: {
                 TextColumn(text: kind, width: 92)
                 MonoColumn(text: RelativeAge.short(day: tree.modifiedDay[i]), width: 74)
-                ProportionBar(fraction: Double(row.size) / Double(maxRowSize))
+                ProportionBar(fraction: Double(row.size) / Double(maxSize))
                     .frame(width: 64)
                 MonoColumn(text: ByteFormat.string(row.size), width: 74, emphasis: true)
             }

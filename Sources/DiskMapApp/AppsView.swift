@@ -118,10 +118,13 @@ struct AppsView: View {
     }
 
     private var appList: some View {
-        ScrollView {
+        // Worked out once per draw, not once per row.
+        let items = visible
+        let activeID = active?.id
+        return ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(visible) { app in
-                    appRow(app)
+                ForEach(items) { app in
+                    appRow(app, activeID: activeID)
                     RowSeparator(indent: 10 + 18 + 10 + 28 + 12)
                 }
             }
@@ -129,17 +132,17 @@ struct AppsView: View {
             .padding(.vertical, 4)
         }
         .listKeyboard(
-            ids: visible.map(\.id), selection: $selectedID,
-            path: { id in visible.first { $0.id == id }?.bundlePath },
+            ids: items.map(\.id), selection: $selectedID,
+            path: { id in items.first { $0.id == id }?.bundlePath },
             stage: { id in
-                if let app = visible.first(where: { $0.id == id }) { Task { await stage(app) } }
+                if let app = items.first(where: { $0.id == id }) { Task { await stage(app) } }
             },
-            selectAll: { checked = Set(visible.filter(\.canStageForCleanup).map(\.id)) },
+            selectAll: { checked = Set(items.filter(\.canStageForCleanup).map(\.id)) },
             clearSelection: { checked.removeAll() }
         )
     }
 
-    private func appRow(_ app: ApplicationEntry) -> some View {
+    private func appRow(_ app: ApplicationEntry, activeID: String?) -> some View {
         let isOn = checked.contains(app.id)
         return CheckRow {
             KitCheckbox(isOn: Binding(get: { isOn }, set: { on in
@@ -147,7 +150,7 @@ struct AppsView: View {
             }), label: isOn ? "Unmark \(app.name)" : "Mark \(app.name)")
                 .disabled(!app.canStageForCleanup)
             Button { selectedID = app.id } label: {
-                KitRow(title: app.name, subtitle: Self.publisherName(app.publisher), selected: app.id == active?.id, path: app.bundlePath,
+                KitRow(title: app.name, subtitle: Self.publisherName(app.publisher), selected: app.id == activeID, path: app.bundlePath,
                        onStage: app.canStageForCleanup ? { Task { await stage(app) } } : nil) {
                     AppIconView(path: app.bundlePath, size: 28)
                 } trailing: {
