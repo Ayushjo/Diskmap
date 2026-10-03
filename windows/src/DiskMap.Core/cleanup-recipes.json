@@ -1,0 +1,95 @@
+{
+  "_comment": "Tool-native cleanup commands (TASK-055). DiskMap SHOWS these and never runs them — CleanupQueue.Commit() stays the only way DiskMap removes anything. trashIsUnsafe: moving the folder to the Recycle Bin damages the tool's state, so the app should steer to the command instead. Matching: a path matches if its last component is in `names`, it ends with an entry in `pathSuffixes`, or it contains an entry in `pathContains`. Separators are normalized (\\ matches /).",
+  "recipes": [
+    {
+      "id": "docker",
+      "names": ["DockerDesktop", ".docker"],
+      "pathSuffixes": ["\\AppData\\Local\\Docker"],
+      "pathContains": ["\\AppData\\Local\\Docker\\"],
+      "title": "Prune Docker instead",
+      "command": "docker system prune -a",
+      "why": "Docker keeps every image, container and volume inside one disk image. Moving it to the Recycle Bin deletes all of them at once. Pruning frees space inside it and keeps what is still in use.",
+      "trashIsUnsafe": true
+    },
+    {
+      "id": "npm",
+      "names": [".npm", "npm-cache", "_cacache"],
+      "pathSuffixes": ["\\AppData\\Local\\npm-cache", "\\AppData\\Roaming\\npm-cache"],
+      "pathContains": [],
+      "title": "Clear the npm cache",
+      "command": "npm cache clean --force",
+      "why": "npm verifies and rebuilds its cache index itself.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "pnpm",
+      "names": [".pnpm-store", "pnpm-store"],
+      "pathSuffixes": ["\\AppData\\Local\\pnpm\\store"],
+      "pathContains": [],
+      "title": "Prune the pnpm store",
+      "command": "pnpm store prune",
+      "why": "Every pnpm project hard-links into this store. Pruning removes only packages no project references; trashing the store forces every project to reinstall.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "yarn",
+      "names": [],
+      "pathSuffixes": ["\\AppData\\Local\\Yarn\\Cache"],
+      "pathContains": [],
+      "title": "Clear the Yarn cache",
+      "command": "yarn cache clean",
+      "why": "Yarn keeps its cache index consistent when it cleans itself.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "nuget",
+      "names": [".nuget"],
+      "pathSuffixes": ["\\.nuget\\packages"],
+      "pathContains": [],
+      "title": "Clear NuGet's caches",
+      "command": "dotnet nuget locals all --clear",
+      "why": "NuGet knows which cached packages live projects still reference.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "go-modules",
+      "names": [],
+      "pathSuffixes": ["\\go\\pkg\\mod"],
+      "pathContains": [],
+      "title": "Clear Go's module cache",
+      "command": "go clean -modcache",
+      "why": "Go marks module cache files read-only, so moving them to the Recycle Bin can fail partway. go clean removes them properly.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "pip",
+      "names": [],
+      "pathSuffixes": ["\\AppData\\Local\\pip\\cache"],
+      "pathContains": [],
+      "title": "Purge pip's cache",
+      "command": "pip cache purge",
+      "why": "pip manages its own HTTP and wheel caches.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "uv",
+      "names": [],
+      "pathSuffixes": ["\\AppData\\Local\\uv\\cache"],
+      "pathContains": [],
+      "title": "Clean uv's cache",
+      "command": "uv cache clean",
+      "why": "uv's cache is shared by every project; the command removes it safely while no uv process is running.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "vcpkg",
+      "names": [],
+      "pathSuffixes": ["\\vcpkg\\downloads"],
+      "pathContains": [],
+      "title": "Remove stale vcpkg downloads",
+      "command": "vcpkg remove --outdated",
+      "why": "vcpkg tracks which archives the installed ports still need.",
+      "trashIsUnsafe": false
+    }
+  ]
+}

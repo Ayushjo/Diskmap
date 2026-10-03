@@ -42,7 +42,7 @@ public sealed class SunburstControl : FrameworkElement
         dc.DrawEllipse(NodeColors.BrushFor(model.ZoomedNode),
             NodeColors.StrokePen, new Point(cx, cy), centerRadius, centerRadius);
 
-        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals);
+        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals, model.ChartDepth);
         long total = Math.Max(1, model.Totals[model.ZoomedNode]);
         DrawRing(dc, slices, total, 0, centerRadius, centerRadius + ringWidth, cx, cy, tree);
     }

@@ -1,0 +1,11 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  DiskMap.Core -> C:\Users\kkfah\Documents\codes\Diskmap\windows\src\DiskMap.Core\bin\Debug\net10.0\DiskMap.Core.dll
+  DiskMap.Core.Tests -> C:\Users\kkfah\Documents\codes\Diskmap\windows\tests\DiskMap.Core.Tests\bin\Debug\net10.0\DiskMap.Core.Tests.dll
+  DiskMap.App -> C:\Users\kkfah\Documents\codes\Diskmap\windows\app\DiskMap.App\bin\Debug\net10.0-windows\DiskMap.App.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:02.23

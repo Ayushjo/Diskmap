@@ -34,7 +34,7 @@ public sealed class BubblesControl : FrameworkElement
         var tree = model.Tree;
         if (tree is null || model.Totals.Length == 0) return;
 
-        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals);
+        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals, model.ChartDepth);
         var packed = CirclePack.Pack(slices);
         if (packed.Count == 0) return;
         foreach (var s in slices) IndexSlice(s);

@@ -16,6 +16,7 @@ windows/
                             scanners, dup/clone, cleanup, snapshots
   tests/DiskMap.Core.Tests/ xUnit suite
   app/DiskMap.App/          WPF desktop app
+  app/DiskMap.Cli/          diskmap CLI — scan/find/dup/export/check/bench
 ```
 
 ## Build & run
@@ -47,20 +48,27 @@ against other tools back to back.
 
 | macOS | Windows |
 |---|---|
-| `getattrlistbulk` walk | `FindFirstFileExW` (FindExInfoBasic + LARGE_FETCH) work-queue |
+| `getattrlistbulk` walk | `NtQueryDirectoryFile` (FileIdBothDirectoryInformation) work-queue — name, size, file id, creation time, allocation per entry |
 | — | `$MFT` parse: `FSCTL_GET_NTFS_VOLUME_DATA` + record 0's `$DATA` run list, parallel raw reads (admin) |
+| FSEvents rescan | USN journal replay (`FSCTL_QUERY/READ_USN_JOURNAL`) over a saved baseline in `ScanCache` — falls back to a full scan on any doubt |
 | `O_NOFOLLOW` symlink skip | `FILE_ATTRIBUTE_REPARSE_POINT` skip (symlinks/junctions) |
-| iCloud dataless placeholders | OneDrive/cloud placeholders (`OFFLINE`, `RECALL_ON_*`) |
-| `ATTR_FILE_ALLOCSIZE` | `FILE_STANDARD_INFO.AllocationSize` / `GetCompressedFileSizeW` / cluster rounding |
-| APFS clones (`F_LOG2PHYS_EXT`) | `FSCTL_GET_RETRIEVAL_POINTERS` extent-map compare (ReFS clones, hardlinks) |
+| iCloud dataless placeholders | OneDrive/cloud placeholders (`OFFLINE`, `RECALL_ON_*`) — ☁ rows, never opened |
+| `ATTR_FILE_ALLOCSIZE` | `AllocationSize` inline in dir enumeration / MFT `DATA` allocated size |
+| inode number (`ATTR_FILE_INO`) | 64-bit file id (`FileId` field / FRN) — both backends record it |
+| APFS clones (`F_LOG2PHYS_EXT`) | hard links share file id → charged once at rollup (lowest path); `FSCTL_GET_RETRIEVAL_POINTERS` for extent checks |
 | `FileManager.trashItem` | `SHFileOperationW` + `FOF_ALLOWUNDO` (Recycle Bin) — never a direct delete |
+| Put Back (Trash item origins) | `$Recycle.Bin` `$I` metadata parsed after a commit → `CleanupRecord` → restored |
 | `NSOpenPanel` | `IFileOpenDialog` (`FOS_PICKFOLDERS`) |
-| Quick Look | Reveal in Explorer (`explorer /select`) |
+| Quick Look | Reveal in Explorer + the inspector tabs (decided — no shell previewer hosting) |
+| menu-bar extra | NotifyIcon tray: free space, last scan, rescan, open |
+| ⌘K command palette | Ctrl+K popup: meaning line, top-8 hits, saved searches |
+| ⌘R / ⌘⇧R | Ctrl+R rescan / Ctrl+Shift+R full rescan (drops the baseline) |
 | `task_info` RSS | `GetProcessMemoryInfo` working set |
-| `/Applications` + `~/Library` | Registry Uninstall hives + `%APPDATA%`/`%LOCALAPPDATA%`/`%PROGRAMDATA%` |
+| `/Applications` + `~/Library` | Registry Uninstall hives + Store/MSIX (`AppModel\Repository\Packages`) + `%APPDATA%`/`%LOCALAPPDATA%`/`%PROGRAMDATA%` |
+| Sparkle (opt-in) | **no updater** — `NetworkPolicyTests` greps sources for networking |
 
 Snapshots use the same versioned little-endian `DMAP` format as the macOS
-build — files are interchangeable.
+build — the codec writes v4 and reads v1–4, so files are interchangeable.
 
 ## Safety invariants (same as macOS)
 
@@ -76,10 +84,13 @@ build — files are interchangeable.
 
 ## Known gaps vs. the macOS build
 
-- Block-clone detection only works where Windows supports shared extents:
-  ReFS volumes (Dev Drive). On NTFS the same code path detects hardlinks.
-- No Quick Look equivalent — Reveal in Explorer replaces it.
-- Hard links: the MFT path charges a multiply-linked file once (the macOS
-  rule, first name reached breadth-first; the rest read 0 with
-  `NodeFlags.HardLink`). The FindFirstFileExW walk can't see link counts,
-  so it still counts every name — WinSxS-heavy totals differ by backend.
+- Block clones (shared extents): only ReFS supports them, and the
+  per-file extent pass is deliberately not run during a scan (the same
+  +14%-ish cost macOS declined). On a ReFS root the Overview says so —
+  cloned copies count per copy. Hard links dedupe on every backend:
+  file ids are recorded inline (MFT FRN, walk FileId) and the rollup
+  charges a multiply-linked file once at its lowest path.
+- No Quick Look equivalent — Reveal in Explorer plus the inspector's
+  Overview/Contents/Insights tabs carry that surface.
+- `diskmap dev` on the CLI is deferred — the Developer page has the
+  full catalog in the app; the CLI covers scan/find/dup/export/check.

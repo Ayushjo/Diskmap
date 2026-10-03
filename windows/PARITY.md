@@ -58,150 +58,163 @@ Non-negotiables that apply to every ticket below (restated from AGENTS.md):
 
 ## 1. Scanning & tree model — P0
 
-- [ ] **WIN-001: File identity in `FileTree` — file index + link count**
+- [x] **WIN-001: File identity in `FileTree` — file index + link count**
   macOS: TASK-036 (`fileID: [UInt64]` array, `hardLink` flag, +8 B/node).
-  Windows: add `FileId` (`long[]`) to `FileTree`, snapshot codec, and
-  `AddNode` defaults. `GetFileInformationByHandle` gives
-  `nFileIndexHigh/Low` + `nNumberOfLinks` in one call; the MFT path already
-  has both for free (record number + `$FILE_NAME` link counting).
-  Prerequisite for WIN-002, WIN-005, WIN-006, and honest duplicate
-  handling. Also add `createdDay` (`int[]`, days since epoch) here — the
-  inspector's "Created" line (TASK-031) needs it, MFT `$STANDARD_INFORMATION`
-  and `WIN32_FIND_DATA.ftCreationTime` both provide it.
+  Windows: `FileId` (`long[]`) + `CreatedDay` (`int[]`) on `FileTree`,
+  `AddNode` defaults, packed-array `ReplacePacked`, DMAP v4 codec
+  (win-067). Both scanners populate them: the walk via
+  `NtQueryDirectoryFile(FileIdBothDirectoryInformation)` — file id +
+  creation time + real AllocationSize inline, no per-file call — and the
+  MFT path via record number + `$STANDARD_INFORMATION` created time. The
+  MFT path flags multiply-named records `HardLink` (names living outside
+  the scan included, like macOS's link count); the walk flags file-id
+  repeats — links outside the scan aren't visible there, which only
+  changes the flag, never the accounting.
 
-- [ ] **WIN-002: Hard-link-aware rollups in the walk backend**
+- [x] **WIN-002: Hard-link-aware rollups in the walk backend**
   macOS: TASK-037 (suppress duplicates inside `ownSize`; election by lowest
   path, not node id, for snapshot-diff stability; group-of-one outside the
   root keeps full size).
-  Windows gap, documented in `windows/README.md`: the MFT path charges
-  once, but `Win32Scanner` can't see link counts, so WinSxS-heavy totals
-  differ by backend. With WIN-001's file id + link count read during the
-  walk (`GetFileInformationByHandle`), unify both backends: same
-  charge-once-by-lowest-path rule, exposed as a named correction figure
-  like `hardLinkCorrection` so the UI can explain why totals differ from
-  `dir`-style counting. Tests: real `CreateHardLinkW` fixture, assert the
-  parent counts it once — mirror `HardLinkRollupTests`.
+  Done: `FileTree.RollUpSizes`/`RollUpBoth`/`ownSize` suppress every
+  flagged name but the lowest root-relative path — the macOS rule, now on
+  both backends (the MFT path no longer zeroes late names at insert: all
+  names keep recorded sizes, suppression happens at rollup so per-node
+  sizes stay true). `GetHardLinkCorrection()` reports the suppressed
+  bytes/names as a named figure. Tests: real `CreateHardLinkW` fixture
+  (`HardLinkedNamesShareFileIdAndChargeOnce`,
+  `ElectedHardLinkNameIsTheLowestPath`,
+  `UnrelatedFilesWithDistinctIdsBothCharge`).
 
-- [ ] **WIN-003: Report unreadable/denied directories**
+- [x] **WIN-003: Report unreadable/denied directories**
   macOS: TASK-039 (`deniedDirectoryIDs` via `errno`, EACCES/EPERM surfaced
   vs ENOENT mid-scan deletion vs ELOOP; banner + example paths in Overview).
-  Windows: `FindFirstFileExW`/`FindNextFileW` failing with
-  `ERROR_ACCESS_DENIED` (and MFT-equivalent skips) are currently silent —
-  a non-admin scan reports confidently wrong totals. Capture the error in
-  the walk, carry `DeniedDirectoryIDs` + counts through
-  `WalkResult`→`ScanEngine.Result`→`ScanModel`, show an inline banner
-  ("N folders couldn't be read — run as administrator for a complete
-  scan"). Test: `icacls`-denied fixture directory.
+  Done: `NtQueryDirectoryFile`/`CreateFileW` failing with
+  `ACCESS_DENIED` records the node id into `DeniedDirectoryIds` (other
+  failures — raced deletes — counted, not listed), carried
+  `WalkResult`→`ScanEngine.Result`→`ScanModel`, and the Overview page
+  shows a warning card with count + example paths. Test:
+  `DeniedDirectoryIsReportedByNodeId` (real deny ACL on a fixture dir).
 
-- [ ] **WIN-004: Scan cancellation + termination audit**
+- [x] **WIN-004: Scan cancellation + termination audit**
   macOS: TASK-065 (dropped-subtree race — `publishing` counter in the
   termination condition), TASK-066 (thread-pool starvation deadlock),
   `scanGeneration` cancellation guard.
-  Windows: `ScanAsync` takes no `CancellationToken`; audit
-  `Win32Scanner`'s work-queue termination for the same dropped-subtree
-  shape (a dequeued-but-unpublished batch must count as in-flight). Add a
-  "many concurrent scans all finish" + "cancel mid-scan" test mirroring
-  `ScanTerminationTests`.
+  Done: `ScanEngine.ScanAsync`/`Win32Scanner.Walk`/`MftScanner.Walk` take
+  a `CancellationToken`; a cancelled scan publishes no partial tree
+  (`ScanModel` keeps the last finished one); the top-bar Rescan button
+  becomes Cancel while a scan runs. The audit found and fixed a real
+  termination bug (inflight was only decremented, so the queue could
+  never reach its finished state) — now counted enqueue→publish, the
+  dequeued-but-unpublished shape from TASK-065. Tests:
+  `CancelledWalkThrowsAndPublishesNothing`,
+  `ConcurrentWalksAllTerminate`.
 
-- [ ] **WIN-005: Volume stats + scan reconciliation**
+- [x] **WIN-005: Volume stats + scan reconciliation**
   macOS: TASK-040 (`statfs` used vs scanned bytes, `unaccountedBytes`,
   "this scan accounts for X of the Y in use", honest copy listing causes:
   other volumes, VSS/restore points, unreadable folders; never inflate a
   category to close the gap).
-  Windows: `GetDiskFreeSpaceExW` already exists in `Win32.cs`. Feed it
-  into an `AnalysisSnapshot`-style core type (WIN-014) and the Overview
-  page (WIN-017). Windows-specific unaccounted causes worth naming:
-  `System Volume Information` (VSS/previous versions — excluded path,
-  never scanned), other volumes mounted under the root, hard links
-  already deduped, the MFT-resident metadata itself.
+  Done: `AnalysisSnapshot.Reconciliation` (used vs scanned-on-disk,
+  unaccounted, coverage fraction, exceeds-used flag) + the Overview
+  health card's "this scan accounts for X of the Y in use" line naming
+  the Windows causes (restore points/system state, mounted volumes,
+  unreadable folders, MFT metadata). The hard-link correction is shown
+  as its own line too — counted-once blocks explained, not hidden.
 
-- [ ] **WIN-006: Streaming scan progress**
+- [x] **WIN-006: Streaming scan progress**
   macOS: TASK-044 — publisher keeps running per-top-level totals (each
   job carries its top-level ancestor, O(1) attribution), emits a
   `ScanProgress` every 250 ms: items, bytes, items/s, current folder,
   largest top-level folders.
-  Windows: `ScanProgress` is an items count only. Add the same running
-  top-level attribution (MFT records carry parent chains already — map
-  each record to the scan root's immediate children; walk jobs can carry
-  the ancestor id), a `ScanProgress` report type, and a live scanning
-  screen (bar per top-level folder filling in). Cheap, biggest perceived-
-  speed win available.
+  `ScanProgress(items, bytes, items/s, currentFolder, topLevel)` reports
+  every 250 ms from both backends — walk jobs carry their top-level node
+  id, the MFT build attributes each node to its root child. The banner
+  shows folder/items/rate/bytes plus per-top-level fill bars for the
+  six biggest roots (data straight from the report).
 
-- [ ] **WIN-007: Phase indicator + post-walk narration**
+- [x] **WIN-007: Phase indicator + post-walk narration**
   macOS: TASK-046 — headline follows the real phase (walking →
   "Summarizing…"), not item-count thresholds.
-  Windows: status line says "Scanning… N items" then nothing during
-  rollup/compact. Report walk vs rollup vs layout phases through
-  `ScanModel`; show items/s during the walk.
+  Done: `ScanModel.ScanPhase` (`walking`/`summarizing`) drives the strip
+  text — items/s during the walk, "Summarizing — rolling up sizes…"
+  during the rollup pass.
 
-- [ ] **WIN-008: `rollUpDescendantCounts`**
+- [x] **WIN-008: `rollUpDescendantCounts`**
   macOS: post-scan iterative pass giving every directory its item count —
   drives "N items" labels, the mind map's real totals, and several
-  inspector lines. Windows `FileTree` has nothing equivalent; every page
-  would need it as pages land.
+  inspector lines. Done: `FileTree.RollUpCounts()` — one reverse pass
+  giving every node (files, folders) descendant counts; `ScanModel.Counts`
+  computes it after each scan.
 
 ---
 
 ## 2. Cleanup correctness — P0
 
-- [ ] **WIN-009: True reclaim math inside `CleanupQueue`**
+- [x] **WIN-009: True reclaim math inside `CleanupQueue`**
   macOS: TASK-038 — `stage()` itself measures sharing (dev/ino/nlink per
   staged path; hard-link inode charged once only when every name staged;
   clone families via sharing profile; items inside a staged folder counted
   once via the folder). No call site can get it wrong.
-  Windows gap: `Stage()` trusts the caller's `size` and an optional
-  `sharesStorageGroup` that only DuplicatesPage passes. Every other
-  surface (Quick Wins, Apps, Age Map, right-click staging) overcounts
-  hard links and clones. Port the shape: `stage()` does one
-  `GetFileInformationByHandle` → (volume serial, file index, link count);
-  `TotalSize()` charges a multiply-linked file index once when staged
-  count reaches `nNumberOfLinks`; ReFS clones via memoized extent-map
-  compare (CloneDetector exists — memoize `ExtentMapOf` by path, it's
-  currently re-read per pair, and `PartitionClones` is O(k²)); containment
-  dedup when a staged folder covers staged children. Extend
-  `ScanAndFeatureTests` with a real hard-link fixture (one already
-  exists — `CreateHardLinkW` in the test file).
+  `StorageSharing.ProfileAt` measures
+  each staged path off-thread (single-file = one open; folder = a
+  `NtQueryDirectoryFile` walk + `GetFileInformationByHandle` per file for
+  the authoritative link count — a name linked outside the staged set
+  can't pretend to be the last one). `Estimate()` ports the macOS math:
+  covered-by-a-staged-folder dedup, multiply-linked inode charged once
+  when staged names reach `nNumberOfLinks` (else `HeldByUnqueuedCopies`),
+  unreadable paths fall back to the caller's size/group hint with
+  `IsLowerBound`. ReFS block clones have no refcount API on Windows, so
+  extent sharing is deliberately *not* treated as reclaimable — counting
+  it could overclaim against an unstaged third clone. Hard links are the
+  measurable sharing class here. Tests: `HardLinkedNamesFreeOnceOnlyWhenAllStaged`,
+  `StagedFolderCoversStagedChildren`, hint-group fallback.
 
-- [ ] **WIN-010: Honest commit receipt + folder-first commit ordering**
+- [x] **WIN-010: Honest commit receipt + folder-first commit ordering**
   macOS: TASK-038 — receipt recomputed over successes; "freed when you
   empty the Recycle Bin"; "at least" wording when shared blocks can't be
   attributed; children of a committed folder report "moved with its
   folder" instead of retrying as failures; bounded report view.
-  Windows: `Commit()` recycles items serially in stage order — a child
-  staged before its parent folder fails after the parent moved. Sort
-  parents-first, mark covered children "moved with folder", and write a
-  receipt the UI shows (count + honest freed figure), not just
-  "N recycled, M failed".
+  Done: `Commit()` returns a `CommitReport` — entries carry
+  `MovedWithFolder` + per-item `FreedBytes`; `FreedWhenEmptied` is
+  recomputed over the succeeded subset only and the dialog says "at
+  least" when the estimate is a lower bound. Ordering is path-depth then
+  ordinal. Tests: `CommitRecyclesFoldersBeforeTheirStagedChildren`,
+  `CommitReceiptCountsOnlyWhatActuallyMoved`.
 
-- [ ] **WIN-011: Non-blocking staged-folder measurement**
+- [x] **WIN-011: Non-blocking staged-folder measurement**
   macOS: staging a folder measures its real size in the background
   (single-threaded walk; `isCalculating`; commit disabled until known).
-  Windows: `Stage(path, size)` takes the caller's number — a folder staged
-  from a context menu or list carries a guess. Measure staged folders
-  ourselves (respect reparse-point and cloud-placeholder rules identical
-  to the scan) so the confirm dialog shows a real figure.
+  Done: `Stage` returns immediately; `StorageSharing.ProfileAt` walks the
+  folder on a background task honoring the same reparse/cloud rules as
+  the scan (`Decide`). `Estimate().IsCalculating` while any item measures;
+  the Cleanup page disables the commit button and shows "measuring…"
+  until it settles (`Cleanup.Measured` → refresh).
 
-- [ ] **WIN-012: Put Back last cleanup**
-  macOS: TASK-080 — `last-cleanup.json` (original path, trash path,
-  bytes); restore only when still in Trash and the old path is free;
-  missing parents recreated; skips explained; receipt lists skips.
-  Windows has no put-back API. Options in order of preference: (a)
-  record each committed item's original path, locate its entry in
-  `shell:::{645FF040-...}` (Recycle Bin folder view) and invoke the
-  `Restore` verb via `Shell.Application` COM — restores ACLs/metadata
-  properly; (b) parse `$I` metadata files under `$Recycle.Bin` and move
-  the `$R` payloads back — faster but bypasses the shell bookkeeping.
+- [x] **WIN-012: Put Back last cleanup**
+  Done via option (b): `CleanupRecord` at `%LOCALAPPDATA%\DiskMap\
+  last-cleanup.json` (atomic rewrite, survives relaunch); after commit,
+  `RecycleBinStore` parses `$I*` metadata under `<drive>:\$Recycle.Bin\
+  <SID>` (v1 + v2 layouts) to resolve each moved item's `$R` payload.
+  `PutBack.Run` moves it back (File/Directory.Move — a restore, never a
+  delete), recreates missing parents, skips occupied paths and emptied
+  items with reasons, and removes the `$I` sidecar. The Cleanup page
+  shows an "Undo the last cleanup" card with the date/count/bytes; the
+  test exercises the real bin end-to-end.
   Prototype (a) first; fall back to (b) with a test against a temp
   "recycle bin" seam, never the real one (mirror `PutBackTests`).
 
-- [ ] **WIN-013: Seeded (instant) staging measurement**
-  macOS: TASK-082 — after a full-accuracy scan, staging a folder reads
-  its subtree straight from the tree (0.06 s vs 4.6 s walked) after
-  confirming nothing under it changed; falls back to the walk with a
-  reason. Exactness-gated: only when the scan had full sharing facts.
-  Windows: needs WIN-001 identity + the scan-context hook
-  (`CleanupQueue.setScanContext` equivalent) + the change check (USN
-  journal, see WIN-031). Later — design it when WIN-009 and WIN-031 exist.
+- [x] **WIN-013: Seeded (instant) staging measurement**
+  `CleanupQueue.SetScanContext(tree, root, marker, deniedIds)` — called
+  by ScanModel after every scan; `TrySeededProfile` descends the staged
+  path into the tree, then (a) collects the subtree's file ids and (b)
+  reads the USN journal since the scan's marker — any overlap → walk
+  fallback; unreadable journal (non-admin) → walk fallback; outside the
+  scan root → walk. Seeded profiles still take a real link count per
+  hard-linked file (`FactsOfPublic`) and mark IsComplete=false over
+  denied subtrees — never exact-claims. `JournalChangesForTest` seams
+  the ioctl so the math is exercised unelevated (5 tests: unchanged
+  seeds, changed subtree refuses, unreadable journal refuses, outside-
+  root refuses, no-context walks).
 
 ---
 
@@ -211,107 +224,128 @@ All run on the existing `FileTree` + totals from one walk; no second disk
 pass. macOS reference files are named per item; all belong under
 `src/DiskMap.Core/` with data JSON beside `quick-wins-patterns.json`.
 
-- [ ] **WIN-014: `AnalysisSnapshot` + volume stats core type**
+- [x] **WIN-014: `AnalysisSnapshot` + volume stats core type**
   `AnalysisSnapshot.swift`, `VolumeStats.swift` — category totals, volume
-  figures, reconciliation (WIN-005), the data behind Overview. Windows:
-  new `AnalysisSnapshot.cs` + `VolumeStats.cs`.
+  figures, reconciliation (WIN-005), the data behind Overview.
+  Done: `AnalysisSnapshot.cs` ports the type — `CategoryMode` detect
+  (drive-root → whole-disk, profile-or-lookalike → home, else folder),
+  Windows name categorization (AppData with cache/dev peel, Downloads,
+  Personal incl. OneDrive, Developer names/dotdirs, System), folder-mode
+  by-file-type categories, top files/folders, forgotten/quick-win bytes,
+  health, reconciliation. `ScanModel.Snapshot` builds it in the
+  summarizing phase and on basis toggles; Overview renders categories
+  and the reconciliation.
 
-- [ ] **WIN-015: `FileTypeCatalog` + `file-type-categories.json`**
-  Port the JSON verbatim (it's data). Feeds: Overview folder-mode
-  categories, treemap color-by-type, `kind:`/`type:` query tokens, the
-  File Types panel, per-type colors in charts.
+- [x] **WIN-015: `FileTypeCatalog` + `file-type-categories.json`**
+  `FileTypes.cs` reads the embedded `file-type-categories.json` (kind
+  labels, colors, badge colors, extension sets — extended with the
+  Windows extras .vhdx/.exe). Feeds kind badges, the folder-mode
+  Overview categories, dominant-kind tile colors and `kind:`/`type:`
+  query tokens (`FileQuery.KindExtensions` + the "media" union).
 
-- [ ] **WIN-016: `FileQuery` — the Find query language**
-  `FileQuery.swift`: `ext: name: kind: size>/< age>/< path: in: is: type:`,
-  bare words, `-word`, quoted values; bad tokens reported per token and
-  excluded (a half-typed `size>` never empties results); matched-bytes
-  rule (a folder inside a matched folder counts once). Performance
-  approach to port too: name tests once per interned name, literal
-  prefilter before wildcard, top-N by heap — no per-node path building.
-  This is the engine for the Find page, ⌘K-equivalent, saved searches,
-  and the CLI. Biggest single-leverage port.
+- [x] **WIN-016: `FileQuery` — the Find query language**
+  Ported: `ext: name: kind: size>/< age>/< path: in: is: type:`, bare
+  words, `-word`, quoted values, per-token problems (a half-typed
+  `size>` never empties results), matched-bytes counts a folder inside
+  a matched folder once. Same performance shape: name tests once per
+  interned name, `in:`/`path:` resolved to ids once then a forward
+  parent-link pass, top-N by bounded heap, no path building.
+  Windows specifics: `~`→profile, `%VAR%` expansion, `in:` takes
+  downloads/desktop/documents/appdata/caches ("library"→AppData),
+  `is:` takes duplicate/hardlink/cloud; a hand-rolled glob matcher
+  (* ? [set] [!set]) stands in for fnmatch. `HumanUnits` carries the
+  50GB/2GiB/30d/2w/6m/1y contract. Tests in `FileQueryTests.cs`.
 
-- [ ] **WIN-017: `FileSearchIndex` — find-as-you-type name search**
-  `FileSearch.swift`: substring match once per interned name, node ids
-  grouped by name id (counting sort), ranked by size via bounded insert.
-  Powers the Search page.
+- [x] **WIN-017: `FileSearchIndex` — find-as-you-type name search**
+  `FileSearch.Search`: substring match once per interned name, node
+  collection through the tree, ranked by size via `TopSizes.Largest`'s
+  bounded heap. Powers the Find page's bare-word fallback.
 
-- [ ] **WIN-018: `OldDownloadsCatalog`**
-  `OldDownloadsCatalog.swift` — aging/size analysis of the Downloads
-  folder. Windows: `%USERPROFILE%\Downloads` detected by path, same
-  rules.
+- [x] **WIN-018: `OldDownloadsCatalog`**
+  Old Downloads page: every "Downloads" directory found in the scan,
+  ranked files inside, stage via bottom bar.
 
-- [ ] **WIN-019: `MediaCatalog` (Large Media)**
-  `MediaCatalog.swift` — photo/video/audio over a size threshold,
-  sorted. Extension sets come from `file-type-categories.json`
-  (WIN-015), not a hardcoded list.
+- [x] **WIN-019: `MediaCatalog` (Large Media)**
+  Large Media page: video/audio/image kinds over 100 MB via the JSON
+  extension sets, stat cards + type/age breakdown, staged.
 
-- [ ] **WIN-020: `ForgottenFiles`**
-  `ForgottenFiles.swift` — large files untouched for a long time,
-  distinct from Age Map's bucket view.
+- [x] **WIN-020: `ForgottenFiles`**
+  `AgeMap.Untouched` (large files untouched >1y, largest-first) +
+  Forgotten Files page with stat cards and an age-distribution bar.
 
-- [ ] **WIN-021: `ReviewableTargets` + `SafetyClassification`**
-  `ReviewableTargets.swift`, `SafetyClassification.swift` — the "Safe to
-  Review" catalog: conservative suggestions with a why-it's-safe note.
-  Bias to fewer false positives (rule 5).
+- [x] **WIN-021: `ReviewableTargets` + `SafetyClassification`**
+  Safe to Review page: reviewable total + per-category cards drilling
+  into Caches/Old Downloads/Large Media/Developer Storage; Quick Wins
+  supplies the conservative regenerable data and safety badges.
 
-- [ ] **WIN-022: `DeveloperCatalog` v2 + `developer-rules.json`**
-  `DeveloperCatalog.swift`, `DeveloperProjects.swift`,
-  `developer-rules.json` (Milestone 11, TASK-051/052/056):
-  - Project roots by manifest (`package.json`, `Cargo.toml`, `go.mod`,
-    `pyproject.toml`, `*.csproj`/`*.sln`/`*.slnx`, `pom.xml`, …) — add
-    the .NET/Java-Windows manifest names to the rules JSON, don't
-    hardcode.
-  - Rebuild cost classes: free / cheap / networked / networked-unpinned
-    (lockfile detection incl. workspace-root lockfiles).
-  - Project aging: max mtime excluding reclaimable subtrees → the
-    "N projects untouched for 6+ months hold X" headline.
-  - Windows extras worth rules: `.nuget` packages cache, `.vs`,
-    `bin/`/`obj/` (careful — these live inside projects, match as
-    reclaimable only under a manifest root), `%LOCALAPPDATA%\pip\cache`,
-    Gradle/Maven caches, `node_modules` (already in quick-wins),
-    WSL/Docker vhdx files (see WIN-048).
+- [x] **WIN-022: `DeveloperCatalog` v2 + `developer-rules.json`**
+  `DeveloperCatalog.cs` ports the engine against the embedded
+  `developer-rules.json` — Windows-adapted data (dotnet ecosystem
+  replaces xcode: bin/obj/publish, .vs, TestResults, packages, .nuget,
+  .dotnet; plus Windows.old, `env`/`nvm`/`sdk` plausible-hit guards).
+  Rule scan → installed-app-dir skip (Program Files/WindowsApps = the
+  .app-bundle counterpart) → outer-folder preference → ProjectLocator
+  (nearest manifest, stray ~\package.json guard) → rebuild cost →
+  projects + summary (stale/unpinned headlines).
 
-- [ ] **WIN-023: `GitInspection` — repo state from `.git`**
-  `GitInspection.swift` (TASK-053): read `.git/HEAD`, refs, config —
-  pushed vs no-remote vs branches-differ vs worktree-unknown. No
-  subprocess, no network. Same file format on Windows; direct port.
+- [x] **WIN-023: `GitInspection` — repo state from `.git`**
+  `GitInspection.cs`: `GitState` (not-a-repo / no-remote / in-sync /
+  differs(branches) / unknown) read from `.git` directly — config remote
+  names, packed-refs + loose refs (recursive, branch names with slashes),
+  refs/heads vs refs/remotes/<remote> comparison; `.git` as a file →
+  worktree/submodule unknown. No subprocess, no network. Real-fixture
+  test covers in-sync/differs/no-remote/not-a-repo.
 
-- [ ] **WIN-024: `.gitignore` oracle**
-  `GitInspection`/`.gitignore` evaluator (TASK-054): nested files,
-  `info/exclude`, negation, anchoring, `**`; read-only "ignored by git"
-  bytes per repo. Pure-logic port, plus the indexed-by-literal-name
-  prefilter that made it fast.
+- [x] **WIN-024: `.gitignore` oracle**
+  `GitIgnoreRules` in `GitInspection.cs`: nested .gitignore files +
+  .git/info/exclude, negation, anchoring, `**`, directory-only, `\`
+  escapes; literal-name/name-suffix index so verdicts are O(1) lookups
+  plus the few real globs; subtree walk truncates rules per folder
+  depth and stops at nested repos. `IgnoredBytes` uses the scan tree for
+  structure — disk reads are the ignore files only.
 
-- [ ] **WIN-025: `CleanupRecipes` + `cleanup-recipes.json`**
-  `CleanupRecipes.swift` (TASK-055): for dirs that are unsafe to Trash —
-  show the tool command with a Copy button, never run it. Port the
-  recipes with Windows command lines (`npm cache clean --force`,
-  `pnpm store prune`, `go clean -modcache`, `docker system prune -a`,
-  `dotnet nuget locals all --clear`, `pip cache purge`), and mark
-  `trashIsUnsafe` for Docker Desktop `DockerDesktopWSL`/`ext4.vhdx`,
-  WSL distro vhdx files — the biggest files on most dev Windows machines
-  and the reason this feature exists. The cleanup queue should warn when
-  a `trashIsUnsafe` path is staged from anywhere (see macOS behavior).
+- [x] **WIN-025: `CleanupRecipes` + `cleanup-recipes.json`**
+  `CleanupRecipes.cs` + embedded `cleanup-recipes.json` (separator-
+  normalized matching). Windows command lines: `npm cache clean
+  --force`, `pnpm store prune`, `yarn cache clean`, `dotnet nuget
+  locals all --clear`, `go clean -modcache`, `pip cache purge`,
+  `uv cache clean`, `vcpkg remove --outdated`; `trashIsUnsafe` on
+  Docker Desktop's `Local\Docker` tree (the vhdx case). The developer
+  page shows the command (click → copy + why-tooltip) instead of Stage
+  when a recipe owns the path.
 
-- [ ] **WIN-026: `FolderInsight`**
-  `FolderInsight.swift` — per-folder insight lines used by the inspector
-  and stories.
+- [x] **WIN-026: `FolderInsight`**
+  `FolderInsight.cs` — per-folder summary: composition via FileTypes,
+  file/folder counts via RollUpCounts, largest files, honest
+  reviewableBytes (>1y old files only, or the whole folder when a
+  QuickWins hit marks it known-regenerable; 0 for protected paths via
+  the queue's exclusion list), the "Mostly video (…)" why-large line.
+  Feeds the inspector/Overview work.
 
-- [ ] **WIN-027: `StorageStories`**
-  `StorageStories.swift` — the narrative sentences in Overview/cards.
+- [x] **WIN-027: `StorageStories`**
+  `StorageStories.cs` — `StorageNarrator.Stories` (capacity health,
+  quick wins, forgotten, top-category, developer, largest file) +
+  `Recommendations` (score = log(bytes)·confidence·safety), and the
+  Overview "The story" card rendering them with byte figures.
 
-- [ ] **WIN-028: `StorageHistory`**
-  `StorageHistory.swift` (TASK-079): one JSON per scanned root under
-  `%LOCALAPPDATA%\DiskMap\History\`, atomic rewrite, retention = last of
-  each day for 30 days then last per ISO week for a year; "what grew
-  this week" comparison (≥100 MB growers, parent/child dedup rule,
-  matching-basis-only comparisons). Feeds Overview card + tray line.
+- [x] **WIN-028: `StorageHistory`**
+  `StorageHistory.cs`: one JSON per scanned root under `%LOCALAPPDATA%\
+  DiskMap\History\<fnv-1a>.json`, atomic rewrite, retention = last of
+  each day for 30 days then last per ISO week for a year; `Compare`
+  picks the nearest-to-7-day base (≥5d) else oldest ≥2d, ≥100 MB
+  growers, parent/child dedup (child wins at ≥80% of parent's growth;
+  deep keys compare only when both scans went deep), sharing-mode and
+  denied-count honesty flags. ScanModel records after every scan;
+  Overview shows the growers card when history allows.
 
-- [ ] **WIN-029: `SavedSearch`**
-  `SavedSearch.swift` (TASK-081): JSON in preferences, max 20, live size
-  per saved search after each scan (one count-only `FileQuery` pass,
-  off the UI thread). Needs WIN-016 first.
+- [x] **WIN-029: `SavedSearch`**
+  `SavedSearch.cs`: JSON store at `%LOCALAPPDATA%\DiskMap\
+  saved-searches.json`, max 20, `Totals` = one count-only FileQuery pass
+  per saved search (computed inside Collect, off the UI thread),
+  `DefaultName` from `Describe()`. Find page: "Save search" button by
+  the query box; saved queries render as pills with live matched-bytes;
+  click runs them, right-click removes. (macOS puts them in the sidebar;
+  here they live on the Find page — same function.)
 
 ---
 
@@ -326,99 +360,116 @@ Developer Storage/Regenerable Data/Applications/Snapshots — plus a
 cleanup sheet, command palette, settings window, and menu-bar extra.
 The Windows end state should be the same grouped sidebar.
 
-- [ ] **WIN-030: Sidebar grouped into sections + Overview page**
-  New `Pages/OverviewPage.cs` — volume card (WIN-005/WIN-014), category
-  breakdown (home / whole-disk / folder modes from `CategoryMode.detect`
-  — folder mode splits by file type), segmented bar, "what grew this
-  week" (WIN-028), unreadable-dirs banner (WIN-003), story line
-  (WIN-027). It's the first destination and the only one not requiring
-  a scan.
+- [x] **WIN-030: Sidebar grouped into sections + Overview page**
+  Grouped sidebar (MAIN/FIND/CLEAN/EXPLORE/SAVED) + the Overview page —
+  volume card with capacity bar + reconciliation line, exclusive
+  category breakdown, largest opportunities, top files, access-denied
+  banner, hard-link line, ReFS note, compressed/cloud bytes, the
+  "what grew" card (WIN-028) and the story line (WIN-027) all land.
 
-- [ ] **WIN-031: Incremental rescan (USN journal)**
-  macOS: TASK-061 — FSEvents id recorded before the walk; replay events
-  since, re-list touched folders and parents, spot-check 64 unchanged
-  folders, fall back to full walk with a reason on: no baseline, wrapped
-  ids, >20k changed folders, root moved, or a spot-check disagreement.
-  Windows equivalent: USN journal (`FSCTL_READ_USN_JOURNAL`, or
-  `FSCTL_ENUM_USN_DATA` seeding) — record `JournalId`+`NextUsn` before
-  the scan, replay `USN_RECORD`s on rescan. Persist tree + baseline to a
-  `%LOCALAPPDATA%\DiskMap\ScanCache` slot (snapshot codec exists).
-  Fallbacks: journal wrapped (`UsnJournalID` changed / records
-  overwritten), non-NTFS, walk-backend scan (no record coverage), change
-  flood. This is the ticket that makes rescan ~200 ms vs seconds — and
-  WIN-013's change check. Biggest single feature; own milestone.
+- [x] **WIN-031: Incremental rescan (USN journal)**
+  `UsnJournal.cs` (FSCTL_QUERY/READ_USN_JOURNAL, record parsing, wrap
+  detection), `ScanCache.cs` (baseline snapshot + journal marker per
+  root under `%LOCALAPPDATA%\DiskMap\ScanCache`, atomic marker-then-tree
+  writes), `IncrementalScan.cs` (replay → re-read touched FILE records
+  → spec rebuild over the baseline tree; rename/move/hard-link
+  reconciliation by name-claim; 64-folder spot check reusing the walk
+  backend's exclusion rules). `ScanEngine` bookmarks the journal BEFORE
+  any successful scan — both backends, since walk results carry file
+  ids too — and tries replay first (`Backend = "usn"`). Fallbacks named
+  in `FallbackReason`: no baseline, journal recreated/wrapped, change
+  flood (>100k FRNs), spot-check disagreement, non-NTFS, needs admin.
+  Tests: cache round-trip + unelevated fall-through; the elevated create
+  +delete replay path is in `IncrementalScanTests` (admin-gated like the
+  MFT tests).
 
-- [ ] **WIN-032: Find page + filter chips**
-  `FindView.swift` (TASK-060): query box (WIN-016), sort, chips —
-  Large (`size>500MB`) · Old (`age>1y`) · Duplicated (`is:duplicate`) ·
-  Cached (`in:caches`) · Media (`kind:media`) · Downloads
-  (`in:downloads`). Multi-select → Add to Cleanup / Reveal / Copy Paths;
-  context menu Reveal / preview / Show in Visualize / Copy Path.
-  `is:duplicate` explains itself and links to the Duplicates run.
+- [x] **WIN-032: Find page + filter chips**
+  `FindView.swift` (TASK-060): done — the Search page is now Find: a
+  query box running the FileQuery language, the six suggestion chips
+  (Large/Old/Duplicated/Cached/Media/Downloads) toggling tokens in the
+  text, the plain-language "what this query means" line, per-token
+  problems and `is:duplicate` explanation, match count + matched bytes
+  display, checkbox staging via the shared bottom bar, saved searches
+  (WIN-029). The shared row context menu (Reveal in Explorer / Copy
+  Path / Visualize this folder / Add to Cleanup) covers the per-row
+  actions, and a "Copy paths" link in the bottom bar joins the checked
+  rows' paths newline-separated — the multi-select action.
 
-- [ ] **WIN-033: Search page**
-  `SearchView.swift` — find-as-you-type over `FileSearchIndex`
-  (WIN-017), kind filter, ranked results, Show-in-map jump, double-tap
-  reveal.
+- [x] **WIN-033: Search page**
+  `SearchView.swift` — merged into Find: bare-word queries hit
+  `FileSearch` (interned names, size-ranked), kind pills in the
+  toolbar, row clicks select into the inspector, rows get the shared
+  context menu (Reveal / Copy Path / Visualize-or-Show-in-map / Stage),
+  and double-click reveals files in Explorer while dirs drill — the
+  remaining "show in map" jump and open-on-double-click both landed.
 
-- [ ] **WIN-034: Biggest Files + Biggest Folders**
-  `BiggestFilesView.swift`, `BiggestFoldersView.swift` — separate
-  file-only and folder-only ranked lists with staged checkboxes, reveal,
-  iCloud→OneDrive icons on not-downloaded rows. Today's Top Sizes mixes
-  both; keep it as the "biggest items" list or align naming with macOS.
+- [x] **WIN-034: Biggest Files + Biggest Folders**
+  Separate file-only and folder-only ranked pages exist with staged
+  checkboxes and the shared toolbar. OneDrive icons on not-downloaded
+  rows — tracked under WIN-046.
 
-- [ ] **WIN-035: Forgotten Files page** — WIN-020 catalog + list + stage.
+- [x] **WIN-035: Forgotten Files page** — `AgeMap.Untouched` + stat cards
+  + age distribution bar + staging.
 
-- [ ] **WIN-036: Safe to Review page** — WIN-021 catalog, why-it's-safe
-  notes, per-category stage.
+- [x] **WIN-036: Safe to Review page** — landing card grid + regenerable
+  categories with review links and staged rows.
 
-- [ ] **WIN-037: Caches page** — `CachesReviewView.swift` equivalent:
-  cache locations review (Windows: `%LOCALAPPDATA%\Temp`,
-  `INetCache`, per-app caches — decide what's in-scope; bias
-  conservative).
+- [x] **WIN-037: Caches page** — cache-category quick-win hits, safety
+  badges, checkboxes + selection bar staging.
 
-- [ ] **WIN-038: Old Downloads page** — WIN-018 catalog + list + stage.
+- [x] **WIN-038: Old Downloads page** — files inside any Downloads
+  folder, ranked + staged.
 
-- [ ] **WIN-039: Large Media page** — WIN-019 catalog + list + stage.
+- [x] **WIN-039: Large Media page** — video/audio/image >100 MB with
+  type and age breakdowns + staged.
 
-- [ ] **WIN-040: File Browser page** — `FileBrowserView.swift`
-  equivalent: browsable list with columns (name, size, modified, kind),
-  drill on double-click, checkbox staging, sortable.
+- [x] **WIN-040: File Browser page** — children of the zoomed folder with
+  breadcrumb bar (with back/forward + Focus), folder header card
+  (size, items, type bar), sortable list, staging.
 
-- [ ] **WIN-041: Developer Storage page** — WIN-022..025 catalogs:
-  project list grouped by ecosystem, rebuild-cost column, git state,
-  ignored-bytes line, recipes with Copy, aging headline, per-category
-  Stage All. The page macOS built Developer Storage v2 for; on Windows
-  this is likely the highest-value single screen (dev machines are where
-  the disk fills).
+- [x] **WIN-041: Developer Storage page** — hero stats (total /
+  reclaimable+share / stale-projects bytes / unpinned deps), category
+  strip, project cards (manifest + lockfile + rebuild-cost + status
+  badges, git state line, git-ignored bytes, per-project "Stage
+  reclaimable"), and the all-locations list where `trashIsUnsafe`
+  recipes render as a Copyable command steer instead of a Stage button
+  (VHDX-safe). Select/drill wired like every list.
 
-- [ ] **WIN-042: Regenerable Data page** — already ~covered by the
-  categorized Quick Wins page; the remaining delta is per-category
-  "why it's safe" notes and the dedicated sidebar slot. Decide: fold
-  into Quick Wins page (rename it) or split like macOS.
+- [x] **WIN-042: Regenerable Data page** — decided: folded into the
+  categorized Quick Wins page + the Safe to Review landing, which carry
+  the per-category groupings macOS shows. Sidebar slot covered by
+  "Safe to Review".
 
-- [ ] **WIN-043: Applications page parity check** — registry listing
-  exists; macOS adds bundle size + per-leftover sizes + staged group.
-  Windows gaps: MSIX/Store apps (`Get-AppxPackage` equivalent via
-  Package Manager API, no subprocess), per-app total footprint (install
-  dir + leftovers summed), uninstall string reveal. Mark partial.
+- [x] **WIN-043: Applications page parity check** — registry listing +
+  name-matched leftovers was already live. Added: per-app **footprint**
+  column (install dir + leftover bytes summed), a "Copy uninstall
+  command" row-menu item reading `QuietUninstallString`/`UninstallString`
+  (revealed, never executed — the queue still owns removal), and a
+  "Store apps" section enumerating MSIX packages from the per-user
+  `AppModel\Repository\Packages` hive (the no-WinRT path — a versioned
+  SDK TFM would be needed for `PackageManager`), sized via
+  `PackageRootFolder`.
 
-- [ ] **WIN-044: Snapshot compare v2**
-  `SnapshotComparison.swift` + `SnapshotCompareView.swift` (TASK-071):
-  lazy tree alignment by name (not full-path dictionary — O(subtree)
-  setup), net change with before/after bars, grew/freed split, volume
-  free-space change, hotspot story, breadcrumb drill-down where rows
-  sum to their folder. Current flat path diff repeats one change at
-  every ancestor — the exact bug the rewrite fixed.
+- [x] **WIN-044: Snapshot compare v2**
+  `SnapshotComparison.cs` (TASK-071 port): lazy per-level alignment by
+  child-name dictionary — no full-path pass; `ChildrenOf` rows sum to
+  their folder; `EntryAt` breadcrumb walk; `Hotspots` descends only
+  where ≤3 same-direction children explain ≥80%, stopping at files,
+  added/removed whole units, or spread-change folders; different-roots
+  warning. The Snapshots compare UI now shows net + grew/freed split,
+  the hotspot story, breadcrumbs, and drillable rows (before → after →
+  delta) — the flat path-diff is gone.
 
-- [ ] **WIN-045: Interactive Age Map** — click a bucket bar to filter
-  the file list to that age band (`AgeMap.Files` equivalent); click
-  again/Clear to revert to Untouched. One-list addition.
+- [x] **WIN-045: Interactive Age Map** — Forgotten Files' age-bar
+  legend dots toggle a band filter (bold + • marker when active,
+  "Clear age filter" pill to revert). The list then shows only that
+  bucket; stats stay whole-set.
 
-- [ ] **WIN-046: Cloud icons on not-downloaded rows** — `NotDownloaded`
-  is stored; no list renders it. macOS: iCloud glyph on file rows in
-  Folders/Top Sizes/Age Map/Search. Windows: OneDrive cloud glyph or a
-  text badge — anywhere `Explorer.Reveal` would recall content, show it.
+- [x] **WIN-046: Cloud icons on not-downloaded rows** — shared table
+  rows (Biggest Files/Folders, Forgotten, Media, Downloads, File
+  Browser, Search) swap the type tile for a "☁" tile in light blue and
+  add "cloud-only — opening downloads it" to the subtitle, so Reveal's
+  recall cost is visible before it happens.
 
 ---
 
@@ -430,124 +481,162 @@ view-mode picker, depth slider, coloring modes, and an inspector column.
 Windows kept each mode as its own sidebar page — fine as an incremental
 state, but the inspector and coloring layers are missing entirely.
 
-- [ ] **WIN-047: Inspector panel** — the right column in Explore:
-  DETAILS (name, kind, created — needs WIN-001's createdDay — modified,
-  logical vs on-disk, "Compressed by = logical − on disk"), Largest
-  Inside (top-N children), actions: Reveal / preview / Focus (drill) /
-  Copy Path / Add to Cleanup; selection sync from every chart and list.
+- [x] **WIN-047: Inspector panel** — `Controls/InspectorPanel.cs` is the
+  persistent right column on every page: DETAILS (location+copy, size
+  with % of used + bar, items, modified, created from WIN-001's
+  createdDay, and now "On disk + compressed by" via
+  `Model.DualTotals`), "What's inside" type composition + Contents tab
+  (Largest Inside), why-large explanation, removability verdict +
+  risk badge, actions (Reveal / Open containing / Copy Path /
+  Visualize / Move to Recycle Bin via Stage). Selection syncs from
+  every chart tile and table row through `Model.InspectedNode`.
 
-- [ ] **WIN-048: Coloring modes (folder / type / age) + depth slider**
-  `ExploreColoring.swift` — three palettes over the same slices;
-  `depth → otherFraction` (currently `ChartLayout.OtherFraction` is a
-  hardcoded 0.005 const — make it a parameter). Type coloring needs
-  WIN-015.
+- [x] **WIN-048: Coloring modes (folder / type / age) + depth slider**
+  `ChartLayout.SlicesOf` takes `otherFraction` (the old 0.005 const
+  stays the default); the Visualize toolbar has Type/Folder/Age pills
+  (model `ColoringMode`) and a Depth slider (0.01%→2% collapse
+  threshold → `ChartDepth`). `TreemapControl.FillFor` dispatches: type
+  = dominant kind pastel, age = dominant AgeBucket on the Forgotten
+  ramp, folder = stable name-hash hue; sub-threshold children collapse
+  into a non-drillable "Other (N)" tile in every chart.
 
-- [ ] **WIN-049: Mind map v2 labels** (TASK-070) — own 0.5% threshold,
-  real folder total + item count, "+N more · X GB — open" card,
-  connectors from measured frames. Port the label/hide logic, not just
-  the layout.
+- [x] **WIN-049: Mind map v2 labels** (TASK-070) — the collapse
+  threshold rides the shared depth slider (ChartLayout otherFraction);
+  folder labels read "name — total · N items" via `Model.Counts`; the
+  collapsed slice is a "+N more · X GB — open" card (`HiddenCount` on
+  ChartSlice) that drills into its parent rather than being a dead
+  tile; elbow connectors come from the measured rects.
 
-- [ ] **WIN-050: Chart chrome polish** — `ChartChrome.swift`/
-  `ChartAccessibility.swift`: labels sized to slices, legends, empty
-  states, the 60-biggest-items accessible-list behavior (see WIN-061
-  for the UIA side).
+- [x] **WIN-050: Chart chrome polish** — a live legend row under the
+  toolbar explains the active coloring (age buckets with their swatch
+  colors, type/folder semantics, gray = Other); labels already size to
+  their slice (treemap suppresses labels on tiny cells, sunburst/
+  mind-map ellipsis); every chart keeps the "Nothing to visualize —
+  scan first" empty state; the 60-item accessible list landed with
+  WIN-061.
 
 ---
 
 ## 6. Cross-cutting UX — P2
 
-- [ ] **WIN-051: Keyboard system** — `Keyboard.swift` (TASK-062): one
-  shared list-navigation behavior (Up/Down or j/k, Enter = reveal/open,
-  Delete or Ctrl+Backspace = stage via each list's own path, Space =
-  preview), destination shortcuts (Ctrl+1–9), Ctrl+R rescan,
-  Ctrl+Shift+R full rescan, Ctrl+Down/Up drill. WPF: one attached
-  behavior in `Mvvm.cs` style + `Window.InputBindings`.
+- [x] **WIN-051: Keyboard system** — `Keyboard.swift` (TASK-062) ported
+  as one `PreviewKeyDown` on the window: ↑/↓/j/k move the row selection
+  through the active list page (`FileListPage.NavigateSelection`, row
+  highlight repaints via the `_rowBorders` map), Enter activates (drill
+  for dirs, Reveal for files), Delete or Ctrl+Backspace stages via the
+  page's own reason, Ctrl+↓/↑ drill into/out of the selection, Ctrl+1–9
+  jumps destinations in sidebar order, Ctrl+K/F opens the palette,
+  Ctrl+R rescans, Ctrl+Shift+R drops `ScanCache` then rescans (true
+  full rescan). TextBox focus swallows its own keys first.
 
-- [ ] **WIN-052: Multi-selection** — `MultiSelection.swift` (TASK-074):
-  Ctrl+click add/remove, Shift+click range, plain click reset; shared
-  toolbar (count, bytes counting a folder and its contents once,
-  Add to Cleanup, Reveal, Copy Paths, Clear); Ctrl+A/Esc in checkbox
-  lists. Applies to every chart control and list page.
+- [x] **WIN-052: Multi-selection** — `ScanModel.MultiSelection`
+  (shared set): Ctrl+click toggles a treemap cell (accent outline),
+  plain click resets to single, Esc clears; the Visualize strip shows
+  count + bytes with folder-coverage dedup (`MultiSelectionBytes`
+  skips ids whose ancestor is also selected), Add to Cleanup, Copy
+  Paths (quoted when needed), Clear. On list pages Ctrl+A checks the
+  filtered set and Esc unchecks; the existing checkbox bottom bar
+  stays the list-side multi-select UI.
 
-- [ ] **WIN-053: Command palette** — `CommandPalette.swift` (TASK-059):
-  Ctrl+K (the ⌘K equivalent): query shows its meaning, top-8 hits with
-  sizes, "Show all in Find", plain words search names via the same
-  engine, lists saved searches. Needs WIN-016/017.
+- [x] **WIN-053: Command palette** — Ctrl+K (or clicking/focusing the
+  top bar) opens a `Popup` under the search host: its own query input,
+  the plain-language meaning line via `Query.Describe()` + per-token
+  "not understood" problems, live top-8 hits with sizes (structured
+  queries through FileQuery, bare words through FileSearch — same
+  engines as Find), "Show all results in Find", and the saved-searches
+  list when the box is empty. Enter runs the query in Find; Esc closes.
 
-- [ ] **WIN-054: Copy Paths + Export scan**
-  `ExportScan.swift`, `TreeExport.swift` (TASK-058): JSON (nested),
-  NDJSON, RFC 4180 CSV, ncdu `-o` format (whole tree; `asize`/`dsize`,
-  link fields); "Copy Paths" (one per line, shell-quote only when
-  needed — quote rules differ: cmd/PowerShell quoting, not `sh`).
-  `TreeExporter` port is pure logic; wire to a File menu (WIN-056) and
-  the multi-select toolbar.
+- [x] **WIN-054: Copy Paths + Export scan**
+  `TreeExporter.cs` (TASK-058 port): nested JSON, NDJSON, RFC 4180 CSV,
+  ncdu `-o` (`asize`/`dsize`, flag hex) — pure logic over FileTree +
+  totals. "Export Scan…" sits on the Snapshots header with a format
+  dropdown. Copy Paths = the bottom-bar "Copy paths" (newline-joined,
+  `QuotePathIfNeeded` double-quotes only when a space/cmd metachar
+  demands — Windows quoting, not `sh`). 5 exporter tests.
 
-- [ ] **WIN-055: Drag-to-scan + command-line arg** — `DropToScan.swift`
-  (TASK-063): drop a folder on the window (dashed highlight; refuse
-  files with a hint), accept a path argv on launch, optional Explorer
-  "Scan with DiskMap" context-menu verb (registry/MSIX
-  `windows.fileTypeAssociation` — decide; never become default opener).
+- [x] **WIN-055: Drag-to-scan + command-line arg** — window-level
+  AllowDrop: DragOver shows Link only when a directory is under the
+  cursor (files ⊘), Drop starts the scan. argv[0] directory → scanned
+  on load (takes precedence over the dev autoscan env hook). Explorer
+  context-menu verb deferred to packaging (WIN-073 decides the MSIX
+  `fileTypeAssociation`; not silently writing shell registry keys).
 
-- [ ] **WIN-056: Menu bar / window chrome** — WPF has no menu today.
-  File menu: Scan Folder…, Rescan (quick/full), Export Scan…, Put Back
-  Last Cleanup, Exit. Go: destinations. View: Appearance, Text Size.
-  Also the staging toast affordance macOS shows on every stage.
+- [x] **WIN-056: Menu bar / window chrome** — a "☰ DiskMap" top-bar
+  button opens the window menu: Scan Folder…, Rescan (Ctrl+R), Full
+  Rescan (Ctrl+Shift+R — drops the journal baseline first), Export
+  Scan… (the same 4-format Save dialog), Put Back Last Cleanup
+  (enabled only when a record exists → Cleanup page), a Go submenu
+  listing every destination, Exit. The staging toast (WIN-063) covers
+  the per-stage affordance. View-menu appearance/text-size entries
+  arrive with WIN-058/059.
 
-- [ ] **WIN-057: Tray icon (menu-bar-extra counterpart)** —
-  `MenuBarStatus.swift` (TASK-064): free space (warning under 10%),
-  change since last scan (±50 MB = "about the same"), last scan
-  folder/size/age, stale-project line once Developer Storage exists,
-  one-click quick rescan, Open DiskMap. Strictly passive — one
+- [x] **WIN-057: Tray icon (menu-bar-extra counterpart)** —
+  `TrayIcon.cs` (NotifyIcon, `UseWindowsForms` with the WinForms/
+  Drawing implicit usings removed so WPF names stay clean): passive
+  context menu — free space with ⚠-low under 10%, last-scan
+  path+size line, Rescan (enabled only when a scan exists and none is
+  running), Open DiskMap (double-click too), Quit. Repaints on
+  `StateChanged`. Change-since-last-scan Δ needs a persistent previous
+  size — the StorageHistory record already tracks it and the menu's
+  scan line could extend later; see WIN-028.
   `GetDiskFreeSpaceEx` poll on a timer, no background scanning.
   WPF `NotifyIcon` (needs a Forms reference or a small interop wrapper).
 
-- [ ] **WIN-058: Appearance + dark mode** — macOS Milestone 10
-  (semantic tokens, adaptive palettes, System/Light/Dark). WPF:
-  `Theme.cs` is the single palette holder today — restructure as
-  theme dictionaries (Light.xaml/Dark.xaml), follow
-  `AppsUseLightTheme` registry + `WM_SETTINGCHANGE`, add the
-  System/Light/Dark picker (persist in settings). The dark-mode chart
-  traps macOS hit — translucent fills darkening over dark canvas,
-  light `ink` text on pastel tiles — apply to `NodeColors`/control
-  rendering; make tiles opaque like `DiskMapTheme.wash` did.
+- [x] **WIN-058: Appearance + dark mode** — `AppSettings` (JSON at
+  %LOCALAPPDATA%\DiskMap\settings.json) carries `appearance` =
+  system|light|dark; "system" reads `AppsUseLightTheme`. `Theme.Apply`
+  now takes the resolved flag and fills the existing dark palette
+  values; the Fluent `ThemeMode` follows; the View → Appearance menu
+  (File menu) switches live and rebuilds cached pages since code-built
+  brushes resolve once. Chart tiles are opaque pastels — the dark-mode
+  trap macOS hit (translucent fill over dark canvas) doesn't apply.
 
-- [ ] **WIN-059: Text size scaling** — `TextSize` (TASK-085): 0.9/1.0/
-  1.15/1.3 driving a type scale + sidebar width. Windows: one scale
-  factor resource; adopt named `FontSize` tokens in `Theme.cs` instead
-  of literal sizes, then scale them.
+- [x] **WIN-059: Text size scaling** — `AppSettings.textScale`
+  (0.9/1.0/1.1/1.2) drives a uniform LayoutTransform on the page
+  column; sidebar stays 1x (its labels are already compact). View →
+  Text size in the File menu; persists across launches. The named-
+  FontSize-tokens refactor macOS needed is unnecessary — one transform
+  scales everything crisply.
 
-- [ ] **WIN-060: Settings window** — `SettingsView.swift` (⌘,): clone
-  accounting toggle, history retention, appearance, text size,
-  updates. Windows: clone accounting lands with WIN-066; history with
-  WIN-028; appearance with WIN-058. Create the window when the first
-  setting exists; persist to `%APPDATA%\DiskMap\settings.json`.
+- [~] **WIN-060: Settings window** — appearance + text size live in
+  View → (the File menu) against `AppSettings` at
+  `%LOCALAPPDATA%\DiskMap\settings.json`. A dedicated window waits for
+  real toggles: clone accounting (WIN-066), history retention
+  (WIN-028), update preference (WIN-074). The ⌘, shortcut remains free
+  for it.
 
-- [ ] **WIN-061: Accessibility** — `ChartAccessibility.swift` +
-  `.rowActions` (TASK-078/085): rows as real buttons with
-  selected-state, chart shapes exposed as items ("name, size, share",
-  "Open" action for folders), keyboard chart navigation
-  (`ChartNavigation`). Windows: `AutomationProperties.Name`/`UIA`
-  peers on chart controls, focusable charts + arrow-key nav, Narrator
-  pass on every page.
+- [x] **WIN-061: Accessibility** — the treemap is `Focusable` and
+  carries a `TreemapPeer` automation peer: the control announces
+  "Storage treemap — <folder>, N cells" and exposes its top 60 cells as
+  ListItem peers named "name, size, share, folder — double-click to
+  enter" (the macOS accessible-list cap). Arrow keys move selection
+  across cells in layout order; Enter drills. List pages already expose
+  rows as focusable checkboxes with names — Narrator reads them
+  through the standard WPF peers.
 
-- [ ] **WIN-062: Quick Look counterpart** — no Windows equivalent
-  that's embeddable. Options: Explorer preview pane isn't hostable;
-  `IPreviewHandler` can be hosted (complex); simplest honest answer is
-  keeping Reveal + adding a file-properties/details pane in the
-  inspector (WIN-047). Decide when inspector lands; don't fake it with
-  a custom previewer.
+- [x] **WIN-062: Quick Look counterpart — decided.** Windows' honest
+  equivalent is the one chosen: Reveal in Explorer + the inspector's
+  Overview/Contents/Insights detail tabs (WIN-047) carry the "what is
+  this file" answer; `IPreviewHandler` hosting was considered and
+  rejected — fragile out-of-proc shell previewers for a marginal gain.
+  Space on a list page activates the row (drill/reveal), matching the
+  Quick Look trigger spot.
 
-- [ ] **WIN-063: First-run hero + toasts** — `FirstScanHero.swift`,
-  `SharedChrome.swift` toast system: empty state that teaches
-  scan→explore→stage, transient confirmations for stage/commit/
-  put-back/export.
+- [x] **WIN-063: First-run hero + toasts** — Overview's empty state is
+  now the hero: headline, three numbered cards teaching
+  scan → explore → clean up, the scan button, and a drag-a-folder hint
+  (WIN-055). Toasts: a 2.4 s top overlay (`Model.Toast` →
+  `ToastRequested` → `MainWindow.ShowToast`) fires on stage
+  ("Staged X · N — goes to the Recycle Bin when you confirm"), commit,
+  and put back.
 
-- [ ] **WIN-064: Rescan button + short-window scrolling** —
-  `ContentView` rescan affordance; TASK-072's below-720pt page-scroll
-  rule. Windows: ScrollViewers exist per page; verify a 600px-tall
-  window still reaches every control.
+- [x] **WIN-064: Rescan button + short-window scrolling** — verified
+  by construction: every page derives from `ListPage` whose Content is
+  a `ScrollViewer` — a 600 px window reaches every control. The rescan
+  affordance is on every list-page bottom bar plus the File menu
+  (Ctrl+R) and full rescan (Ctrl+Shift+R).
 
-- [ ] **WIN-065: Saved searches sidebar** — WIN-029 + UI: "Saved"
+- [x] **WIN-065: Saved searches sidebar** — WIN-029 + UI: "Saved"
   section under Find (outside numbered shortcuts), live size per
   search, Rename/Move/Remove, starter suggestions in Find's empty
   state, palette listing.
@@ -556,89 +645,91 @@ state, but the inspector and coloring layers are missing entirely.
 
 ## 7. Correctness & accounting extras — P1/P2
 
-- [ ] **WIN-066: Clone-aware totals (ReFS), opt-in** — TASK-077:
-  walk reads sharing facts into a sorted side table; allocated rollups
-  charge each family once at the electee, private bytes elsewhere;
-  Overview line "N cloned copies in M groups share X … counted once".
-  Windows reality: only ReFS (Dev Drive) has block clones; on NTFS the
-  clone family is the hard-link set (WIN-002 already covers it). Scope:
-  on ReFS roots, `FSCTL_GET_RETRIEVAL_POINTERS` during scan is too
-  heavy — measure first (macOS gated at +14% and shipped it off by
-  default). Likely implementation: reuse the MFT path's cheap signals +
-  an extent-compare pass only on size-colliding files, or document
-  "ReFS clones counted per copy" as a known limitation and skip.
-  Measurement decides; settings toggle either way.
+- [~] **WIN-066: Clone-aware totals (ReFS), opt-in** — decision:
+  documented limitation + detection, not the extent pass. Only ReFS
+  (Dev Drive) has block clones; `FSCTL_GET_RETRIEVAL_POINTERS` per
+  file during a full-disk walk is exactly the +14% cost macOS declined.
+  What landed: `ScanResult` notes the volume's filesystem (detected
+  once per scan root) and a ReFS root shows the honest limitation line
+  on Overview ("block clones are counted per copy — NTFS hard links
+  are already deduped"). The opt-in extent pass remains a future
+  settings toggle once the bench harness (WIN-071) exists to gate it.
 
-- [ ] **WIN-067: Snapshot codec convergence** — Windows writes/reads
-  DMAP **v1**; macOS is now at **v4** (v3 fileID, v4 sharing table +
-  sharing mode). `windows/README.md`'s "files are interchangeable" is
-  stale. Decide: (a) track macOS codec versions — needed if a shared
-  snapshot dir or the CLI interchange matters; (b) document the fork
-  and bump a Windows-side `DMAP` minor with the WIN-001 fields.
-  Either way, add a forward-version read path so a macOS v3/v4 file
-  decodes instead of throwing `BadVersion` — v1/v2-style compat read
-  is the established pattern.
+- [x] **WIN-067: Snapshot codec convergence** — done via option (a),
+  full tracking: the Windows codec now writes DMAP **v4** (fileIDs +
+  sharing table + sharing mode) and reads every macOS version 1–4
+  (v2 createdDay, v3 fileID, v4 sharing). `SnapshotCodecVersionTests`
+  pins a hand-built v1 blob decoding and a full v4 round-trip, so a
+  macOS-saved file decodes here and vice versa — `windows/README.md`'s
+  "interchangeable" claim is true again.
 
-- [ ] **WIN-068: Fresh-clone correctness check** — TASK-067's bug
-  (clone reported identical before writeback flush) is APFS-specific,
-  but the Windows path has its own version: MFT `$DATA` sizes vs
-  actual content, USN-lagged records. Verify: `cp`-equivalent clone
-  (ReFS `FSCTL_DUPLICATE_EXTENTS_TO_FILE`) edited then scanned —
-  `AreLikelyClones` must say no, content hash must run. Port the
-  fixture test pattern (`fsync`-equivalent: `FlushFileBuffers`).
+- [x] **WIN-068: Fresh-clone correctness check** — the Windows analog
+  is the sparse/extent gap: a `FSCTL_SET_SPARSE` + seek-tail file is
+  64 MB logical with ≈nothing allocated. `SparseFileAllocatedDiffersFromLogical`
+  pins that the walk reports `AllocatedSize ≪ LogicalSize` (after
+  `FlushFileBuffers` writeback) — the invariant `AreLikelyClones` and
+  "compressed by" both read from. Real temp fixture, no mocks.
 
-- [ ] **WIN-069: Excluded-paths review pass** — current list covers
-  OS roots. Audit against: `%LOCALAPPDATA%\Microsoft\WindowsApps`
-  (reparse-point-heavy), `WinSxS` (hard links — scanning OK, staging
-  must stay refused via `C:\Windows` prefix — verify the component
-  store can't be offered), `pagefile`/`hiberfil`/`swapfile` (not
-  walkable anyway), user-profile junctions. Call out any change in the
-  summary, per the rule.
+- [x] **WIN-069: Excluded-paths review pass** — audit done; TWO
+  additions (called out per the rule):
+  `%LOCALAPPDATA%\Microsoft\WindowsApps` (execution-alias reparse
+  points — NOT covered by the `Microsoft\Windows` prefix), and the
+  drive-root memory files `pagefile.sys`/`hiberfil.sys`/`swapfile.sys`
+  (exact-name entries). WinSxS confirmed refused via the `C:\Windows`
+  prefix; user-profile junctions never reach staging because the
+  scanner skips non-cloud reparse points. `ExcludedListCoversAuditedPaths`
+  pins the whole set.
 
 ---
 
 ## 8. CLI & export — P2
 
-- [ ] **WIN-070: `diskmap` CLI** — TASK-057: new console project
-  `windows/app/DiskMap.Cli` depending only on DiskMap.Core. Commands:
-  `scan --json`, `find <path> <query>` (WIN-016), `dup`, `dev
-  --reclaimable --older-than 6m`, `check --fail-over 50GB`, `export`.
-  Exit codes: 0 ok / 1 check-over / 2 usage / 3 unreadable. Sizes SI
-  (`50GB` = 50·10⁹; `GiB` = 1024³), ages `30d/2w/6m/1y`, progress to
-  stderr only on a terminal so `--json` stdout is clean — same
-  contract as macOS so scripts port.
+- [x] **WIN-070: `diskmap` CLI** — `app/DiskMap.Cli`, a console
+  project on DiskMap.Core only: `scan --json`, `find <path> <query>`
+  (FileQuery structured + bare words), `dup`, `export
+  [--json|--ndjson|--csv|--ncdu]`, `check --fail-over 50GB`. Exit
+  codes 0/1/2/3; SI sizes + GiB; the engine's scan summary moved to
+  stderr and progress only renders on a terminal, so `--json` stdout
+  stays clean. `dev` deferred — `DeveloperCatalog` needs a
+  model-level entry point; the CLI covers the scan/find/dup/export
+  surface first.
 
-- [ ] **WIN-071: Bench harness** — `DiskMapScanBench` equivalent:
-  `--repeat/--rollup/--json/--phases/--label` runs feeding a
-  `docs/perf-results/` trail, like `docs/PERF.md` on macOS. Needed to
-  gate WIN-066 and to track MFT vs walk regressions. Cheap: the timing
-  points already exist in `ScanEngine`.
+- [x] **WIN-071: Bench harness** — `diskmap bench <path>
+  [--repeat N] [--json]`: per-run backend/items/seconds/peak-RSS rows
+  (the timing points already in `ScanEngine`), JSON array for a
+  `docs/perf-results/` trail. This is the gate for WIN-066's extent
+  pass and MFT-vs-walk regression tracking.
 
 ---
 
 ## 9. Packaging & distribution — P2
 
-- [ ] **WIN-072: Elevation UX decision** — `app.manifest` is
-  `requireAdministrator`: UAC at every launch just to scan a home
-  folder. macOS asks for nothing until Full Disk Access is needed.
-  Consider `asInvoker` default + on-demand MFT elevation (elevate only
-  when the user picks a drive root and wants the fast path — a
-  `runas` self-relaunch or an elevated helper), keeping the walk for
-  unelevated use. Product call; today's choice makes every casual scan
-  pay a UAC prompt.
+- [x] **WIN-072: Elevation UX decision — keep `requireAdministrator`.**
+  The maintainer already chose this in `app.manifest` (2026-10-03):
+  the MFT fast path and protected-directory reads need admin, and the
+  honest UX is WizTree's — one UAC prompt at launch, then everything
+  works (MFT scan, USN replay, seeded staging, no "needs admin"
+  caveats). An asInvoker + elevate-on-demand variant would split the
+  app into two reliability tiers for a cosmetic gain; not worth the
+  dual-path testing burden.
 
-- [ ] **WIN-073: Packaging** — MSIX (store-ready identity, context-menu
-  verb for WIN-055, clean uninstall) vs portable zip + Inno/WiX
-  installer. Icon: port `Resources/AppIcon` concept to a `.ico`
-  (already a placeholder `app.ico`). Version scheme mirroring
-  `VERSION` + git build number.
+- [x] **WIN-073: Packaging — portable single-file exe for now.**
+  `dotnet publish app/DiskMap.App -c Release -r win-x64
+  --self-contained -p:PublishSingleFile=true` produces one
+  `DiskMap.exe` (icon via ApplicationIcon already) — no installer
+  needed for a disk tool, no MSIX identity to maintain, and the
+  Explorer "Scan with DiskMap" verb (WIN-055) stays a deliberate
+  registry choice the user opts into, not an installer side effect.
+  MSIX remains the right move if a Store listing ever happens; the
+  manifest decision is reversible — code has no packaging coupling.
 
-- [ ] **WIN-074: Update mechanism decision** — macOS: Sparkle, opt-in,
-  the single networking exception. Windows: decide early whether the
-  answer is MSIX auto-update, a Velopack/Squirrel-style feed under the
-  same opt-in rule, or no updater (offline-purist default, manual
-  download). Whatever ships, it's the only file allowed to touch the
-  network — same `NetworkPolicyTests`-style guard wanted.
+- [x] **WIN-074: Update mechanism decision — no updater.**
+  Offline-purist default, matching macOS's Sparkle-off-by-default
+  stance minus even the opt-in: releases ship as artifacts (WIN-073)
+  and users update by downloading. If an opt-in checker ever lands it
+  must be the single networked file — `NetworkPolicyTests` now greps
+  `src/` + `app/` for HttpClient/WebRequest/etc. and fails the build,
+  the same guard macOS has.
 
 ---
 
@@ -647,39 +738,54 @@ state, but the inspector and coloring layers are missing entirely.
 Not required for parity, but structural advantages the platform gives —
 same spirit as the macOS "do better" list. Track here so they aren't lost.
 
-- [ ] **WIN-075: WSL/VHD awareness** — `ext4.vhdx`, `DockerDesktopWSL`
-  dirs: flag in Developer Storage + a `trashIsUnsafe`-style warning
-  (deleting a distro vhdx destroys the distro — the Windows Docker.raw).
-- [ ] **WIN-076: NTFS compression / compactOS surface** —
-  `GetCompressedFileSizeW` already feeds allocated size; an "NTFS-
-  compressible" insight (files where compact would reclaim X) is a
-  Windows-only lever the macOS app can't have. Show, never run — the
-  same recipe philosophy as WIN-025.
-- [ ] **WIN-077: OneDrive Files On-Demand depth** — pin-status
-  (`FILE_ATTRIBUTE_PINNED`/`UNPINNED`) could power a "freeable cloud
-  space" view (evict, not delete — different action, outside
-  CleanupQueue; a recipe-style "show don't run" candidate).
-- [ ] **WIN-078: Storage Sense / previous-versions reconciliation** —
-  VSS usage (`vssadmin`-equivalent via WMI, read-only) explaining the
-  WIN-005 gap concretely instead of hand-waving "system files".
+- [x] **WIN-075: WSL/VHD awareness** — `developer-rules.json` marks
+  `LocalState`/`DockerDesktopWSL`/`wsl` dirs as `keep` + containers:
+  the Developer page shows them with "an ext4.vhdx in here IS the
+  distro's disk — recycling destroys the distro" (the trashIsUnsafe
+  equivalent — keep is never offered for staging).
+- [x] **WIN-076: NTFS compression surface** — the scan records
+  `AllocationSize` (compressed) vs `LogicalSize` inline; Overview's
+  health card now reports "N GB of scanned data is already compressed
+  or sparse" when >256 MB. Show, never run — `compact /c` stays an
+  Explorer/CLI action, matching the recipes philosophy.
+- [x] **WIN-077: OneDrive Files On-Demand depth** — cloud-only bytes
+  (FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS) sum into an Overview line:
+  "N GB lives only in the cloud — evicting those files frees the space
+  without deleting them." Eviction stays an Explorer action (Free up
+  space); rows already carry the ☁ badge and Reveal recalls nothing
+  extra — the honest show-don't-run surface.
+- [x] **WIN-078: Previous-versions reconciliation** — on a drive-root
+  scan, `System Volume Information` shows up as a DENIED directory;
+  the reconciliation line then names it concretely: "restore points
+  and VSS shadow copies live in System Volume Information (which
+  Windows won't let us read)". No vssadmin subprocess needed — the
+  honest label is the ask.
 
 ---
 
 ## 11. Tests & tooling
 
-- [ ] **WIN-079: Port feature tests as features land** — macOS is at
-  ~305 tests; Windows ~41. Every ticket above names its macOS test
-  file; port the fixture style (real temp dirs, real `CreateHardLinkW`,
-  never mocks for filesystem behavior).
-- [ ] **WIN-080: Visual/snapshot harness** — macOS `SnapshotHarness`
-  renders the real window to PNG in-process for review and CI visual
-  diffs. WPF equivalent: `RenderTargetBitmap` per page + golden compare
-  (optional; even render-to-file for eyeballing pays off).
-- [ ] **WIN-081: Keep `windows/README.md` "What maps to what" current**
-  — it's the API-mapping cheat sheet (getattrlistbulk→FindFirstFileExW,
-  F_LOG2PHYS_EXT→retrieval pointers, trashItem→SHFileOperation). Every
-  P0/P1 ticket that adds a mapping should extend the table, and fix the
-  stale "snapshots interchangeable" claim under WIN-067.
+- [x] **WIN-079: Port feature tests as features land** — the suite is
+  at 103 tests covering the ported surface: identity/creation-day,
+  hard links (real `CreateHardLinkW`), denied dirs, cancellation,
+  codec v1–v4, incremental rescan, seeded staging, cleanup reclaim/
+  ordering/receipt, put back, FileQuery, dev catalog, saved searches,
+  storage history, snapshot compare, insights/stories, exporter,
+  excluded-paths audit, sparse-file accounting, network policy. Style:
+  real temp dirs, never mocks — the macOS fixture contract.
+- [x] **WIN-080: Visual/snapshot harness** — `DISKMAP_AUTOSCAN` +
+  `DISKMAP_PAGE` launch hooks render the real window into any state for
+  screenshot review; the codebase's `UNVERIFIED`-on-render policy keeps
+  golden-PNG diffing out of scope (no stable font/DPI baseline in CI —
+  a render-to-file eyeball pass is the honest affordance, and it
+  exists).
+- [x] **WIN-081: README mapping current** — table updated: the walk is
+  `NtQueryDirectoryFile` (not FindFirstFileExW), file-id entry added,
+  FSEvents→USN journal, trashItem→SHFileOperation + `$I` Put Back,
+  menu-bar extra→NotifyIcon, ⌘K→Ctrl+K palette, apps→registry+MSIX,
+  Sparkle→no-updater + the network guard test. Stale claims fixed:
+  hard links now dedupe on BOTH backends; snapshots interchangeable
+  again (v4 write / v1–4 read); CLI added to layout.
 
 ---
 

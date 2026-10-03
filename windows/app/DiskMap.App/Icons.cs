@@ -19,6 +19,8 @@ public static class Icons
     public const string Add = "\uE710";
     public const string More = "\uE712";
     public const string Info = "\uE946";
+    public const string Warning = "\uE7BA";
+    public const string Cancel = "\uE711";
     public const string Check = "\uE8FB";
     public const string Shield = "\uEA18";
     public const string Focus = "\uE740";

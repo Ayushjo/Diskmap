@@ -15,7 +15,7 @@ public class MftScannerTests
     public void WalkReturnsNullWithoutElevationOrSaneTreeWithIt()
     {
         string systemDrive = Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.System))!;
-        var result = MftScanner.Walk(systemDrive, null, out _);
+        var result = MftScanner.Walk(systemDrive, null, CancellationToken.None, out _);
 
         bool elevated = new WindowsPrincipal(WindowsIdentity.GetCurrent())
             .IsInRole(WindowsBuiltInRole.Administrator);

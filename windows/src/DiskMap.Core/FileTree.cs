@@ -35,8 +35,10 @@ public sealed class FileTree
     private List<long> _logicalSize;  // logical file size
     private List<long> _allocatedSize; // size-on-disk (reflects compression/sparse)
     private List<int> _modifiedDay;   // days since epoch, not a full DateTime (8 bytes -> 4)
+    private List<int> _createdDay;    // birth days since epoch; 0 = unknown
     private List<bool> _isDirectory;
     private List<byte> _flags;        // see NodeFlags
+    private List<long> _fileId;       // filesystem file identity (NTFS record); 0 = unknown
 
     /// <summary>
     /// <paramref name="capacity"/>: expected node count when the caller
@@ -52,8 +54,10 @@ public sealed class FileTree
         _logicalSize = new(capacity);
         _allocatedSize = new(capacity);
         _modifiedDay = new(capacity);
+        _createdDay = new(capacity);
         _isDirectory = new(capacity);
         _flags = new(capacity);
+        _fileId = new(capacity);
     }
 
     public int Count => _nameIndex.Count;
@@ -66,15 +70,24 @@ public sealed class FileTree
     public IReadOnlyList<long> LogicalSize => _logicalSize;
     public IReadOnlyList<long> AllocatedSize => _allocatedSize;
     public IReadOnlyList<int> ModifiedDay => _modifiedDay;
+    public IReadOnlyList<int> CreatedDay => _createdDay;
     public IReadOnlyList<bool> IsDirectory => _isDirectory;
     public IReadOnlyList<byte> Flags => _flags;
 
     /// <summary>
-    /// Bytes per node of the packed arrays only: index, parent links,
-    /// sizes, day, directory bit, flags. No spare capacity, no interned
-    /// string heap. Kept in sync with the stored field types.
+    /// The filesystem's own identity for a file — the NTFS file reference
+    /// on NTFS, whatever the volume reports elsewhere. Two names of one
+    /// file share an id; 0 means "not known" (a backend that can't see
+    /// identity, or an old snapshot) and never dedupes.
     /// </summary>
-    public const int PackedNodeStride = sizeof(int) * 5 + sizeof(long) * 2 + 1 + 1;
+    public IReadOnlyList<long> FileId => _fileId;
+
+    /// <summary>
+    /// Bytes per node of the packed arrays only: index, parent links,
+    /// sizes, days, directory bit, flags, file id. No spare capacity, no
+    /// interned string heap. Kept in sync with the stored field types.
+    /// </summary>
+    public const int PackedNodeStride = sizeof(int) * 6 + sizeof(long) * 3 + 1 + 1;
 
     /// <summary>
     /// Packed-array bytes if every list's count equals <paramref name="nodeCount"/>
@@ -92,8 +105,8 @@ public sealed class FileTree
     public StorageFootprint GetStorageFootprint()
     {
         long reserved = (long)(_nameIndex.Capacity + _parent.Capacity + _firstChild.Capacity
-            + _nextSibling.Capacity + _modifiedDay.Capacity) * sizeof(int)
-            + (long)(_logicalSize.Capacity + _allocatedSize.Capacity) * sizeof(long)
+            + _nextSibling.Capacity + _modifiedDay.Capacity + _createdDay.Capacity) * sizeof(int)
+            + (long)(_logicalSize.Capacity + _allocatedSize.Capacity + _fileId.Capacity) * sizeof(long)
             + _isDirectory.Capacity + _flags.Capacity;
         long utf8 = 0;
         foreach (var name in _nameTable) utf8 += Encoding.UTF8.GetByteCount(name);
@@ -121,8 +134,10 @@ public sealed class FileTree
         _logicalSize.Capacity = _logicalSize.Count;
         _allocatedSize.Capacity = _allocatedSize.Count;
         _modifiedDay.Capacity = _modifiedDay.Count;
+        _createdDay.Capacity = _createdDay.Count;
         _isDirectory.Capacity = _isDirectory.Count;
         _flags.Capacity = _flags.Count;
+        _fileId.Capacity = _fileId.Count;
         _nameTable.Capacity = _nameTable.Count;
     }
 
@@ -133,11 +148,14 @@ public sealed class FileTree
         long logicalSize,
         long allocatedSize,
         int modifiedDaysSinceEpoch,
-        byte flags = 0)
+        byte flags = 0,
+        int createdDaysSinceEpoch = 0,
+        long fileId = 0)
     {
         return AppendNode(
             InternName(name), parentId, isDirectory,
-            logicalSize, allocatedSize, modifiedDaysSinceEpoch, flags);
+            logicalSize, allocatedSize, modifiedDaysSinceEpoch, flags,
+            createdDaysSinceEpoch, fileId);
     }
 
     /// <summary>
@@ -151,11 +169,14 @@ public sealed class FileTree
         long logicalSize,
         long allocatedSize,
         int modifiedDaysSinceEpoch,
-        byte flags = 0)
+        byte flags = 0,
+        int createdDaysSinceEpoch = 0,
+        long fileId = 0)
     {
         return AppendNode(
             InternName(name), parentId, isDirectory,
-            logicalSize, allocatedSize, modifiedDaysSinceEpoch, flags);
+            logicalSize, allocatedSize, modifiedDaysSinceEpoch, flags,
+            createdDaysSinceEpoch, fileId);
     }
 
     private int AppendNode(
@@ -165,7 +186,9 @@ public sealed class FileTree
         long logicalSize,
         long allocatedSize,
         int modifiedDaysSinceEpoch,
-        byte flags)
+        byte flags,
+        int createdDaysSinceEpoch,
+        long fileId)
     {
         int id = _nameIndex.Count;
         _nameIndex.Add(nameId);
@@ -175,8 +198,10 @@ public sealed class FileTree
         _logicalSize.Add(logicalSize);
         _allocatedSize.Add(allocatedSize);
         _modifiedDay.Add(modifiedDaysSinceEpoch);
+        _createdDay.Add(createdDaysSinceEpoch);
         _isDirectory.Add(isDirectory);
         _flags.Add(flags);
+        _fileId.Add(fileId);
         if (parentId >= 0)
         {
             // Prepend to the parent's child list — O(1) insert. Child
@@ -187,6 +212,9 @@ public sealed class FileTree
         }
         return id;
     }
+
+    /// <summary>ORs bits into a node's flag byte — the scanner's post-pass marks hard links this way.</summary>
+    public void AddFlags(int id, byte flags) => _flags[id] |= flags;
 
     private int InternName(ReadOnlySpan<char> name)
     {
@@ -265,13 +293,20 @@ public sealed class FileTree
     /// directory metadata, not subtree bytes. A not-downloaded directory is
     /// the exception: descendants were not enumerated, so the cloud size,
     /// if the filesystem reported one, lives on that node.
+    ///
+    /// Hard links: every name of a multiply-linked file carries its size
+    /// in the tree, and the rollup suppresses all but the elected name —
+    /// so N names of one inode can't inflate an ancestor's total. A file
+    /// whose other names live outside the scan keeps its full size: its
+    /// bytes really are in this folder.
     /// </summary>
     public long[] RollUpSizes(SizeBasis basis = SizeBasis.Allocated)
     {
         var totals = new long[Count];
+        var suppressed = SuppressedHardLinkNames();
         for (int id = Count - 1; id >= 0; id--)
         {
-            long total = OwnSize(id, basis);
+            long total = OwnSize(id, basis, suppressed);
             int child = _firstChild[id];
             while (child != -1)
             {
@@ -283,13 +318,159 @@ public sealed class FileTree
         return totals;
     }
 
-    private long OwnSize(int id, SizeBasis basis)
+    /// <summary>One post-order walk filling both bases — prefer over two RollUpSizes calls.</summary>
+    public (long[] Logical, long[] Allocated) RollUpBoth()
     {
+        var logical = new long[Count];
+        var allocated = new long[Count];
+        var suppressed = SuppressedHardLinkNames();
+        for (int id = Count - 1; id >= 0; id--)
+        {
+            long l = OwnSize(id, SizeBasis.Logical, suppressed);
+            long a = OwnSize(id, SizeBasis.Allocated, suppressed);
+            int child = _firstChild[id];
+            while (child != -1)
+            {
+                l += logical[child];
+                a += allocated[child];
+                child = _nextSibling[child];
+            }
+            logical[id] = l;
+            allocated[id] = a;
+        }
+        return (logical, allocated);
+    }
+
+    private long OwnSize(int id, SizeBasis basis, bool[]? suppressed = null)
+    {
+        // A second name for a file already charged elsewhere in this tree
+        // contributes nothing: the blocks are the same blocks. Deleting
+        // this name frees nothing until the last name goes.
+        if (suppressed is not null && suppressed[id]) return 0;
         long selected = basis == SizeBasis.Logical ? _logicalSize[id] : _allocatedSize[id];
         if (!_isDirectory[id]) return selected;
         bool evictedWithoutChildren =
             (_flags[id] & NodeFlags.NotDownloaded) != 0 && _firstChild[id] == -1;
         return evictedWithoutChildren ? selected : 0;
+    }
+
+    /// <summary>
+    /// What hard-link de-duplication removed from the totals, so a caller
+    /// can explain the difference instead of silently reporting less than
+    /// the sum of the parts.
+    /// </summary>
+    public readonly record struct HardLinkCorrection(
+        int InodeCount, int DuplicateNameCount, long LogicalBytes, long AllocatedBytes)
+    {
+        public bool IsEmpty => DuplicateNameCount == 0;
+        public static readonly HardLinkCorrection None = new(0, 0, 0, 0);
+    }
+
+    /// <summary>Bytes that would have been counted more than once without the rollup's de-duplication.</summary>
+    public HardLinkCorrection GetHardLinkCorrection()
+    {
+        var groups = HardLinkGroups();
+        if (groups is null) return HardLinkCorrection.None;
+        int inodes = 0, dupNames = 0;
+        long logical = 0, allocated = 0;
+        foreach (var (_, ids) in groups)
+        {
+            inodes++;
+            int keeper = ElectedName(ids);
+            foreach (int id in ids)
+            {
+                if (id == keeper) continue;
+                dupNames++;
+                logical += _logicalSize[id];
+                allocated += _allocatedSize[id];
+            }
+        }
+        return new HardLinkCorrection(inodes, dupNames, logical, allocated);
+    }
+
+    /// <summary>
+    /// Multiply-linked files with more than one name inside this tree.
+    /// A file whose other name lives outside the scan is not
+    /// double-counted here, so it is deliberately not a group.
+    /// </summary>
+    private Dictionary<long, List<int>>? HardLinkGroups()
+    {
+        List<int>? flagged = null;
+        for (int i = 0; i < Count; i++)
+        {
+            if ((_flags[i] & NodeFlags.HardLink) != 0 && _fileId[i] != 0 && !_isDirectory[i])
+                (flagged ??= []).Add(i);
+        }
+        if (flagged is null || flagged.Count < 2) return null;
+        var byFile = new Dictionary<long, List<int>>();
+        foreach (int id in flagged)
+        {
+            if (!byFile.TryGetValue(_fileId[id], out var list))
+                byFile[_fileId[id]] = list = [];
+            list.Add(id);
+        }
+        var groups = byFile.Where(kv => kv.Value.Count > 1)
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+        return groups.Count == 0 ? null : groups;
+    }
+
+    /// <summary>
+    /// The one name that carries the bytes. Elected by lowest path, NOT by
+    /// node id: ids and sibling order both fall out of how the scan's
+    /// worker threads interleaved, so neither is stable between two scans
+    /// of the same disk — and an unstable choice would make snapshot diffs
+    /// show a file moving from one folder to another when nothing changed.
+    /// </summary>
+    private int ElectedName(List<int> ids)
+    {
+        int keeper = ids[0];
+        string keeperKey = PathKeyOf(keeper);
+        for (int i = 1; i < ids.Count; i++)
+        {
+            string key = PathKeyOf(ids[i]);
+            if (string.CompareOrdinal(key, keeperKey) < 0)
+            {
+                keeper = ids[i];
+                keeperKey = key;
+            }
+        }
+        return keeper;
+    }
+
+    /// <summary>
+    /// Root-relative "a/b/c". Built only for hard-linked nodes (a fraction
+    /// of a percent of a real tree), never on the rollup hot path.
+    /// </summary>
+    private string PathKeyOf(int id)
+    {
+        var parts = new List<string>();
+        int current = id;
+        while (current > 0)
+        {
+            parts.Add(NameOf(current));
+            current = _parent[current];
+        }
+        parts.Reverse();
+        return string.Join('/', parts);
+    }
+
+    /// <summary>
+    /// True at every node whose bytes another name already accounts for.
+    /// Null — the overwhelmingly common case — means nothing to suppress
+    /// and costs one linear pass over the flags array, no allocation.
+    /// </summary>
+    private bool[]? SuppressedHardLinkNames()
+    {
+        var groups = HardLinkGroups();
+        if (groups is null) return null;
+        var mask = new bool[Count];
+        foreach (var (_, ids) in groups)
+        {
+            int keeper = ElectedName(ids);
+            foreach (int id in ids)
+                if (id != keeper) mask[id] = true;
+        }
+        return mask;
     }
 
     /// <summary>
@@ -323,8 +504,10 @@ public sealed class FileTree
 
     /// <summary>
     /// Replaces packed storage after a snapshot load and rebuilds the
-    /// name lookup. Arrays must all have <c>nameIndex.Count</c> elements.
-    /// Returns false and leaves the tree unchanged if the counts disagree.
+    /// name lookup. Arrays must all have <c>nameIndex.Count</c> elements;
+    /// <paramref name="fileId"/> may be empty (pre-v3 file) and is then
+    /// zero-filled. Returns false and leaves the tree unchanged if the
+    /// counts disagree.
     /// </summary>
     public bool ReplacePacked(
         List<string> nameTable,
@@ -335,13 +518,16 @@ public sealed class FileTree
         long[] logicalSize,
         long[] allocatedSize,
         int[] modifiedDay,
+        int[] createdDay,
         bool[] isDirectory,
-        byte[] flags)
+        byte[] flags,
+        long[]? fileId = null)
     {
         int n = nameIndex.Length;
         if (parent.Length != n || firstChild.Length != n || nextSibling.Length != n
             || logicalSize.Length != n || allocatedSize.Length != n || modifiedDay.Length != n
-            || isDirectory.Length != n || flags.Length != n)
+            || createdDay.Length != n || isDirectory.Length != n || flags.Length != n
+            || (fileId is not null && fileId.Length != n))
         {
             return false;
         }
@@ -361,8 +547,10 @@ public sealed class FileTree
         _logicalSize = [.. logicalSize];
         _allocatedSize = [.. allocatedSize];
         _modifiedDay = [.. modifiedDay];
+        _createdDay = [.. createdDay];
         _isDirectory = [.. isDirectory];
         _flags = [.. flags];
+        _fileId = fileId is null ? new List<long>(new long[n]) : [.. fileId];
         return true;
     }
 

@@ -114,6 +114,7 @@ public abstract class FileListPage : ListPage
     private readonly ContentControl _bottomHost = new();
     private readonly HashSet<int> _checked = [];
     private List<int> _filtered = [];
+    private readonly Dictionary<int, Border> _rowBorders = [];
 
     protected FileListPage()
     {
@@ -148,6 +149,7 @@ public abstract class FileListPage : ListPage
         Compute(() => Collect(tree, totals, rootPath), ids =>
         {
             _table.Children.Clear();
+            _rowBorders.Clear();
             var filtered = ApplyFilters(tree, totals, ids, filterText, kindFilter, sort);
             _filtered = filtered;
             _checked.IntersectWith(filtered);
@@ -165,6 +167,74 @@ public abstract class FileListPage : ListPage
         });
     }
 
+    /// <summary>
+    /// WIN-051: ↑/↓/j/k move the inspector selection through this page's
+    /// rows — the shared list-navigation behavior from Keyboard.swift.
+    /// Returns true when the key was consumed.
+    /// </summary>
+    public bool NavigateSelection(int delta)
+    {
+        if (_filtered.Count == 0) return false;
+        int at = _filtered.IndexOf(Model.SelectedNode);
+        int next = at < 0 ? (delta > 0 ? 0 : _filtered.Count - 1)
+            : Math.Clamp(at + delta, 0, _filtered.Count - 1);
+        int previous = Model.SelectedNode;
+        Model.Select(_filtered[next]);
+        // Repaint the two touched rows — no table rebuild.
+        foreach (int touched in new[] { previous, _filtered[next] })
+        {
+            if (_rowBorders.TryGetValue(touched, out var b))
+                b.Background = touched == Model.SelectedNode
+                    ? Ui.Brush("AppRowSelected") : Brushes.Transparent;
+        }
+        return true;
+    }
+
+    /// <summary>Reveal/Open on Enter — dirs drill, files reveal in Explorer.</summary>
+    public bool ActivateSelection()
+    {
+        var tree = Model.Tree;
+        if (tree is null || Model.SelectedNode < 0 || Model.SelectedNode >= tree.Count) return false;
+        int id = Model.SelectedNode;
+        if (tree.IsDirectory[id]) { Model.DrillTo(id); Model.ShowPage("File Browser"); }
+        else Explorer.Reveal(Model.PathOf(id));
+        return true;
+    }
+
+    /// <summary>Delete/Ctrl+Backspace stages the selected row via this page's reason.</summary>
+    public bool StageSelection()
+    {
+        if (Model.SelectedNode < 0) return false;
+        if (!Model.Stage(Model.SelectedNode, PageName.ToLowerInvariant())) return false;
+        Model.ShowPage("Cleanup");
+        return true;
+    }
+
+    /// <summary>WIN-052: Ctrl+A checks every filtered row.</summary>
+    public void SelectAll()
+    {
+        _checked.UnionWith(_filtered);
+        PaintBottomBar();
+        foreach (var cb in EnumerateCheckBoxes()) cb.IsChecked = true;
+    }
+
+    /// <summary>WIN-052: Esc clears the checked set.</summary>
+    public void ClearChecked()
+    {
+        _checked.Clear();
+        PaintBottomBar();
+        foreach (var cb in EnumerateCheckBoxes()) cb.IsChecked = false;
+    }
+
+    private IEnumerable<CheckBox> EnumerateCheckBoxes()
+    {
+        foreach (var border in _table.Children.OfType<Border>())
+            if (border.Child is Grid row && row.Children.OfType<CheckBox>().FirstOrDefault() is { } cb)
+                yield return cb;
+    }
+
+    private void PaintSelected() { /* per-row closures handle hover; keyboard nav repaints via _rowBorders */ }
+
     /// <summary>The mockup's bottom bar: "N selected · X | Add to Cleanup Review | M files · Y".</summary>
     protected void PaintBottomBar()
     {
@@ -173,19 +243,36 @@ public abstract class FileListPage : ListPage
         long selBytes = selected.Sum(id => totals[id]);
         long allBytes = _filtered.Sum(id => totals[id]);
 
+        // Copy-paths multi-select: newline-joined list for whatever is
+        // checked — one line per path, no shell quoting guesses.
+        var right = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children =
+            {
+                Ui.T($"{_filtered.Count:N0} {Noun} · {ByteFormat.Format(allBytes)}", 12, null, Ui.Brush("AppSubtle")),
+                new Border { Width = 14 },
+                RescanLink(),
+            },
+        };
+        if (selected.Count > 0)
+        {
+            var copy = Ui.T("Copy paths", 12, FontWeights.Medium, Ui.Brush("AppAccent"));
+            copy.Cursor = System.Windows.Input.Cursors.Hand;
+            copy.ToolTip = new ToolTip { Content = "Copy the selected paths, one per line" };
+            copy.MouseLeftButtonDown += (_, _) =>
+            {
+                var paths = selected.Select(id => TreeExporter.QuotePathIfNeeded(Model.PathOf(id)));
+                Clipboard.SetText(string.Join(Environment.NewLine, paths));
+            };
+            right.Children.Insert(0, copy);
+            right.Children.Insert(1, new Border { Width = 14 });
+        }
+
         _bottomHost.Content = Ui.BottomBar(
             Ui.T($"{selected.Count} selected · {ByteFormat.Format(selBytes)}", 12.5, FontWeights.Medium),
-            new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-                Children =
-                {
-                    Ui.T($"{_filtered.Count:N0} {Noun} · {ByteFormat.Format(allBytes)}", 12, null, Ui.Brush("AppSubtle")),
-                    new Border { Width = 14 },
-                    RescanLink(),
-                },
-            },
+            right,
             Ui.Button("Add to Cleanup Review", Icons.Cleanup, Ui.ButtonStyle.Dark,
                 () =>
                 {
@@ -353,6 +440,7 @@ public abstract class FileListPage : ListPage
         bool isDir = tree.IsDirectory[id];
 
         var outer = new Border { CornerRadius = new CornerRadius(6), Background = Brushes.Transparent };
+        _rowBorders[id] = outer;
         var row = Ui.TableRowGrid(
             new GridLength(30), new GridLength(30), new GridLength(1, GridUnitType.Star),
             new GridLength(110), new GridLength(110), new GridLength(90), new GridLength(36));
@@ -366,11 +454,20 @@ public abstract class FileListPage : ListPage
         check.Unchecked += (_, _) => { _checked.Remove(id); PaintBottomBar(); };
         Ui.Cell(row, check, 0);
         Ui.Cell(row, Ui.Faint(rank.ToString()), 1);
-        Ui.Cell(row, Ui.NameCell(
-            Icons.ForKind(kind),
-            isDir ? Ui.Brush("AppAccentSoft") : Ui.Hex(cat?.BadgeBackground ?? "#F1F5F9"),
-            isDir ? Ui.Brush("AppAccent") : Ui.Hex(cat?.BadgeForeground ?? "#475569"),
-            tree.NameOf(id), Model.DisplayPath(id), 26), 2);
+        // WIN-046: cloud-only rows get the glyph — the bytes sit online,
+        // and Reveal would recall the content.
+        bool cloud = (tree.Flags[id] & NodeFlags.NotDownloaded) != 0;
+        var nameCell = Ui.NameCell(
+            cloud ? "☁" : Icons.ForKind(kind),
+            cloud ? Ui.Hex("#E0F2FE")
+                : isDir ? Ui.Brush("AppAccentSoft") : Ui.Hex(cat?.BadgeBackground ?? "#F1F5F9"),
+            cloud ? Ui.Hex("#0284C7")
+                : isDir ? Ui.Brush("AppAccent") : Ui.Hex(cat?.BadgeForeground ?? "#475569"),
+            tree.NameOf(id),
+            cloud
+                ? $"{Model.DisplayPath(id)}  ·  cloud-only — opening downloads it"
+                : Model.DisplayPath(id), 26);
+        Ui.Cell(row, nameCell, 2);
         Ui.Cell(row, Ui.KindBadge(kind), 3);
         Ui.Cell(row, Ui.Subtle(Ui.RelativeDay(tree.ModifiedDay[id]), 11.5), 4);
         Ui.Cell(row, Ui.T(ByteFormat.Format(totals[id]), 12), 5, right: true);
@@ -379,7 +476,13 @@ public abstract class FileListPage : ListPage
         outer.Cursor = System.Windows.Input.Cursors.Hand;
         outer.MouseLeftButtonDown += (_, e) =>
         {
-            if (e.ClickCount >= 2 && isDir) { Model.DrillTo(id); Model.ShowPage("File Browser"); }
+            if (e.ClickCount >= 2)
+            {
+                // Double-click: dirs drill, files reveal in Explorer —
+                // the macOS FindView open-on-double-click behavior.
+                if (isDir) { Model.DrillTo(id); Model.ShowPage("File Browser"); }
+                else Explorer.Reveal(Model.PathOf(id));
+            }
             else { Model.Select(id); PaintSelected(); }
         };
         outer.MouseEnter += (_, _) => { if (Model.SelectedNode != id) outer.Background = Ui.Brush("AppHover"); };
@@ -403,6 +506,19 @@ public abstract class FileListPage : ListPage
             var vis = new MenuItem { Header = "Visualize this folder" };
             vis.Click += (_, _) => Model.Visualize(id);
             menu.Items.Add(vis);
+        }
+        else
+        {
+            // Show-in-map: the file's parent folder in Visualize, selected.
+            var show = new MenuItem { Header = "Show in Visualize" };
+            int parent = tree.Parent[id];
+            show.Click += (_, _) =>
+            {
+                if (parent >= 0) Model.DrillTo(parent);
+                Model.Select(id);
+                Model.ShowPage("Visualize");
+            };
+            menu.Items.Add(show);
         }
         menu.Items.Add(new Separator());
         var stage = new MenuItem { Header = "Add to Cleanup" };
@@ -449,8 +565,18 @@ public sealed class ForgottenFilesPage : FileListPage
     protected override Brush PageIconFg => Ui.Hex("#B45309");
     protected override string PageBlurb =>
         "Large files you haven't touched in over a year — the best candidates to review.";
-    protected override List<int> Collect(FileTree tree, long[] totals, string rootPath) =>
-        AgeMap.Untouched(tree, totals, AgeMap.Today(), limit: 1000);
+
+    /// <summary>WIN-045: a clicked age band filters the list; null = all.</summary>
+    private AgeBucket? _band;
+
+    protected override List<int> Collect(FileTree tree, long[] totals, string rootPath)
+    {
+        int today = AgeMap.Today();
+        var ids = AgeMap.Untouched(tree, totals, today, limit: 1000);
+        if (_band is { } band)
+            ids = ids.Where(id => AgeMap.Bucket(tree.ModifiedDay[id], today) == band).ToList();
+        return ids;
+    }
 
     /// <summary>Stat cards + segmented age bar, like the mockup.</summary>
     protected override UIElement? Hero(FileTree tree, long[] totals, List<int> ids)
@@ -492,10 +618,32 @@ public sealed class ForgottenFilesPage : FileListPage
         barCard.Children.Add(Ui.Segmented(
             present.Select(b => ((double)bucketBytes[b] / barTotal, colors[b])).ToList(), 10));
         barCard.Children.Add(new Border { Height = 8 });
+        // WIN-045: legend dots are the filter — click a band to list just
+        // those files; the active band shows as selected.
         var legend = new WrapPanel();
         foreach (var b in present)
-            legend.Children.Add(Ui.LegendDot(colors[b],
-                $"{AgeMap.Title(b)}  {ByteFormat.Format(bucketBytes[b])} ({bucketBytes[b] * 100 / barTotal}%)"));
+        {
+            bool on = _band == b;
+            var dot = Ui.LegendDot(colors[b],
+                $"{(on ? "• " : "")}{AgeMap.Title(b)}  {ByteFormat.Format(bucketBytes[b])} ({bucketBytes[b] * 100 / barTotal}%)");
+            dot.Cursor = System.Windows.Input.Cursors.Hand;
+            if (dot.Children.Count > 1 && dot.Children[1] is TextBlock tb)
+                tb.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
+            var captured = b;
+            dot.ToolTip = new ToolTip { Content = on ? "Show all bands" : "Show only this band" };
+            dot.MouseLeftButtonDown += (_, _) =>
+            {
+                _band = on ? null : captured;
+                Refresh();
+            };
+            legend.Children.Add(dot);
+        }
+        if (_band is not null)
+        {
+            var clear = Ui.Pill("Clear age filter ×", false, () => { _band = null; Refresh(); });
+            clear.Margin = new Thickness(0, 0, 0, 2);
+            legend.Children.Add(clear);
+        }
         barCard.Children.Add(legend);
 
         var wrap = new StackPanel();
@@ -837,17 +985,171 @@ public sealed class FileBrowserPage : FileListPage
     }
 }
 
-/// <summary>Search — global name search from the top bar.</summary>
+/// <summary>
+/// Search — the Find page: a query box taking the FileQuery language
+/// (ext: size&gt; age&gt; name: path: in: is: type: kind:), suggestion chips
+/// that toggle tokens in the text, and plain-language explanation of
+/// what the query means. Bare words fall back to substring matching.
+/// </summary>
 public sealed class SearchPage : FileListPage
 {
-    protected override string PageName => "Search";
+    private FileQuery.Result? _lastResult;
+    private FileQuery.Parsed _lastParsed;
+    private bool _usedQuery;
+    private Dictionary<Guid, SavedSearches.Total> _savedTotals = [];
+
+    protected override string PageName => "Find";
     protected override string PageIcon => Icons.Search;
     protected override Brush PageIconBg => Ui.Brush("AppHover");
     protected override Brush PageIconFg => Ui.Brush("AppSubtle");
+    protected override string Noun => "matches";
     protected override string PageBlurb =>
-        $"Results for \"{Model.SearchQuery}\" — type in the top bar (Ctrl+K) to search again.";
-    protected override List<int> Collect(FileTree tree, long[] totals, string rootPath) =>
-        FileSearch.Search(tree, totals, Model.SearchQuery, limit: 500);
+        $"Results for \"{Model.SearchQuery}\"";
+
+    private static readonly (string Label, string Token)[] Chips =
+    [
+        ("Large", "size>500MB"),
+        ("Old", "age>1y"),
+        ("Duplicated", "is:duplicate"),
+        ("Cached", "in:caches"),
+        ("Media", "kind:media"),
+        ("Downloads", "in:downloads"),
+    ];
+
+    protected override List<int> Collect(FileTree tree, long[] totals, string rootPath)
+    {
+        _lastParsed = FileQuery.Parse(Model.SearchQuery, home: Environment.GetFolderPath(
+            Environment.SpecialFolder.UserProfile), root: rootPath);
+        _usedQuery = _lastParsed.Query.IsStructured;
+        if (!_usedQuery)
+        {
+            // Bare words — the fast substring index answers directly.
+            _lastResult = null;
+            return FileSearch.Search(tree, totals, Model.SearchQuery, limit: 500);
+        }
+        var context = new FileQuery.Context(
+            DuplicateFileIDs: Model.DuplicateFileIDs);
+        _lastResult = _lastParsed.Query.Run(tree, rootPath, totals, context, limit: 500);
+        // Saved searches get their live totals here — off the UI thread,
+        // one count-only pass each.
+        var saved = SavedSearches.Load();
+        _savedTotals = saved.Count > 0
+            ? SavedSearches.Totals(saved, tree, rootPath, totals, context)
+            : [];
+        return _lastResult.Ids;
+    }
+
+    /// <summary>
+    /// Query box + chips + the meaning of the current query, between the
+    /// header and the toolbar.
+    /// </summary>
+    protected override UIElement? Hero(FileTree tree, long[] totals, List<int> ids)
+    {
+        var hero = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+
+        var (box, input) = Ui.SearchBox(
+            "ext:mp4 size>500MB age>1y in:downloads — or plain words", 460);
+        input.Text = Model.SearchQuery;
+        input.KeyDown += (_, e) =>
+        {
+            if (e.Key == System.Windows.Input.Key.Enter && input.Text.Trim().Length > 0)
+            {
+                Model.SearchQuery = input.Text.Trim();
+                Refresh();
+                e.Handled = true;
+            }
+        };
+        var queryRow = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+        var save = Ui.Button("Save search", Icons.Add, Ui.ButtonStyle.Outline, () =>
+        {
+            string text = Model.SearchQuery.Trim();
+            if (text.Length == 0 || Model.RootPath is not { } r) return;
+            var list = SavedSearches.Load();
+            if (list.Count >= SavedSearches.Limit || list.Any(s => s.Query == text)) return;
+            list.Add(SavedSearch.New(SavedSearches.DefaultName(text, r), text));
+            SavedSearches.Save(list);
+            Refresh();
+        });
+        DockPanel.SetDock(save, Dock.Right);
+        save.Margin = new Thickness(8, 0, 0, 0);
+        queryRow.Children.Add(save);
+        DockPanel.SetDock(box, Dock.Left);
+        queryRow.Children.Add(box);
+        hero.Children.Add(queryRow);
+
+        var chips = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
+        foreach (var (label, token) in Chips)
+        {
+            bool on = FileQuery.ContainsToken(token, Model.SearchQuery);
+            var pill = Ui.Pill(label, on, () =>
+            {
+                Model.SearchQuery = FileQuery.Toggling(token, Model.SearchQuery);
+                Refresh();
+            });
+            pill.Margin = new Thickness(0, 0, 6, 4);
+            chips.Children.Add(pill);
+        }
+        hero.Children.Add(chips);
+
+        // WIN-029: saved searches — live totals over this scan; right-click
+        // a pill to forget it.
+        var saved = SavedSearches.Load();
+        if (saved.Count > 0)
+        {
+            var totalsById = _savedTotals;
+            var savedRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
+            foreach (var search in saved)
+            {
+                string label = search.Name;
+                if (totalsById.TryGetValue(search.Id, out var total) && total.Count > 0)
+                    label += $"  ·  {ByteFormat.Format(total.Bytes)}";
+                var pill = Ui.Pill(label, search.Query == Model.SearchQuery, () =>
+                {
+                    Model.SearchQuery = search.Query;
+                    Refresh();
+                });
+                pill.Margin = new Thickness(0, 0, 6, 4);
+                pill.ToolTip = new ToolTip
+                {
+                    Content = $"{search.Query}\nRight-click to remove",
+                };
+                var capturedId = search.Id;
+                pill.MouseRightButtonDown += (_, _) =>
+                {
+                    SavedSearches.Save(SavedSearches.Load().Where(s => s.Id != capturedId));
+                    Refresh();
+                };
+                savedRow.Children.Add(pill);
+            }
+            hero.Children.Add(savedRow);
+        }
+
+        if (_usedQuery)
+        {
+            var parts = _lastParsed.Query.Describe();
+            hero.Children.Add(Ui.Subtle(string.Join("  ·  ", parts), 12));
+            if (_lastParsed.Problems.Count > 0)
+                hero.Children.Add(Ui.Subtle(
+                    "Not understood: " + string.Join("; ", _lastParsed.Problems.Select(p =>
+                        $"{p.Token} ({p.Message})")), 11.5));
+        }
+        if (_lastResult is { } result)
+        {
+            if (result.MatchCount > result.Ids.Count)
+                hero.Children.Add(Ui.Subtle(
+                    $"{result.MatchCount:N0} matches · " +
+                    $"{ByteFormat.Format(result.MatchedBytes)} matched · showing the largest {result.Ids.Count}", 12));
+            else if (result.MatchedBytes > 0)
+                hero.Children.Add(Ui.Subtle(
+                    $"{result.MatchCount:N0} matches · {ByteFormat.Format(result.MatchedBytes)} matched", 12));
+            foreach (var note in result.Notes)
+                hero.Children.Add(Ui.Subtle(note, 11.5));
+            if (FileQuery.ContainsToken("is:duplicate", Model.SearchQuery))
+                hero.Children.Add(Ui.Subtle(
+                    "Duplicated means in a same-content group — run Duplicates to refresh.", 11.5));
+        }
+        return hero;
+    }
 }
 
 /// <summary>
@@ -863,27 +1165,73 @@ public sealed class OverviewPage : ListPage
         var tree = Model.Tree;
         if (tree is null || Model.Totals.Length != tree.Count)
         {
-            Root.Children.Add(Ui.EmptyState(Icons.Overview, "Scan your drive to understand where your storage is going",
-                "DiskMap maps every file in seconds, then shows what's using the space, what's safe to remove, and what to do next.",
-                Ui.Button("Scan Folder…", Icons.Add, Ui.ButtonStyle.Primary, () => Model.RequestScan())));
+            // WIN-063: first-run hero — teach scan → explore → stage.
+            var hero = new StackPanel { Margin = new Thickness(0, 40, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
+            hero.Children.Add(Ui.T("Understand your storage", 24, FontWeights.Bold));
+            var subtitle = Ui.Subtle("DiskMap reads your disk's own map — a full scan takes seconds, not minutes.\nThen it shows what's using the space, what's safe to remove, and what to do next.", 13);
+            subtitle.HorizontalAlignment = HorizontalAlignment.Center;
+            subtitle.TextAlignment = TextAlignment.Center;
+            subtitle.Margin = new Thickness(0, 8, 0, 20);
+            hero.Children.Add(subtitle);
+
+            var steps = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            foreach (var (num, title, blurb) in new[]
+            {
+                ("1", "Scan", "Pick a folder or a whole drive — the file table does the counting, not file-by-file stat calls."),
+                ("2", "Explore", "Treemap, flame, ring — click anything to inspect it; every number adds up."),
+                ("3", "Clean up", "Stage what you want gone; it only ever moves to the Recycle Bin — recoverable until you empty it."),
+            })
+            {
+                var card = new StackPanel { Width = 220, Margin = new Thickness(8) };
+                card.Children.Add(Ui.T(num, 22, FontWeights.Bold, Ui.Brush("AppAccent")));
+                card.Children.Add(Ui.T(title, 14, FontWeights.SemiBold));
+                var body = Ui.Subtle(blurb, 11.5);
+                body.TextWrapping = TextWrapping.Wrap;
+                card.Children.Add(body);
+                steps.Children.Add(Ui.Card(card, 14));
+            }
+            hero.Children.Add(steps);
+
+            var scanBtn = Ui.Button("Scan a folder", Icons.Add, Ui.ButtonStyle.Dark, () => Model.RequestScan());
+            scanBtn.Margin = new Thickness(0, 24, 0, 8);
+            scanBtn.HorizontalAlignment = HorizontalAlignment.Center;
+            hero.Children.Add(scanBtn);
+            var dragHint = Ui.Faint("… or drag a folder onto this window");
+            dragHint.HorizontalAlignment = HorizontalAlignment.Center;
+            hero.Children.Add(dragHint);
+            Root.Children.Add(hero);
             return;
         }
 
         var totals = Model.Totals;
         var volume = Model.Volume;
         Root.Children.Add(Working("Summarizing…"));
-        Compute(() => new
+        Compute(() =>
         {
-            Children = tree.ChildrenOf(0, totals).OrderByDescending(c => c.Size).ToList(),
-            TopFiles = TopSizes.Largest(1, tree.Count, 8, id => totals[id],
-                id => !tree.IsDirectory[id] && totals[id] > 0),
-            TypeBreakdown = FileTypes.TypeBreakdown(tree, totals, 0),
-        }, data => Show(tree, totals, volume, data.Children, data.TopFiles, data.TypeBreakdown));
+            long compressed = 0, cloudBytes = 0;
+            for (int i = 0; i < tree.Count; i++)
+            {
+                if (tree.AllocatedSize[i] < tree.LogicalSize[i])
+                    compressed += tree.LogicalSize[i] - tree.AllocatedSize[i];
+                if ((tree.Flags[i] & NodeFlags.NotDownloaded) != 0)
+                    cloudBytes += totals[i];
+            }
+            return new
+            {
+                Children = tree.ChildrenOf(0, totals).OrderByDescending(c => c.Size).ToList(),
+                TopFiles = TopSizes.Largest(1, tree.Count, 8, id => totals[id],
+                    id => !tree.IsDirectory[id] && totals[id] > 0),
+                TypeBreakdown = FileTypes.TypeBreakdown(tree, totals, 0),
+                Compressed = compressed,
+                CloudBytes = cloudBytes,
+            };
+        }, data => Show(tree, totals, volume, data.Children, data.TopFiles, data.TypeBreakdown,
+            data.Compressed, data.CloudBytes));
     }
 
     private void Show(FileTree tree, long[] totals, VolumeInfo? volume,
         List<(int Id, long Size)> children, List<int> topFiles,
-        Dictionary<string, long> typeBreakdown)
+        Dictionary<string, long> typeBreakdown, long compressedBytes, long cloudOnlyBytes)
     {
         Root.Children.RemoveAt(Root.Children.Count - 1); // the Working() line
 
@@ -920,8 +1268,166 @@ public sealed class OverviewPage : ListPage
         healthBody.Children.Add(Ui.Subtle(
             $"{ByteFormat.Format(total)} total · {ByteFormat.Format(free)} free" +
             $" · scanned {Model.ItemCount:N0} items in {Model.Elapsed:0.0}s via {Model.Backend}", 11.5));
+
+        // Honest reconciliation (WIN-005): what the scan accounts for vs
+        // what the volume reports used — the gap is named, never hidden.
+        if (Model.Snapshot?.Reconciliation is { } rec)
+        {
+            healthBody.Children.Add(new Border { Height = 6 });
+            string line;
+            if (rec.ScannedExceedsUsed)
+            {
+                line = $"This scan counts {ByteFormat.Format(rec.ScannedBytes)} across names — " +
+                       $"more than the {ByteFormat.Format(rec.UsedBytes)} in use, because hard-linked " +
+                       "files share the same physical blocks.";
+            }
+            else if (rec.UnaccountedBytes > 512L * 1024 * 1024)
+            {
+                // WIN-078: name the shadow storage home when it's a
+                // drive-root scan — VSS usage explains the gap concretely.
+                // SVI is denied, so it surfaces via DeniedDirectories,
+                // not the tree's children.
+                bool sviPresent = Model.DeniedDirectories.Any(id =>
+                    tree.NameOf(id).Equals("System Volume Information", StringComparison.OrdinalIgnoreCase));
+                line = $"This scan accounts for {ByteFormat.Format(rec.ScannedBytes)} of the " +
+                       $"{ByteFormat.Format(rec.UsedBytes)} in use ({rec.CoverageFraction * 100:0}%) — " +
+                       $"{ByteFormat.Format(rec.UnaccountedBytes)} is outside it: " +
+                       (sviPresent
+                           ? "restore points and VSS shadow copies live in System Volume Information (which Windows won't let us read), plus "
+                           : "restore points and ") +
+                       "system state, other volumes mounted under this folder, folders Windows " +
+                       "wouldn't let us read, and filesystem metadata itself.";
+            }
+            else
+            {
+                line = $"This scan accounts for {ByteFormat.Format(rec.ScannedBytes)} of the " +
+                       $"{ByteFormat.Format(rec.UsedBytes)} in use ({rec.CoverageFraction * 100:0}%).";
+            }
+            healthBody.Children.Add(Ui.Subtle(line, 11.5));
+        }
+
+        // WIN-066: on a ReFS (Dev Drive) root the honest answer —
+        // block clones are per-copy here; hard links already dedupe.
+        if (volume is { DriveFormat: "ReFS" })
+        {
+            healthBody.Children.Add(Ui.Subtle(
+                "ReFS volume: block-cloned copies are counted per copy — " +
+                "the sharing pass isn't run (hard links are already deduped).", 11.5));
+        }
+
+        // WIN-076: how much is already compressed/sparse — logical
+        // size the scan recorded minus what NTFS allocated.
+        if (compressedBytes > 256L * 1024 * 1024)
+            healthBody.Children.Add(Ui.Subtle(
+                $"{ByteFormat.Format(compressedBytes)} of the scanned data is already compressed or sparse on disk.", 11.5));
+
+        // WIN-077: cloud-only bytes — freeing them is an Explorer
+        // "Free up space" action, never a deletion — show, don't run.
+        if (cloudOnlyBytes > 0)
+            healthBody.Children.Add(Ui.Subtle(
+                $"{ByteFormat.Format(cloudOnlyBytes)} lives only in the cloud (☁ rows) — " +
+                "evicting those files frees the space without deleting them.", 11.5));
+
+        var correction = Model.Snapshot?.HardLinkCorrection;
+        if (correction is { } c && !c.IsEmpty)
+        {
+            healthBody.Children.Add(Ui.Subtle(
+                $"{c.DuplicateNameCount:N0} names of hard-linked files counted once — " +
+                $"{ByteFormat.Format(c.AllocatedBytes)} of shared blocks", 11.5));
+        }
         Root.Children.Add(Ui.HeadedCard(Icons.Drive, Ui.Brush("AppAccentSoft"), Ui.Brush("AppAccent"),
             driveName, "Storage health", healthBody));
+
+        // WIN-027: the story line — a few sentences naming what matters
+        // most, ranked by the recommendation score.
+        if (Model.Snapshot is { } snap)
+        {
+            var stories = StorageNarrator.Stories(snap, 4);
+            var recs = StorageNarrator.Recommendations(snap, 3);
+            if (stories.Count > 0 || recs.Count > 0)
+            {
+                var body = new StackPanel();
+                foreach (var story in stories)
+                {
+                    var row = new DockPanel { Margin = new Thickness(0, 3, 0, 3) };
+                    var bytes = Ui.T(ByteFormat.Format(story.Bytes), 12, FontWeights.Medium,
+                        Ui.Brush("AppSubtle"));
+                    DockPanel.SetDock(bytes, Dock.Right);
+                    row.Children.Add(bytes);
+                    var title = new StackPanel();
+                    title.Children.Add(Ui.T(story.Title, 12.5, FontWeights.Medium));
+                    title.Children.Add(Ui.Faint(story.Detail));
+                    row.Children.Add(title);
+                    body.Children.Add(row);
+                }
+                if (recs.Count > 0)
+                {
+                    body.Children.Add(new Border { Height = 8 });
+                    foreach (var recommendation in recs)
+                        body.Children.Add(Ui.Subtle(
+                            $"→ {recommendation.Title} — {recommendation.Detail}", 11.5));
+                }
+                Root.Children.Add(Ui.HeadedCard(Icons.Overview, Ui.Hex("#FEF3DE"), Ui.Hex("#B45309"),
+                    "The story", "What this scan says matters most", body));
+            }
+        }
+
+        // Access-denied warning: without it a denied directory silently
+        // under-reports every total above it.
+        if (Model.DeniedDirectories is { Count: > 0 } denied && Model.RootPath is { } rootPath)
+        {
+            var examples = denied.Take(3).Select(id => tree.PathOf(id, rootPath)).ToList();
+            Root.Children.Add(Ui.WarningCard(
+                $"{denied.Count} folder{(denied.Count == 1 ? "" : "s")} couldn't be scanned",
+                "Access was denied — the totals above are missing what's inside. " +
+                "Run DiskMap as administrator to include everything." +
+                (examples.Count > 0 ? "\n" + string.Join("\n", examples) +
+                    (denied.Count > examples.Count ? $"\n…and {denied.Count - examples.Count} more" : "") : "")));
+        }
+
+        // Two columns: where the space goes | largest opportunities.
+        // WIN-028: "What grew this week" — the history comparison,
+        // honest about a non-week base and changed denied counts.
+        if (Model.HistoryComparison is { } growth && growth.Growers.Count > 0)
+        {
+            var body = new StackPanel();
+            string spanLabel = growth.IsWeek
+                ? $"since {growth.Since.LocalDateTime:MMM d}"
+                : $"since {growth.Since.LocalDateTime:MMM d} (not quite a week)";
+            body.Children.Add(Ui.Subtle(
+                $"{(growth.ScannedDelta >= 0 ? "+" : "−")}{ByteFormat.Format(Math.Abs(growth.ScannedDelta))} " +
+                $"in this scan {spanLabel}", 12));
+            if (growth.DeniedChanged)
+                body.Children.Add(Ui.Subtle(
+                    "The two scans read different folders — small deltas may be the reading, not the disk.", 11.5));
+            foreach (var g in growth.Growers)
+            {
+                var row = new DockPanel { Margin = new Thickness(0, 5, 0, 0) };
+                var delta = Ui.T($"+{ByteFormat.Format(g.Delta)}", 12, FontWeights.Medium,
+                    Ui.Brush("AppDanger"));
+                DockPanel.SetDock(delta, Dock.Right);
+                row.Children.Add(delta);
+                var name = Ui.T(g.Path.Replace('/', '\\'), 12, FontWeights.Medium);
+                name.Cursor = System.Windows.Input.Cursors.Hand;
+                string captured = g.Path;
+                name.MouseLeftButtonDown += (_, _) =>
+                {
+                    // The record stores root-relative names — rebuild the
+                    // path and resolve it in the live tree.
+                    if (Model.RootPath is { } root && Model.Tree is { } t)
+                    {
+                        string full = root.TrimEnd('\\') + "\\" + captured.Replace('/', '\\');
+                        var lookup = FileQuery.NodeAt(full, t, root);
+                        if (lookup.Kind == FileQuery.NodeLookupKind.Found)
+                            Model.Select(lookup.Id);
+                    }
+                };
+                row.Children.Add(name);
+                body.Children.Add(row);
+            }
+            Root.Children.Add(Ui.HeadedCard(Icons.Forgotten, Ui.Hex("#FEF3DE"), Ui.Hex("#B45309"),
+                "What grew this week", "Folders up at least 100 MB", body));
+        }
 
         // Two columns: where the space goes | largest opportunities.
         var columns = new Grid { Margin = new Thickness(0, 0, 0, 12) };
@@ -963,29 +1469,61 @@ public sealed class OverviewPage : ListPage
     private Border WhereGoing(FileTree tree, long[] totals, List<(int Id, long Size)> children)
     {
         var body = new StackPanel();
-        long max = children.Count > 0 ? Math.Max(1, children[0].Size) : 1;
-        foreach (var (id, size) in children.Take(7))
+        // Prefer the snapshot's exclusive categories (home/drive name
+        // split, or by file type for arbitrary folders) over raw children.
+        var cats = Model.Snapshot?.Categories;
+        if (cats is { Count: > 0 })
         {
-            var row = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var top = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
-            var sizeText = Ui.T(ByteFormat.Format(size), 11.5, FontWeights.Medium);
-            DockPanel.SetDock(sizeText, Dock.Right);
-            top.Children.Add(sizeText);
-            var name = Ui.T(tree.NameOf(id), 12.5, FontWeights.Medium);
-            name.Cursor = System.Windows.Input.Cursors.Hand;
-            int captured = id;
-            name.MouseLeftButtonDown += (_, _) => Model.Visualize(captured);
-            top.Children.Add(name);
-            row.Children.Add(top);
-            var bar = Ui.Bar((double)size / max, Ui.Hex(FileTypes.BadgeForegroundOf(
-                FileTypes.DominantKind(tree, totals, id))), 8, 0);
-            bar.Width = double.NaN;
-            row.Children.Add(bar);
-            body.Children.Add(row);
+            long max = Math.Max(1, cats[0].Bytes);
+            foreach (var cat in cats.Take(8))
+            {
+                var row = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
+                var top = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+                var sizeText = Ui.T(ByteFormat.Format(cat.Bytes), 11.5, FontWeights.Medium);
+                DockPanel.SetDock(sizeText, Dock.Right);
+                top.Children.Add(sizeText);
+                var name = Ui.T(cat.Title, 12.5, FontWeights.Medium);
+                if (cat.NodeId is { } nodeId)
+                {
+                    name.Cursor = System.Windows.Input.Cursors.Hand;
+                    name.MouseLeftButtonDown += (_, _) => Model.Visualize(nodeId);
+                }
+                top.Children.Add(name);
+                row.Children.Add(top);
+                var bar = Ui.Bar((double)cat.Bytes / max,
+                    cat.ColorHex is { } hex ? Ui.Hex(hex) : Ui.Brush("AppAccent"), 8, 0);
+                bar.Width = double.NaN;
+                row.Children.Add(bar);
+                body.Children.Add(row);
+            }
         }
-        if (children.Count == 0) body.Children.Add(Ui.Subtle("The scan is empty."));
+        else
+        {
+            long max = children.Count > 0 ? Math.Max(1, children[0].Size) : 1;
+            foreach (var (id, size) in children.Take(7))
+            {
+                var row = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
+                var top = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+                var sizeText = Ui.T(ByteFormat.Format(size), 11.5, FontWeights.Medium);
+                DockPanel.SetDock(sizeText, Dock.Right);
+                top.Children.Add(sizeText);
+                var name = Ui.T(tree.NameOf(id), 12.5, FontWeights.Medium);
+                name.Cursor = System.Windows.Input.Cursors.Hand;
+                int captured = id;
+                name.MouseLeftButtonDown += (_, _) => Model.Visualize(captured);
+                top.Children.Add(name);
+                row.Children.Add(top);
+                var bar = Ui.Bar((double)size / max, Ui.Hex(FileTypes.BadgeForegroundOf(
+                    FileTypes.DominantKind(tree, totals, id))), 8, 0);
+                bar.Width = double.NaN;
+                row.Children.Add(bar);
+                body.Children.Add(row);
+            }
+        }
+        if (body.Children.Count == 0) body.Children.Add(Ui.Subtle("The scan is empty."));
         return Ui.HeadedCard(Icons.BiggestFolders, Ui.Brush("AppAccentSoft"), Ui.Brush("AppAccent"),
-            "Where is your storage going?", "Largest folders in this scan", body,
+            "Where is your storage going?",
+            Model.Snapshot?.Mode == CategoryMode.Folder ? "By file type" : "By category", body,
             new Thickness(0));
     }
 

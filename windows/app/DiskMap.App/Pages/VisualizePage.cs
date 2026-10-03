@@ -41,12 +41,14 @@ public sealed class VisualizePage : ListPage
         Root.Margin = new Thickness(24, 20, 24, 20);
         Root.Children.Add(BuildHeader());
         Root.Children.Add(BuildSwitcher());
+        Root.Children.Add(BuildColoringBar());
         Root.Children.Add(Ui.Card(_breadcrumb, 10, new Thickness(0, 0, 0, 10)));
         Root.Children.Add(_headerCard);
         var chartCard = Ui.Card(_chartClip, 0, new Thickness(0, 0, 0, 10));
         _chartClip.Height = 420;
         _chartClip.ClipToBounds = true;
         Root.Children.Add(chartCard);
+        Root.Children.Add(_multiStrip);
         Root.Children.Add(BuildZoomBar());
         Root.Children.Add(_below);
     }
@@ -54,10 +56,56 @@ public sealed class VisualizePage : ListPage
     protected override void Refresh()
     {
         BuildSwitcherItems();
+        RefreshColoringBar();
+        RefreshLegend();
         RefreshBreadcrumb();
         RefreshHeaderCard();
         RefreshChart();
         RefreshBelow();
+        RefreshMultiStrip();
+    }
+
+    // ---- WIN-052: shared multi-select strip ----
+
+    private readonly StackPanel _multiStrip = new();
+
+    /// <summary>
+    /// Ctrl+click builds a set across every chart; this strip owns the
+    /// actions: count, coverage-deduped bytes, stage-all, clear (Esc).
+    /// </summary>
+    private void RefreshMultiStrip()
+    {
+        _multiStrip.Children.Clear();
+        var set = Model.MultiSelection;
+        if (set.Count == 0) return;
+        var bar = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+        var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        left.Children.Add(Ui.T(
+            $"{set.Count} selected · {ByteFormat.Format(Model.MultiSelectionBytes())} (a folder's contents count once)",
+            12, FontWeights.SemiBold));
+        var stage = Ui.Button("Add to Cleanup", Icons.Add, Ui.ButtonStyle.Dark, () =>
+        {
+            int staged = 0;
+            foreach (int id in set.ToList())
+                if (Model.Stage(id, "visualize multi-select")) staged++;
+            Model.ClearMulti();
+            if (staged > 0) Model.ShowPage("Cleanup");
+        });
+        stage.Margin = new Thickness(10, 0, 0, 0);
+        var copy = Ui.Button("Copy paths", Icons.Copy, Ui.ButtonStyle.Outline, () =>
+        {
+            var paths = set.Select(id => TreeExporter.QuotePathIfNeeded(Model.PathOf(id)));
+            Clipboard.SetText(string.Join(Environment.NewLine, paths));
+        });
+        copy.Margin = new Thickness(6, 0, 0, 0);
+        var clear = Ui.Button("Clear", Icons.Cancel, Ui.ButtonStyle.Outline, () => Model.ClearMulti());
+        clear.Margin = new Thickness(6, 0, 0, 0);
+        left.Children.Add(stage);
+        left.Children.Add(copy);
+        left.Children.Add(clear);
+        DockPanel.SetDock(left, Dock.Left);
+        bar.Children.Add(left);
+        _multiStrip.Children.Add(Ui.Card(bar, 8));
     }
 
     private DockPanel BuildHeader()
@@ -88,6 +136,110 @@ public sealed class VisualizePage : ListPage
         header.Children.Add(titles);
         _statusText = statusText;
         return header;
+    }
+
+    /// <summary>
+    /// WIN-048: coloring mode pills + the depth slider (slice-collapse
+    /// threshold). Both repaint the chart through model properties.
+    /// </summary>
+    private UIElement BuildColoringBar()
+    {
+        var bar = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+
+        var depth = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+        depth.Children.Add(Ui.Subtle("Depth ", 11.5));
+        var slider = new Slider
+        {
+            Minimum = 0, Maximum = 4, Value = 3, Width = 90,
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = "How deep the chart draws: finer shows smaller folders",
+        };
+        var depthLabel = Ui.Subtle("0.5%", 11.5);
+        depthLabel.Margin = new Thickness(6, 0, 0, 0);
+        var fractions = new[] { 0.0001, 0.0005, 0.001, ChartLayout.OtherFraction, 0.02 };
+        slider.ValueChanged += (_, e) =>
+        {
+            int i = (int)Math.Round(e.NewValue);
+            Model.ChartDepth = fractions[Math.Clamp(i, 0, fractions.Length - 1)];
+            depthLabel.Text = $"{fractions[Math.Clamp(i, 0, fractions.Length - 1)] * 100:0.##}%";
+        };
+        depth.Children.Add(slider);
+        depth.Children.Add(depthLabel);
+        DockPanel.SetDock(depth, Dock.Right);
+        bar.Children.Add(depth);
+
+        _coloringRow = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+        bar.Children.Add(_coloringRow);
+
+        // WIN-050: a legend explains the active coloring — age buckets or
+        // "type/folder" semantic labels; gray always means "Other".
+        _legendRow = new WrapPanel { Margin = new Thickness(0, 4, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        var legendHost = new DockPanel();
+        legendHost.Children.Add(_legendRow);
+        var wrap = new StackPanel();
+        wrap.Children.Add(bar);
+        wrap.Children.Add(_legendRow);
+        return wrap;
+    }
+
+    private WrapPanel? _legendRow;
+
+    /// <summary>Repaint the legend to explain whatever coloring is on.</summary>
+    private void RefreshLegend()
+    {
+        if (_legendRow is null) return;
+        _legendRow.Children.Clear();
+        switch (Model.ColoringMode)
+        {
+            case "age":
+                foreach (var (bucket, label) in new[]
+                {
+                    (Core.AgeBucket.Under30, "< 30d"),
+                    (Core.AgeBucket.Days30To90, "30–90d"),
+                    (Core.AgeBucket.Days90To365, "90d–1y"),
+                    (Core.AgeBucket.OneToTwoYears, "1–2y"),
+                    (Core.AgeBucket.OverTwoYears, "> 2y"),
+                })
+                {
+                    _legendRow.Children.Add(LegendChip(NodeColors.AgeBucket(bucket), label));
+                }
+                break;
+            case "type":
+                _legendRow.Children.Add(Ui.Subtle("Tile color = dominant file type; folders keep their own hue. ", 11));
+                break;
+            default:
+                _legendRow.Children.Add(Ui.Subtle("Tile color = folder hue (stable per folder). ", 11));
+                break;
+        }
+        _legendRow.Children.Add(LegendChip(NodeColors.OtherBrush, "Other"));
+    }
+
+    private static UIElement LegendChip(Brush brush, string label)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 12, 2) };
+        row.Children.Add(new Border
+        {
+            Width = 10, Height = 10, CornerRadius = new CornerRadius(2),
+            Background = brush, Margin = new Thickness(0, 0, 5, 0),
+        });
+        row.Children.Add(Ui.Subtle(label, 11));
+        return row;
+    }
+
+    private WrapPanel? _coloringRow;
+
+    private void RefreshColoringBar()
+    {
+        if (_coloringRow is null) return;
+        _coloringRow.Children.Clear();
+        _coloringRow.Children.Add(Ui.Subtle("Color by ", 11.5));
+        foreach (var (id, label) in new[] { ("type", "Type"), ("folder", "Folder"), ("age", "Age") })
+        {
+            var pill = Ui.Pill(label, Model.ColoringMode == id,
+                () => { Model.ColoringMode = id; RefreshLegend(); });
+            pill.Margin = new Thickness(0, 0, 4, 0);
+            _coloringRow.Children.Add(pill);
+        }
     }
 
     private TextBlock? _statusText;

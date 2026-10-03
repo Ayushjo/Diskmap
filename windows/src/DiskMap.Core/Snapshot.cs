@@ -15,16 +15,24 @@ public readonly record struct SnapshotChange(string Path, long Before, long Afte
 /// packed arrays plus an interned name table, and SQLite would be a second
 /// data model for the same bytes.
 ///
-/// The file is little-endian and byte-compatible with the macOS DMAP v1
-/// format: magic "DMAP", version UInt32 1, timestamp seconds, root path,
-/// node count, name-table count, then the packed arrays (nameIndex,
-/// parent, firstChild, nextSibling, logicalSize, allocatedSize,
-/// modifiedDay, isDirectory flags, node flags) and the name table.
+/// The file is little-endian and byte-compatible with the macOS DMAP
+/// format: magic "DMAP", version UInt32, timestamp seconds, root path,
+/// node count, name-table count, then the packed arrays and the name
+/// table. Version history (shared with the macOS codec):
+///   v1: nameIndex/parent/firstChild/nextSibling/logical/allocated/
+///       modifiedDay/isDirectory/flags
+///   v2: + createdDay (Int32 per node)
+///   v3: + fileID (UInt64 per node)
+///   v4: + sharing-mode byte + sharing table (APFS clone rows). Windows
+///       writes mode 0 and zero rows — block-clone accounting (ReFS) is
+///       opt-in — but reads real v4 files.
+/// Older files decode with createdDay/fileID 0 ("unknown"); the hard-link
+/// correction treats unknown as "nothing to correct".
 /// </summary>
 public static class SnapshotCodec
 {
     public static readonly byte[] Magic = "DMAP"u8.ToArray();
-    public const uint Version = 1;
+    public const uint Version = 4;
 
     public static byte[] Encode(DiskSnapshot snapshot)
     {
@@ -43,8 +51,13 @@ public static class SnapshotCodec
         writer.I64s(tree.LogicalSize);
         writer.I64s(tree.AllocatedSize);
         writer.I32s(tree.ModifiedDay);
+        writer.I32s(tree.CreatedDay);
         writer.Bytes(tree.IsDirectory.Select(b => (byte)(b ? 1 : 0)).ToArray());
         writer.Bytes(tree.Flags);
+        writer.I64s(tree.FileId);
+        // v4 sharing table: Windows has no APFS clone facts — mode 0, no rows.
+        writer.Write([0]);
+        writer.I32(0);
         foreach (var name in tree.NameTable) writer.String(name);
         return writer.ToArray();
     }
@@ -53,7 +66,8 @@ public static class SnapshotCodec
     {
         var reader = new Reader(data);
         if (!reader.Bytes(4).Span.SequenceEqual(Magic)) throw new SnapshotException(SnapshotError.BadMagic);
-        if (reader.U32() != Version) throw new SnapshotException(SnapshotError.BadVersion);
+        uint fileVersion = reader.U32();
+        if (fileVersion < 1 || fileVersion > Version) throw new SnapshotException(SnapshotError.BadVersion);
         var capturedAt = DateTimeOffset.FromUnixTimeSeconds(reader.I64());
         string rootPath = reader.String();
         int count = reader.I32();
@@ -67,14 +81,29 @@ public static class SnapshotCodec
         long[] logicalSize = reader.I64s(count);
         long[] allocatedSize = reader.I64s(count);
         int[] modifiedDay = reader.I32s(count);
+        int[] createdDay = fileVersion >= 2 ? reader.I32s(count) : new int[count];
         bool[] isDirectory = reader.U8s(count).Select(b => b != 0).ToArray();
         byte[] flags = reader.U8s(count);
+        long[] fileId = fileVersion >= 3 ? reader.I64s(count) : new long[count];
+        if (fileVersion >= 4)
+        {
+            // APFS sharing table: read and discard — on Windows the only
+            // block clones are ReFS, which macOS never writes. The hard-
+            // link flags/fileIDs survive either way.
+            _ = reader.U8s(1)[0];
+            int rows = reader.I32();
+            if (rows < 0 || rows > count) throw new SnapshotException(SnapshotError.Corrupt);
+            _ = reader.I32s(rows);   // node ids
+            _ = reader.I64s(rows);   // clone ids
+            _ = reader.I64s(rows);   // private bytes
+            _ = reader.I32s(rows);   // refcounts
+        }
         var nameTable = new List<string>(nameCount);
         for (int i = 0; i < nameCount; i++) nameTable.Add(reader.String());
 
         var tree = new FileTree();
         if (!tree.ReplacePacked(nameTable, nameIndex, parent, firstChild, nextSibling,
-                logicalSize, allocatedSize, modifiedDay, isDirectory, flags))
+                logicalSize, allocatedSize, modifiedDay, createdDay, isDirectory, flags, fileId))
         {
             throw new SnapshotException(SnapshotError.Corrupt);
         }
@@ -188,7 +217,7 @@ public static class SnapshotStore
         if (read < 20 || !data.Slice(0, 4).Span.SequenceEqual(SnapshotCodec.Magic))
             throw new SnapshotException(SnapshotError.BadMagic);
         uint version = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(4, 4).Span);
-        if (version != SnapshotCodec.Version) throw new SnapshotException(SnapshotError.BadVersion);
+        if (version < 1 || version > SnapshotCodec.Version) throw new SnapshotException(SnapshotError.BadVersion);
         var capturedAt = DateTimeOffset.FromUnixTimeSeconds(BinaryPrimitives.ReadInt64LittleEndian(data.Slice(8, 8).Span));
         uint len = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(16, 4).Span);
         if (len > int.MaxValue || 20 + len > read) throw new SnapshotException(SnapshotError.Corrupt);

@@ -38,7 +38,7 @@ public sealed class MindMapControl : FrameworkElement
         var tree = model.Tree;
         if (tree is null || model.Totals.Length == 0) return;
 
-        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals);
+        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals, model.ChartDepth);
         long total = Math.Max(1, model.Totals[model.ZoomedNode]);
 
         double cy = ActualHeight / 2;
@@ -47,14 +47,15 @@ public sealed class MindMapControl : FrameworkElement
         DrawLabel(dc, rootRect, tree.NameOf(model.ZoomedNode), model.Totals[model.ZoomedNode]);
         _hit.Add((model.ZoomedNode, rootRect));
 
-        DrawChildren(dc, slices, total, 20 + ColumnWidth + HGap, cy, 20 + ColumnWidth + ColumnWidth + HGap, tree, depth: 1, availableHeight: ActualHeight - 40, parentX: 20 + ColumnWidth, parentY: cy);
+        DrawChildren(dc, slices, total, 20 + ColumnWidth + HGap, cy, 20 + ColumnWidth + ColumnWidth + HGap, tree, depth: 1, availableHeight: ActualHeight - 40, parentX: 20 + ColumnWidth, parentY: cy, parentId: model.ZoomedNode);
     }
 
     private void DrawChildren(DrawingContext dc, List<ChartSlice> slices, long total,
         double x, double centerY, double nextX, FileTree tree,
-        int depth, double availableHeight, double parentX, double parentY)
+        int depth, double availableHeight, double parentX, double parentY, int parentId)
     {
         if (depth > MaxDepth || slices.Count == 0) return;
+        var model = ScanModel.Shared;
         double usable = Math.Max(NodeHeight, availableHeight - (slices.Count - 1) * VGap);
         double y = centerY - usable / 2;
         foreach (var slice in slices)
@@ -72,23 +73,42 @@ public sealed class MindMapControl : FrameworkElement
             dc.DrawLine(pen, new Point(parentX + HGap / 2, childMidY), new Point(rect.X, childMidY));
 
             if (slice.NodeID is { } nid)
-                DrawLabel(dc, rect, tree.NameOf(nid), slice.Size);
-            _hit.Add((slice.NodeID, rect));
+            {
+                // v2 labels: folders announce the real total + item count.
+                int items = tree.IsDirectory[nid] && nid < model.Counts.Files.Length
+                    ? model.Counts.Files[nid] + model.Counts.Folders[nid] : 0;
+                string label = items > 0
+                    ? $"{tree.NameOf(nid)} — {ByteFormat.Format(slice.Size)} · {items:N0} items"
+                    : $"{tree.NameOf(nid)} — {ByteFormat.Format(slice.Size)}";
+                DrawLabelText(dc, rect, label);
+                _hit.Add((nid, rect));
+            }
+            else
+            {
+                // WIN-049: the collapsed remainder is a "+N more — open"
+                // card that drills into its parent, not a dead tile.
+                DrawLabelText(dc, rect,
+                    $"+{slice.HiddenCount:N0} more · {ByteFormat.Format(slice.Size)} — open");
+                _hit.Add((parentId, rect));
+            }
 
-            if (slice.Children.Count > 0)
+            if (slice.Children.Count > 0 && slice.NodeID is { } pid)
             {
                 DrawChildren(dc, slice.Children, Math.Max(1, slice.Size),
                     nextX, childMidY, nextX + ColumnWidth + HGap, tree,
-                    depth + 1, h, rect.Right, childMidY);
+                    depth + 1, h, rect.Right, childMidY, pid);
             }
             y += h + VGap;
         }
     }
 
     private void DrawLabel(DrawingContext dc, Rect rect, string name, long size)
+        => DrawLabelText(dc, rect, $"{name} — {ByteFormat.Format(size)}");
+
+    private void DrawLabelText(DrawingContext dc, Rect rect, string textContent)
     {
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var text = new FormattedText($"{name} — {ByteFormat.Format(size)}",
+        var text = new FormattedText(textContent,
             System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
             new Typeface("Segoe UI"), 11, Brushes.White, dpi);
         text.MaxTextWidth = Math.Max(10, rect.Width - 8);

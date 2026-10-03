@@ -43,7 +43,7 @@ public sealed class FlameControl : FrameworkElement
         dc.DrawRectangle(NodeColors.BrushFor(model.ZoomedNode), NodeColors.StrokePen, rootRect);
         DrawLabel(dc, rootRect, tree.NameOf(model.ZoomedNode), rootSize);
 
-        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals);
+        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals, model.ChartDepth);
         DrawRow(dc, slices, rootSize, 0, width, 1, tree);
     }
 

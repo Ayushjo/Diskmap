@@ -20,16 +20,14 @@ public static class Theme
             "AppsUseLightTheme", 1) as int?) == 0;
 
     /// <summary>
-    /// The app currently renders the light reference design on all
-    /// systems; flip this to <see cref="IsDark"/> once dark mode is
-    /// designed and tested.
+    /// WIN-058: dark mode is live — the user's Appearance setting
+    /// ("system" follows the OS) decides; an explicit override wins.
     /// </summary>
-    private static bool DarkEnabled => false;
+    public static void Apply() => Apply(AppSettings.Load().WantsDark);
 
-    public static void Apply()
+    public static void Apply(bool dark)
     {
         var r = Application.Current.Resources;
-        bool dark = DarkEnabled && IsDark;
 
         // Surfaces
         Set(r, "AppBackground", dark ? "#FF1C1C1E" : "#FFFFFFFF");

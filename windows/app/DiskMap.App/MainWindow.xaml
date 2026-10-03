@@ -4,7 +4,8 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="DiskMap" Height="780" Width="1280" MinHeight="500" MinWidth="900">
+        Title="DiskMap" Height="780" Width="1280" MinHeight="500" MinWidth="900"
+        AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop">
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="236" />
@@ -56,6 +57,7 @@
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
@@ -67,6 +69,11 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
+                    <!-- WIN-056: window menu — File / Go, the macOS menu bar's duties. -->
+                    <Button x:Name="MenuButton" Grid.Column="0" Content="☰  DiskMap"
+                            HorizontalAlignment="Left" Padding="10,5" Cursor="Hand"
+                            Background="Transparent" BorderThickness="0" FontSize="12.5"
+                            Click="MenuButton_Click" />
                     <ContentControl x:Name="SearchHost" Grid.Column="1" />
                     <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
                         <ContentControl x:Name="CleanupButtonHost" />
@@ -75,7 +82,24 @@
                 </Grid>
             </Border>
 
-            <Grid Grid.Row="1">
+            <!-- Live scan strip: items found, rate, current folder, cancel. -->
+            <Border x:Name="ScanBanner" Grid.Row="1" Visibility="Collapsed"
+                    BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="0,0,0,1"
+                    Padding="16,6" Background="{DynamicResource AppInfoBg}">
+                <DockPanel>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock x:Name="ScanBannerText" FontSize="11.5"
+                                   Foreground="{DynamicResource AppSubtle}" />
+                        <ItemsControl x:Name="ScanTopLevels" Margin="0,4,0,0" />
+                    </StackPanel>
+                    <ContentControl x:Name="ScanCancelHost" DockPanel.Dock="Right" />
+                </DockPanel>
+            </Border>
+
+            <Grid Grid.Row="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="296" />
@@ -87,5 +111,14 @@
                 </Border>
             </Grid>
         </Grid>
+
+        <!-- WIN-063: transient confirmations — stage / commit / put-back. -->
+        <Border x:Name="ToastHost" Grid.ColumnSpan="2" Visibility="Collapsed"
+                HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,54,0,0"
+                Background="{DynamicResource AppForeground}" CornerRadius="8"
+                Padding="14,8" Panel.ZIndex="10"
+                Effect="{x:Null}">
+            <TextBlock x:Name="ToastText" Foreground="{DynamicResource AppCard}" FontSize="12.5" />
+        </Border>
     </Grid>
 </Window>

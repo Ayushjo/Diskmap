@@ -49,7 +49,7 @@ namespace DiskMap.Core;
 ///   @12 (0x0001 compressed, 0x8000 sparse). Resident: value length @16,
 ///   value offset @20. Non-resident: lowest VCN @16, run list offset @32,
 ///   allocated @40, data size @48, compressed size @64.
-/// - $STANDARD_INFORMATION (0x10): modified @8, file attributes @32.
+/// - $STANDARD_INFORMATION (0x10): created @0, modified @8, file attributes @32.
 /// - $FILE_NAME (0x30): parent @0 (low 48 bits = record), modified @16,
 ///   allocated @40, size @48, attributes @56, name length @64, namespace
 ///   @65 (0 POSIX, 1 Win32, 2 DOS, 3 Win32+DOS), UTF-16 name @66.
@@ -83,6 +83,7 @@ internal static class MftScanner
         public int NameOffset;  // primary name, in pool frn / RecordsPerChunk
         public uint Attributes;
         public int Day;
+        public int CreatedDay;
         public byte NameLength; // 0 when only extension records name it
         public bool Live;       // an in-use base record was parsed here
         public bool HasData;    // sizes came from the unnamed $DATA, not $FILE_NAME
@@ -91,7 +92,9 @@ internal static class MftScanner
     /// <summary>A name beyond the record's primary one: a hard link. Its chars sit in pool <see cref="Pool"/>.</summary>
     private readonly record struct Link(int Frn, int Parent, int Pool, int NameOffset, byte NameLength);
 
-    public static WalkResult? Walk(string root, IProgress<int>? progress, out string? whyNot)
+    public static WalkResult? Walk(
+        string root, IProgress<ScanEngine.ScanProgress>? progress,
+        CancellationToken cancellationToken, out string? whyNot)
     {
         string? volumeRoot = Path.GetPathRoot(Path.GetFullPath(root));
         whyNot = "not a local drive";
@@ -125,19 +128,19 @@ internal static class MftScanner
         var links = new Link[chunks][];
         var extensionSizes = new ConcurrentDictionary<int, (long Logical, long Allocated)>();
         whyNot = "$MFT read failed";
-        if (!ReadAllRecords(volumePath, extents, recordSize, clusterSize, records, pools, links, extensionSizes, progress))
+        if (!ReadAllRecords(volumePath, extents, recordSize, clusterSize, records, pools, links, extensionSizes, progress, cancellationToken))
             return null;
 
         whyNot = null;
-        return BuildTree(root, (int)rootFrn, records, pools, links, extensionSizes, progress);
+        return BuildTree(root, (int)rootFrn, records, pools, links, extensionSizes, progress, cancellationToken);
     }
 
-    private static SafeFileHandle OpenVolume(string volumePath) => Win32.CreateFileW(
+    internal static SafeFileHandle OpenVolume(string volumePath) => Win32.CreateFileW(
         volumePath, Win32.GENERIC_READ,
         Win32.FILE_SHARE_READ | Win32.FILE_SHARE_WRITE | Win32.FILE_SHARE_DELETE,
         IntPtr.Zero, Win32.OPEN_EXISTING, 0, IntPtr.Zero);
 
-    private static unsafe bool GetVolumeData(SafeFileHandle volume, out Win32.NTFS_VOLUME_DATA_BUFFER data)
+    internal static unsafe bool GetVolumeData(SafeFileHandle volume, out Win32.NTFS_VOLUME_DATA_BUFFER data)
     {
         fixed (void* outBuf = &data)
         {
@@ -166,7 +169,7 @@ internal static class MftScanner
     /// fragmented $MFT continues that list in extension records named by
     /// record 0's $ATTRIBUTE_LIST. Null unless the runs cover the valid MFT.
     /// </summary>
-    private static List<Extent>? ReadMftExtents(
+    internal static List<Extent>? ReadMftExtents(
         SafeFileHandle volume, int recordSize, long clusterSize, long startLcn, long validBytes)
     {
         var record = AlignedBuffer(recordSize);
@@ -200,6 +203,116 @@ internal static class MftScanner
     }
 
     private static long Covered(List<Extent> extents) => extents.Sum(e => e.Clusters);
+
+    /// <summary>
+    /// One FILE record at <paramref name="frn"/>, decoded (fixups undone).
+    /// Null on a torn/free slot. Used by the incremental rescan to re-read
+    /// only the records the journal touched.
+    /// </summary>
+    internal static byte[]? ReadRecordAt(
+        SafeFileHandle volume, List<Extent> extents, int recordSize, long clusterSize, long frn)
+    {
+        long offset = frn * recordSize;
+        if (VolumeOffset(extents, offset, recordSize, clusterSize) is not { } diskOffset)
+            return null;
+        var record = new byte[recordSize];
+        return ReadExact(volume, diskOffset, record) && PrepareRecord(record) ? record : null;
+    }
+
+    /// <summary>
+    /// One record's full current state — the shape the incremental rescan
+    /// applies to the baseline tree.
+    /// </summary>
+    internal readonly record struct EntryInfo(
+        long ParentFrn, string Name, bool IsDirectory, uint Attributes,
+        long Logical, long Allocated, int Day, int CreatedDay,
+        /// <summary>Extra $FILE_NAME identities (hard links): parent + name.</summary>
+        List<(long ParentFrn, string Name)> Links);
+
+    /// <summary>
+    /// Parses a prepared record into <see cref="EntryInfo"/>. False for a
+    /// free slot (in-use bit clear) or a non-base record — a changed FRN
+    /// that no longer parses means the file is gone.
+    /// </summary>
+    internal static bool ParseEntry(Span<byte> rec, int recordSize, out EntryInfo info)
+    {
+        info = default;
+        if (rec.Length < 66 || U32(rec, 0) != FileSignature) return false;
+        if ((U16(rec, 22) & 1) == 0) return false;          // free slot
+        bool isDirectory = (U16(rec, 22) & 2) != 0;
+        long baseRecord = I64(rec, 32) & RecordMask;
+        if (baseRecord != 0) return false;                  // extension record
+
+        long modified = 0, created = 0, logical = 0, allocated = 0;
+        uint attributes = 0;
+        bool hasInfo = false, hasData = false;
+        var fileNames = new List<int>();
+        int primary = -1;
+        int pos = U16(rec, 20);
+        while (TryNextAttribute(rec, ref pos, out uint type, out var attr))
+        {
+            if (type == AttributeStandardInformation)
+            {
+                var value = ResidentValue(attr);
+                if (value.Length >= 36)
+                {
+                    created = I64(value, 0);
+                    modified = I64(value, 8);
+                    attributes = U32(value, 32);
+                    hasInfo = true;
+                }
+            }
+            else if (type == AttributeFileName)
+            {
+                var value = ResidentValue(attr);
+                int off = pos - attr.Length + U16(attr, 20);
+                if (value.Length < 66 || value[65] == 2 || 66 + value[64] * 2 > value.Length)
+                    continue;
+                if (primary < 0 || (value[65] != 0 && rec[fileNames[primary] + 65] == 0))
+                    primary = fileNames.Count;
+                fileNames.Add(off);
+            }
+            else if (type == AttributeData && attr[9] == 0)
+            {
+                if (attr[8] == 0 && attr.Length >= 24)
+                {
+                    logical = U32(attr, 16);
+                    allocated = 0;
+                    hasData = true;
+                }
+                else if (attr[8] != 0 && attr.Length >= 64 && I64(attr, 16) == 0)
+                {
+                    logical = I64(attr, 48);
+                    allocated = (U16(attr, 12) & 0x8001) != 0 && attr.Length >= 72
+                        ? I64(attr, 64) : I64(attr, 40);
+                    hasData = true;
+                }
+            }
+        }
+        if (primary < 0) return false;
+        int fileName = fileNames[primary];
+        string name = System.Text.Encoding.Unicode.GetString(
+            rec.Slice(fileName + 66, rec[fileName + 64] * 2));
+        long parent = I64(rec, fileName) & RecordMask;
+        if (!hasInfo) { attributes = U32(rec, fileName + 56); modified = I64(rec, fileName + 16); }
+        if (!hasData) { allocated = I64(rec, fileName + 40); logical = I64(rec, fileName + 48); }
+        if (isDirectory) attributes |= Win32.FILE_ATTRIBUTE_DIRECTORY;
+
+        List<(long, string)>? links = null;
+        for (int i = 0; i < fileNames.Count; i++)
+        {
+            if (i == primary) continue;
+            int off = fileNames[i];
+            long linkParent = I64(rec, off) & RecordMask;
+            string linkName = System.Text.Encoding.Unicode.GetString(
+                rec.Slice(off + 66, rec[off + 64] * 2));
+            (links ??= []).Add((linkParent, linkName));
+        }
+        info = new EntryInfo(parent, name, isDirectory, attributes, logical, allocated,
+            Win32.FileTimeToModifiedDay(modified), Win32.FileTimeToModifiedDay(created),
+            links ?? []);
+        return true;
+    }
 
     private static long? VolumeOffset(List<Extent> extents, long streamOffset, int length, long clusterSize)
     {
@@ -269,10 +382,11 @@ internal static class MftScanner
         string volumePath, List<Extent> extents, int recordSize, long clusterSize,
         Record[] records, char[][] pools, Link[][] links,
         ConcurrentDictionary<int, (long Logical, long Allocated)> extensionSizes,
-        IProgress<int>? progress)
+        IProgress<ScanEngine.ScanProgress>? progress, CancellationToken cancellationToken)
     {
         int next = -1, failed = 0;
         long parsed = 0;
+        long startedTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         var workers = new Task[Math.Clamp(Environment.ProcessorCount, 2, 16)];
         for (int w = 0; w < workers.Length; w++)
         {
@@ -285,7 +399,9 @@ internal static class MftScanner
                 var names = new char[RecordsPerChunk * recordSize / 2];
                 var extra = new List<Link>();
                 int chunk;
-                while (Volatile.Read(ref failed) == 0 && (chunk = Interlocked.Increment(ref next)) < pools.Length)
+                while (Volatile.Read(ref failed) == 0
+                    && !cancellationToken.IsCancellationRequested
+                    && (chunk = Interlocked.Increment(ref next)) < pools.Length)
                 {
                     long first = (long)chunk * RecordsPerChunk;
                     int count = (int)Math.Min(RecordsPerChunk, records.Length - first);
@@ -307,11 +423,18 @@ internal static class MftScanner
                     links[chunk] = extra.Count == 0 ? [] : [.. extra];
 
                     long total = Interlocked.Add(ref parsed, count);
-                    if (total / 262_144 != (total - count) / 262_144) progress?.Report((int)total);
+                    if (total / 262_144 != (total - count) / 262_144)
+                    {
+                        double seconds = System.Diagnostics.Stopwatch
+                            .GetElapsedTime(startedTicks).TotalSeconds;
+                        progress?.Report(new ScanEngine.ScanProgress(
+                            (int)total, 0, seconds > 0 ? total / seconds : 0, "", []));
+                    }
                 }
             });
         }
         Task.WaitAll(workers);
+        cancellationToken.ThrowIfCancellationRequested();
         return failed == 0;
     }
 
@@ -415,7 +538,7 @@ internal static class MftScanner
         long baseRecord = I64(rec, 32) & RecordMask;
 
         uint attributes = 0;
-        long modified = 0, logical = 0, allocated = 0;
+        long modified = 0, created = 0, logical = 0, allocated = 0;
         bool hasInfo = false, hasData = false;
         // Every non-DOS $FILE_NAME is a hard link: offsets of their values in rec.
         Span<int> fileNames = stackalloc int[16];
@@ -429,6 +552,7 @@ internal static class MftScanner
                 var value = ResidentValue(attr);
                 if (value.Length >= 36)
                 {
+                    created = I64(value, 0);
                     modified = I64(value, 8);
                     attributes = U32(value, 32);
                     hasInfo = true;
@@ -495,6 +619,7 @@ internal static class MftScanner
             NameLength = (byte)nameLength,
             Attributes = attributes,
             Day = Win32.FileTimeToModifiedDay(modified),
+            CreatedDay = Win32.FileTimeToModifiedDay(created),
             Live = true,
             HasData = hasData,
         };
@@ -543,14 +668,20 @@ internal static class MftScanner
     /// Rebuilds the FileTree under rootFrn from a CSR (compressed sparse
     /// row) children index. BFS order keeps every child id above its
     /// parent's, which RollUpSizes relies on.
+    ///
+    /// Hard links follow the macOS rule: every name of a multiply-linked
+    /// file is a node carrying its full recorded size and the HardLink
+    /// flag; the rollup's suppression — lowest root-relative path keeps
+    /// the bytes — charges them once, stably across scans.
     /// </summary>
     private static WalkResult BuildTree(
         string rootPath, int rootFrn, Record[] records, char[][] pools, Link[][] linkChunks,
-        ConcurrentDictionary<int, (long Logical, long Allocated)> extensionSizes, IProgress<int>? progress)
+        ConcurrentDictionary<int, (long Logical, long Allocated)> extensionSizes,
+        IProgress<ScanEngine.ScanProgress>? progress, CancellationToken cancellationToken)
     {
         int n = records.Length;
         var links = linkChunks.SelectMany(chunk => chunk).Where(l => IsChild(records, l.Frn, l.Parent)).ToArray();
-        // 0: one name. 1: hard-linked, bytes not charged yet. 2: charged.
+        // 0: one name. 1: the file has more names — flag every name HardLink.
         var linkState = new byte[n];
         foreach (var link in links) linkState[link.Frn] = 1;
 
@@ -571,13 +702,34 @@ internal static class MftScanner
         int itemCount = 0, notDownloaded = 0;
         ulong peak = ProcessMemory.Current()?.ResidentBytes ?? 0;
         var queue = new Queue<(int Frn, int Node)>();
+        // Top-level attribution for progress: the node id directly under
+        // the root that owns each subtree, parallel to the tree's ids.
+        var topAncestor = new List<int> { 0 };
+        var topBytes = new Dictionary<int, long>();
+        long lastReportTicks = 0;
+        long startedTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         queue.Enqueue((rootFrn, tree.AddNode(
             Win32Scanner.RootName(rootPath).AsSpan(), parentId: -1, isDirectory: true,
             logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)));
 
+        void ReportProgress()
+        {
+            if (progress is null) return;
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (now - lastReportTicks < System.Diagnostics.Stopwatch.Frequency / 4) return;
+            lastReportTicks = now;
+            var top = topBytes.OrderByDescending(kv => kv.Value).Take(8)
+                .Select(kv => (tree.NameOf(kv.Key), kv.Value)).ToList();
+            double seconds = System.Diagnostics.Stopwatch.GetElapsedTime(startedTicks).TotalSeconds;
+            progress.Report(new ScanEngine.ScanProgress(
+                itemCount, topBytes.Values.Sum(), seconds > 0 ? itemCount / seconds : 0,
+                "", top));
+        }
+
         // The count guard stops a corrupt parent cycle from looping forever.
         while (queue.TryDequeue(out var dir) && tree.Count <= children.Length + 1)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             for (int i = start[dir.Frn]; i < start[dir.Frn + 1]; i++)
             {
                 int entry = children[i];
@@ -597,13 +749,7 @@ internal static class MftScanner
                     flags |= NodeFlags.NotDownloaded;
                     notDownloaded++;
                 }
-                bool alreadyCharged = false;
-                if (linkState[frn] != 0)
-                {
-                    flags |= NodeFlags.HardLink;
-                    alreadyCharged = linkState[frn] == 2;
-                    linkState[frn] = 2;
-                }
+                if (linkState[frn] != 0) flags |= NodeFlags.HardLink;
 
                 var name = entry >= 0
                     ? pools[frn / RecordsPerChunk].AsSpan(rec.NameOffset, rec.NameLength)
@@ -611,15 +757,21 @@ internal static class MftScanner
                 int id = tree.AddNode(
                     name, parentId: dir.Node,
                     isDirectory: isDirectory,
-                    logicalSize: alreadyCharged ? 0 : decision.LogicalSize,
-                    allocatedSize: alreadyCharged ? 0 : decision.AllocatedSize,
+                    logicalSize: decision.LogicalSize,
+                    allocatedSize: decision.AllocatedSize,
                     modifiedDaysSinceEpoch: rec.Day,
-                    flags: flags);
+                    flags: flags,
+                    createdDaysSinceEpoch: rec.CreatedDay,
+                    fileId: frn);
+                int top = dir.Node == 0 ? id : topAncestor[dir.Node];
+                topAncestor.Add(top);
+                if (!isDirectory)
+                    topBytes[top] = topBytes.GetValueOrDefault(top) + decision.AllocatedSize;
                 if (isDirectory && !decision.SkipDescendants) queue.Enqueue((frn, id));
 
-                if (++itemCount % 262_144 == 0)
+                if (++itemCount % 65_536 == 0)
                 {
-                    progress?.Report(itemCount);
+                    ReportProgress();
                     if (ProcessMemory.Current() is { } mem && mem.ResidentBytes > peak) peak = mem.ResidentBytes;
                 }
             }

@@ -12,6 +12,19 @@ namespace DiskMap.Core;
 /// </summary>
 public sealed class ScanEngine
 {
+    /// <summary>
+    /// A live scan report, emitted roughly every 250 ms while walking plus
+    /// once at the end. <see cref="TopLevel"/> keeps running per-top-level
+    /// on-disk totals — each job knows its ancestor under the root, so
+    /// attribution is O(1) per entry.
+    /// </summary>
+    public sealed record ScanProgress(
+        int Items,
+        long Bytes,
+        double ItemsPerSecond,
+        string CurrentFolder,
+        List<(string Name, long Bytes)> TopLevel);
+
     public sealed class Result
     {
         public required FileTree Tree { get; init; }
@@ -26,6 +39,18 @@ public sealed class ScanEngine
         public required string Backend { get; init; }
         /// <summary>Why the walk ran instead of the MFT ("needs administrator", …); null when that was by design.</summary>
         public string? FallbackReason { get; init; }
+        /// <summary>
+        /// Node ids of directories that refused to list (access denied):
+        /// every total above them is silently short without this. Always
+        /// empty on the MFT path — raw record reads bypass ACLs.
+        /// </summary>
+        public IReadOnlyList<int> DeniedDirectoryIds { get; init; } = [];
+        /// <summary>Directories that failed to list for other reasons (raced deletion, etc.) — counted, not surfaced.</summary>
+        public int FailedDirectoryCount { get; init; }
+        /// <summary>File ids the backend could not read (identity unknown) — hard-link dedupe can't see them.</summary>
+        public int NoIdentityCount { get; init; }
+        /// <summary>Journal cursor captured before the walk — feeds seeded staging + the next rescan's baseline.</summary>
+        public UsnJournal.Marker? ScanMarker { get; init; }
     }
 
     /// <summary>
@@ -39,10 +64,16 @@ public sealed class ScanEngine
         bool NotDownloaded,
         bool SkipDescendants);
 
-    public async Task<Result> ScanAsync(string root, IProgress<int>? progress = null)
+    public Task<Result> ScanAsync(string root, IProgress<int>? progress) =>
+        ScanAsync(root, progress is null ? null : new ProgressAdapter(progress), CancellationToken.None);
+
+    public async Task<Result> ScanAsync(
+        string root, IProgress<ScanProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         var started = System.Diagnostics.Stopwatch.StartNew();
-        var walked = await Task.Run(() => Walk(root, progress));
+        var walked = await Task.Run(() => Walk(root, progress, cancellationToken), cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         walked.Tree.Compact();
         var afterRelease = ProcessMemory.Current();
         started.Stop();
@@ -56,9 +87,19 @@ public sealed class ScanEngine
             NotDownloadedCount = walked.NotDownloadedCount,
             Backend = walked.Backend,
             FallbackReason = walked.FallbackReason,
+            DeniedDirectoryIds = walked.DeniedDirectoryIds,
+            FailedDirectoryCount = walked.FailedDirectoryCount,
+            NoIdentityCount = walked.NoIdentityCount,
+            ScanMarker = walked.ScanMarker,
         };
         LogSummary(result);
         return result;
+    }
+
+    /// <summary>Adapts an items-only reporter onto the ScanProgress shape.</summary>
+    private sealed class ProgressAdapter(IProgress<int> inner) : IProgress<ScanProgress>
+    {
+        public void Report(ScanProgress value) => inner.Report(value.Items);
     }
 
     /// <summary>
@@ -70,36 +111,77 @@ public sealed class ScanEngine
     /// </summary>
     private static readonly TimeSpan WalkHeadStart = TimeSpan.FromSeconds(2);
 
-    private static WalkResult Walk(string root, IProgress<int>? progress)
+    private static WalkResult Walk(string root, IProgress<ScanProgress>? progress, CancellationToken ct)
     {
         string? whyNot = null;
+        // WIN-031: a saved baseline + USN journal replay beats re-walking.
+        // Falls through on any doubt — the journal only accelerates.
+        if (IncrementalScan.TryRescan(root, progress, ct, out var rescanWhy) is { } incremental)
+            return incremental;
+        // The marker is recorded BEFORE the walk, whichever backend wins:
+        // changes that land mid-scan replay on the next rescan.
+        var marker = JournalMarker(root);
         int depth = DepthFromVolumeRoot(root);
         if (depth == 0)
         {
-            if (TryMft(root, progress, out whyNot) is { } mft) return mft;
+            if (TryMft(root, progress, ct, out whyNot) is { } mft)
+            {
+                if (marker is { } m0) ScanCache.Save(root, mft.Tree, m0);
+                mft.ScanMarker = marker;
+                return mft;
+            }
         }
         else if (depth != int.MaxValue && (whyNot = MftUnavailable(root)) is null)
         {
-            if (Win32Scanner.Walk(root, progress, WalkHeadStart) is { } quick) return quick;
-            if (TryMft(root, progress, out whyNot) is { } mft) return mft;
+            if (Win32Scanner.Walk(root, progress, WalkHeadStart, ct) is { } quick)
+            {
+                // Walk results carry file ids on NTFS — a usable baseline.
+                if (marker is { } m1) ScanCache.Save(root, quick.Tree, m1);
+                quick.ScanMarker = marker;
+                return quick;
+            }
+            if (TryMft(root, progress, ct, out whyNot) is { } mft)
+            {
+                if (marker is { } m2) ScanCache.Save(root, mft.Tree, m2);
+                mft.ScanMarker = marker;
+                return mft;
+            }
         }
-        var walked = Win32Scanner.Walk(root, progress)!;
-        walked.FallbackReason = whyNot;
+        var walked = Win32Scanner.Walk(root, progress, null, ct)!;
+        if (marker is { } m3) ScanCache.Save(root, walked.Tree, m3);
+        walked.ScanMarker = marker;
+        walked.FallbackReason = rescanWhy is not null ? $"{rescanWhy}; {whyNot ?? "walk"}" : whyNot;
         return walked;
     }
 
-    private static WalkResult? TryMft(string root, IProgress<int>? progress, out string? whyNot)
+    private static WalkResult? TryMft(string root, IProgress<ScanProgress>? progress, CancellationToken ct, out string? whyNot)
     {
         try
         {
-            return MftScanner.Walk(root, progress, out whyNot);
+            return MftScanner.Walk(root, progress, ct, out whyNot);
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             // Hostile on-disk state degrades to the slow path, never a crash.
             whyNot = ex.Message;
             return null;
         }
+    }
+
+    /// <summary>The journal cursor at scan start; null unless NTFS+admin.</summary>
+    private static UsnJournal.Marker? JournalMarker(string root)
+    {
+        try
+        {
+            string? volumeRoot = Path.GetPathRoot(Path.GetFullPath(root));
+            if (volumeRoot is null || volumeRoot.Length < 3 || volumeRoot[1] != ':') return null;
+            if (!Win32.EnableBackupPrivileges()) return null;
+            string volumePath = @"\\?\" + char.ToUpperInvariant(volumeRoot[0]) + ":";
+            using var volume = MftScanner.OpenVolume(volumePath);
+            return volume.IsInvalid ? null : UsnJournal.Query(volume);
+        }
+        catch { return null; }
     }
 
     /// <summary>
@@ -184,11 +266,13 @@ public sealed class ScanEngine
     private static void LogSummary(Result result)
     {
         string after = result.ResidentBytesAfterWalk?.ToString() ?? "unavailable";
-        Console.WriteLine(
+        // stderr, not stdout — the CLI's --json contract keeps stdout
+        // machine-readable (WIN-070).
+        Console.Error.WriteLine(
             $"DiskMap scan: backend={result.Backend} items={result.ItemCount} " +
             $"elapsed={result.ElapsedSeconds:0.000}s rss_during_walk_peak={result.PeakResidentBytesDuringWalk} " +
             $"rss_after_walk={after} not_downloaded={result.NotDownloadedCount} mft_skipped={result.FallbackReason ?? "-"}");
-        Console.Out.Flush();
+        Console.Error.Flush();
     }
 }
 
@@ -201,4 +285,9 @@ internal sealed class WalkResult
     public ulong PeakResidentBytesDuringWalk { get; init; }
     public required string Backend { get; init; }
     public string? FallbackReason { get; set; }
+    public List<int> DeniedDirectoryIds { get; init; } = [];
+    public int FailedDirectoryCount { get; init; }
+    public int NoIdentityCount { get; init; }
+    /// <summary>The journal cursor captured before this scan (WIN-013/031); null when unavailable.</summary>
+    public UsnJournal.Marker? ScanMarker { get; set; }
 }

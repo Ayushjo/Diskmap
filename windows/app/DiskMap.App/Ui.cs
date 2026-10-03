@@ -629,6 +629,33 @@ public static class Ui
         };
     }
 
+    /// <summary>Warning callout card — amber, ⚠ icon, text.</summary>
+    public static Border WarningCard(string title, string body, Thickness? margin = null)
+    {
+        var row = new DockPanel();
+        var icon = Glyph(Icons.Warning, 14, Brush("AppWarning"));
+        DockPanel.SetDock(icon, Dock.Top);
+        icon.Margin = new Thickness(0, 1, 8, 0);
+        var text = new StackPanel();
+        text.Children.Add(T(title, 12, FontWeights.SemiBold));
+        text.Children.Add(new Border { Height = 3 });
+        text.Children.Add(new TextBlock
+        {
+            Text = body, FontSize = 11.5, Foreground = Brush("AppSubtle"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        row.Children.Add(icon);
+        row.Children.Add(text);
+        return new Border
+        {
+            Background = Brush("AppWarningBg"),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12, 10, 12, 10),
+            Margin = margin ?? new Thickness(0, 0, 0, 12),
+            Child = row,
+        };
+    }
+
     /// <summary>Metadata row: gray label left, value right.</summary>
     public static DockPanel MetaRow(string label, UIElement value)
     {

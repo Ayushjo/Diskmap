@@ -272,17 +272,118 @@ public class DuplicateFinderTests
 public class CleanupQueueTests
 {
     [Fact]
-    public void OneCloneFreesNothingUntilTheLastCopyIsStaged()
+    public async Task OneCloneFreesNothingUntilTheLastCopyIsStaged()
     {
         var queue = new CleanupQueue();
         Assert.True(queue.Stage(@"C:\tmp\diskmap-clone-a", 800, "shared clone", "g", 2));
-        Assert.Equal(0, queue.TotalSize());
-
-        Assert.True(queue.Stage(@"C:\tmp\diskmap-clone-b", 800, "shared clone", "g", 2));
-        Assert.Equal(800, queue.TotalSize());
-
         Assert.True(queue.Stage(@"C:\tmp\diskmap-real-copy", 100, "duplicate"));
-        Assert.Equal(900, queue.TotalSize());
+        Assert.True(queue.Stage(@"C:\tmp\diskmap-clone-b", 800, "shared clone", "g", 2));
+        await queue.WaitForMeasurements();
+
+        // Unmeasurable paths fall back to the shared-group hint: the group
+        // counts once, and only once every copy is staged.
+        var estimate = queue.Estimate();
+        Assert.Equal(900, estimate.Bytes);          // 100 + one 800 for the pair
+        Assert.True(estimate.IsLowerBound);          // never claimed exact
+    }
+
+    [Fact]
+    public async Task HardLinkedNamesFreeOnceOnlyWhenAllStaged()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"DiskMap-cq-{Guid.NewGuid()}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string a = Path.Combine(dir, "a.bin"), b = Path.Combine(dir, "b.bin");
+            File.WriteAllBytes(a, new byte[50_000]);
+            Assert.True(CreateHardLinkW(b, a, IntPtr.Zero));
+            var queue = new CleanupQueue();
+
+            Assert.True(queue.Stage(a, 50_000, "dup"));
+            await queue.WaitForMeasurements();
+            // Link count is 2 but only one name is staged — the bytes stay.
+            Assert.Equal(0, queue.Estimate().Bytes);
+            Assert.True(queue.Estimate().HeldByUnqueuedCopies > 0);
+
+            Assert.True(queue.Stage(b, 50_000, "dup"));
+            await queue.WaitForMeasurements();
+            var estimate = queue.Estimate();
+            // Both names staged: the one shared allocation frees, once.
+            long onDisk = StorageSharing.ProfileAt(a)!.AllocatedBytes;
+            Assert.Equal(onDisk, estimate.Bytes);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
+    public async Task StagedFolderCoversStagedChildren()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"DiskMap-cq-{Guid.NewGuid()}");
+        try
+        {
+            string inner = Path.Combine(dir, "inner");
+            Directory.CreateDirectory(inner);
+            string inside = Path.Combine(inner, "child.txt");
+            File.WriteAllText(inside, "x");
+            var queue = new CleanupQueue();
+            Assert.True(queue.Stage(inside, 1, "dup"));
+            Assert.True(queue.Stage(inner, 4096, "folder"));
+            await queue.WaitForMeasurements();
+            // The child's own row contributes nothing — its folder carries it.
+            var estimate = queue.Estimate();
+            var childRow = queue.AllItems().Single(i => i.Path == inside);
+            Assert.Equal(0, estimate.PerItem[childRow.Id]);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
+    public async Task CommitRecyclesFoldersBeforeTheirStagedChildren()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"DiskMap-cq-{Guid.NewGuid()}");
+        string folder = Path.Combine(dir, "doomed");
+        Directory.CreateDirectory(folder);
+        string child = Path.Combine(folder, "inside.txt");
+        File.WriteAllText(child, "x");
+        try
+        {
+            var queue = new CleanupQueue();
+            // Stage the child BEFORE its folder — commit must still succeed.
+            Assert.True(queue.Stage(child, 1, "dup"));
+            Assert.True(queue.Stage(folder, 4096, "folder"));
+            var report = queue.Commit();
+            var childEntry = report.Entries.Single(e => e.Item.Path == child);
+            var folderEntry = report.Entries.Single(e => e.Item.Path == folder);
+            Assert.Null(childEntry.Error);
+            Assert.True(childEntry.MovedWithFolder);
+            Assert.Null(folderEntry.Error);
+            Assert.Empty(queue.AllItems());
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
+    public async Task CommitReceiptCountsOnlyWhatActuallyMoved()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"DiskMap-cq-{Guid.NewGuid()}");
+        Directory.CreateDirectory(dir);
+        string gone = Path.Combine(dir, "gone.txt");
+        File.WriteAllText(gone, "x");
+        string kept = Path.Combine(dir, "kept.txt");
+        File.WriteAllText(kept, "kept");
+        try
+        {
+            var queue = new CleanupQueue();
+            Assert.True(queue.Stage(gone, 1, "dup"));
+            Assert.True(queue.Stage(kept, 4096, "dup"));
+            File.Delete(gone);  // vanished before commit — must fail cleanly
+            var report = queue.Commit();
+            Assert.Single(report.Entries, e => e.Error is not null);
+            var keptEntry = report.Entries.Single(e => e.Item.Path == kept);
+            Assert.True(keptEntry.FreedBytes > 0);
+            Assert.Equal(keptEntry.FreedBytes, report.FreedWhenEmptied);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
     }
 
     [Fact]
@@ -295,7 +396,24 @@ public class CleanupQueueTests
     }
 
     [Fact]
-    public void CommitMovesItemsToRecycleBin()
+    public void ExcludedListCoversAuditedPaths()
+    {
+        // WIN-069: WindowsApps aliases, memory files, WinSxS via C:\Windows.
+        string system = Path.GetPathRoot(Environment.SystemDirectory)!;
+        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        Assert.True(CleanupQueue.IsExcludedPath(
+            Path.Combine(local, "Microsoft", "WindowsApps", "wt.exe")));
+        Assert.True(CleanupQueue.IsExcludedPath(system + @"pagefile.sys"));
+        Assert.True(CleanupQueue.IsExcludedPath(system + @"hiberfil.sys"));
+        Assert.True(CleanupQueue.IsExcludedPath(system + @"swapfile.sys"));
+        Assert.True(CleanupQueue.IsExcludedPath(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "WinSxS", "x")));
+        Assert.False(CleanupQueue.IsExcludedPath(
+            Path.Combine(local, "MyProject", "node_modules")));
+    }
+
+    [Fact]
+    public async Task CommitMovesItemsToRecycleBin()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"DiskMap-cleanup-{Guid.NewGuid()}");
         Directory.CreateDirectory(dir);
@@ -304,15 +422,19 @@ public class CleanupQueueTests
 
         var queue = new CleanupQueue();
         Assert.True(queue.Stage(file, 4, "test"));
-        var results = queue.Commit();
+        var report = queue.Commit();
 
-        Assert.Single(results);
-        Assert.Null(results[0].Error);
+        Assert.Single(report.Entries);
+        Assert.Null(report.Entries[0].Error);
         Assert.False(File.Exists(file), "file should have been recycled");
+        Assert.True(report.FreedWhenEmptied > 0);
         Assert.Empty(queue.AllItems());
 
         try { Directory.Delete(dir, recursive: true); } catch { }
     }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CreateHardLinkW(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
 }
 
 public class QuickWinsTests

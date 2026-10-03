@@ -138,6 +138,19 @@ public sealed class InspectorPanel : UserControl
         }
         _root.Children.Add(Ui.MetaRow("Size", sizePanel));
 
+        // WIN-047: logical vs on-disk — compression/sparse savings show
+        // as "Compressed by X" (NTFS compression, OneDrive evictions).
+        if (Model.DualTotals(id) is { } dual && dual.Logical != dual.Allocated)
+        {
+            long compressedBy = dual.Logical - dual.Allocated;
+            var diskPanel = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right };
+            diskPanel.Children.Add(Ui.T(ByteFormat.Format(dual.Allocated), 12, FontWeights.Medium));
+            diskPanel.Children.Add(Ui.Faint(compressedBy > 0
+                ? $"compressed by {ByteFormat.Format(compressedBy)}"
+                : $"metadata overhead {ByteFormat.Format(-compressedBy)}"));
+            _root.Children.Add(Ui.MetaRow("On disk", diskPanel));
+        }
+
         if (id < Model.Counts.Files.Length)
         {
             int files = Model.Counts.Files[id];
