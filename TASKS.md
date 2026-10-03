@@ -1305,3 +1305,36 @@ walk; no second disk pass, no network.
   in Biggest Files and the mind map; tap-gesture charts (treemap) ignore
   synthetic clicks, so there only the shared code path is tested.
   243 tests green.
+
+## Milestone 17 — Follow-ups from the post-UX review (2026-10-03)
+
+Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 → 080
+→ 081 → 085 → 086 → 084 → 083. Everything stays local (no push).
+
+- [x] **TASK-075: Integrate PR #16 and the Windows port locally**
+  Branch `integrate/pr16-windows` off `feat/ux-pass`, two `--no-ff` merges.
+  PR #16 (`origin/main`): conflicts in 11 files resolved toward the
+  AppDestination/AppShellView structure. Kept side by side: **Search**
+  (`FileSearchIndex`, Find section after Find) and **Regenerable Data**
+  (categorized Quick Wins, Explore section after Developer Storage), both
+  with page headers, the shared list keyboard, harness entries and short-
+  window scrolling; ⌘1–9 shifted (docs/ACCESSIBILITY.md). Ported: the
+  size-colliding duplicate prefilter into our walk (hard-link dedup and
+  cancellation kept), categories in `quick-wins-patterns.json` with our
+  resource lookup, iCloud icons on not-downloaded rows, the bounded cleanup
+  receipt, `scanID`, and a guard that ignores a second scan request for the
+  folder already being scanned (test added). `SnapshotDiffView` stays
+  removed. Harness fix found on the way: a synthetic click on a text field
+  hung, because AppKit's tracking loop waited for a mouse-up the harness
+  sent only afterwards; the up is now queued first.
+  Windows port (`origin/feat/windows-port`): merged clean (`windows/**` and
+  an AGENTS.md section that restates rules 1–3 for Windows). Checked:
+  nothing under `windows/` uses networking; the only removal path is
+  `SHFileOperation(FOF_ALLOWUNDO)` (Recycle Bin) — `Directory.Delete`
+  appears only in tests cleaning their temp fixtures. Added
+  `.github/workflows/windows.yml` (windows-latest, .NET 10, `windows/**`
+  paths only). Excluded-paths list unchanged. 253 tests green.
+  Duplicates bench (`docs/perf-results/integrate-pr16.txt`, ~/Downloads,
+  5 alternating runs): candidates 18,013 → 11,218, same 311 groups and 966
+  full hashes, median 1.36 s → 1.22 s end to end; the bench now times the
+  app's candidate path.

@@ -839,3 +839,23 @@ SwiftUI runs a button's action after the click has been dispatched, so
 time of the action are the reliable source. The snapshot harness supplies
 its synthetic clicks' modifiers through a debug-only seam.
 
+
+### Two search engines coexist, by choice (2026-10-03)
+
+PR #16 added Search (`FileSearchIndex`: an interned-name index built once
+per scan, substring match as you type, biggest hits first), while Find,
+⌘K and the CLI use `FileQuery` (a small query language over size, age,
+kind, extension and location). They answer different questions — "where
+is the thing called X?" versus "what matches these conditions?" — so both
+pages stay, side by side in the Find section of the sidebar. Revisit once
+there is usage evidence (chips vs. pages); merging them would mean teaching
+`FileQuery` an index for bare-name terms, not deleting a page.
+
+PR #16's flat Quick Wins categories are kept as **Regenerable Data** next to
+Developer Storage: the first groups pattern hits by ecosystem straight from
+`quick-wins-patterns.json`; the second judges projects (rebuild cost, git
+state). Both stage through `CleanupQueue.stage()`.
+
+Duplicates now hash only files whose size collides with another file's
+(`DuplicateFinder.sizeCollidingCandidates`); hard-link dedup and
+cancellation stay in the same walk.

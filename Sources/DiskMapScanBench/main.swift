@@ -349,7 +349,10 @@ for run in 1...args.repeats {
 
     if args.duplicates {
         let tree = result.tree
-        let cands = DuplicateFinder.candidates(in: tree, root: root)
+        // The app's path: only sizes that collide become candidates (PR #16).
+        let candidatesStarted = ContinuousClock.now
+        let cands = DuplicateFinder.sizeCollidingCandidates(in: tree, root: root)
+        let candidateSeconds = durationSeconds(from: candidatesStarted)
         let before = ProcessMemory.current()
         let samplePeak = MutexPeak()
         samplePeak.value = before?.residentBytes ?? 0
@@ -368,7 +371,7 @@ for run in 1...args.repeats {
         let after = ProcessMemory.current()
         let peak = max(samplePeak.value, after?.residentBytes ?? 0, before?.residentBytes ?? 0)
         print(
-            "duplicates label=\(args.label) candidates=\(cands.count) groups=\(dupResult.groups.count) full_hash_calls=\(dupResult.fullContentHashCalls) elapsed=\(String(format: "%.3f", dupSeconds))s rss_before=\(before?.residentBytes ?? 0) rss_peak_sampled=\(peak) rss_after=\(after?.residentBytes ?? 0) task_peak=\(after?.peakResidentBytes ?? 0)"
+            "duplicates label=\(args.label) candidates=\(cands.count) candidate_pass=\(String(format: "%.3f", candidateSeconds))s groups=\(dupResult.groups.count) full_hash_calls=\(dupResult.fullContentHashCalls) elapsed=\(String(format: "%.3f", dupSeconds))s rss_before=\(before?.residentBytes ?? 0) rss_peak_sampled=\(peak) rss_after=\(after?.residentBytes ?? 0) task_peak=\(after?.peakResidentBytes ?? 0)"
         )
     }
 

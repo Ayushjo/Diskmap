@@ -1,0 +1,18 @@
+# TASK-075: duplicates before (093f348, all candidates) vs after (PR #16 size-colliding prefilter)
+# DiskMapScanBench --duplicates ~/Downloads (61 GB), release build, 5 alternating runs each, warm cache, 2026-10-03
+# candidate_pass = building the candidate list; elapsed = DuplicateFinder.scan (hashing)
+# A full ~ run was stopped: hashing all of home takes >10 min per run.
+duplicates label=before candidates=18013 candidate_pass=0.271s groups=311 full_hash_calls=966 elapsed=0.425s rss_before=84951040 rss_peak_sampled=133709824 rss_after=133709824 task_peak=133709824
+duplicates label=after candidates=11218 candidate_pass=0.278s groups=311 full_hash_calls=966 elapsed=0.944s rss_before=81625088 rss_peak_sampled=122896384 rss_after=122896384 task_peak=122896384
+duplicates label=before candidates=18013 candidate_pass=1.194s groups=311 full_hash_calls=965 elapsed=1.040s rss_before=90669056 rss_peak_sampled=143360000 rss_after=143360000 task_peak=143360000
+duplicates label=after candidates=11218 candidate_pass=0.351s groups=311 full_hash_calls=965 elapsed=0.687s rss_before=81002496 rss_peak_sampled=125583360 rss_after=125583360 task_peak=125583360
+duplicates label=before candidates=18013 candidate_pass=0.553s groups=311 full_hash_calls=965 elapsed=0.808s rss_before=88883200 rss_peak_sampled=136331264 rss_after=136331264 task_peak=136331264
+duplicates label=after candidates=11218 candidate_pass=0.354s groups=311 full_hash_calls=965 elapsed=0.646s rss_before=82214912 rss_peak_sampled=124305408 rss_after=124305408 task_peak=124305408
+duplicates label=before candidates=18013 candidate_pass=0.470s groups=311 full_hash_calls=965 elapsed=0.781s rss_before=91045888 rss_peak_sampled=143376384 rss_after=143376384 task_peak=143376384
+duplicates label=after candidates=11218 candidate_pass=0.426s groups=311 full_hash_calls=965 elapsed=1.932s rss_before=82837504 rss_peak_sampled=126091264 rss_after=126091264 task_peak=126091264
+duplicates label=before candidates=18013 candidate_pass=2.753s groups=311 full_hash_calls=965 elapsed=1.521s rss_before=87949312 rss_peak_sampled=135020544 rss_after=135020544 task_peak=135020544
+duplicates label=after candidates=11218 candidate_pass=0.460s groups=311 full_hash_calls=965 elapsed=1.081s rss_before=82018304 rss_peak_sampled=125075456 rss_after=125075456 task_peak=125075456
+
+# summary
+before cands 18013 groups 311 full_hash_calls 966 cand_pass median 0.553s hash median 0.808s total min/median/max 0.696/1.361/4.274s peak RSS median 136 MB
+after  cands 11218 groups 311 full_hash_calls 966 cand_pass median 0.354s hash median 0.944s total min/median/max 1.000/1.222/2.358s peak RSS median 125 MB
