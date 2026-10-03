@@ -114,6 +114,13 @@ enum SnapshotHarness {
             let settle = value(after: "--settle").flatMap(Double.init) ?? 1.5
             try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
             write(window: window, to: dir.appendingPathComponent("\(key(destination))-\(appearanceName).png"))
+            // `--palette`: also open the command palette and capture it.
+            if arguments.contains("--palette") {
+                NotificationCenter.default.post(name: .diskMapOpenPalette, object: nil)
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                if value(after: "--keys") != nil { await sendInput(to: window); try? await Task.sleep(nanoseconds: 500_000_000) }
+                write(window: window, to: dir.appendingPathComponent("palette-\(appearanceName).png"))
+            }
             // `--sheet cleanup`: also open the Cleanup sheet and capture it
             // (sheets are their own windows, outside the content view).
             if value(after: "--sheet") == "cleanup" {

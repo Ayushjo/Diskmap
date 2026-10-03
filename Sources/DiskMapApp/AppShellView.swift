@@ -120,6 +120,10 @@ struct AppShellView: View {
                 .transition(reduceMotion ? .identity : .opacity)
             }
         }
+        .onChange(of: showPalette) { _, open in if !open { searchText = "" } }
+        .onReceive(NotificationCenter.default.publisher(for: .diskMapOpenPalette)) { _ in
+            if hasCompletedScan { showPalette = true }
+        }
     }
 
     private func topBar(compactSidebar: Bool) -> some View {
@@ -147,6 +151,10 @@ struct AppShellView: View {
                     .onSubmit {
                         guard hasCompletedScan else { return }
                         showPalette = true
+                    }
+                    // Typing opens the palette with what was typed so far.
+                    .onChange(of: searchText) { _, text in
+                        if hasCompletedScan, !text.isEmpty, !showPalette { showPalette = true }
                     }
                 Button {
                     guard hasCompletedScan else { return }
@@ -592,4 +600,9 @@ struct ExplainStorageSheet: View {
         .frame(minWidth: 480, minHeight: 420)
         .background(DiskMapTheme.cream)
     }
+}
+
+extension Notification.Name {
+    /// Opens the command palette (the harness's `--palette`).
+    static let diskMapOpenPalette = Notification.Name("DiskMapOpenPalette")
 }

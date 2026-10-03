@@ -9,6 +9,9 @@ struct CommandPalette: View {
     @State private var isSearching = false
     @State private var queryMatchCount = 0
     @State private var queryMatchedBytes: Int64 = 0
+    /// Keyboard highlight: ↑/↓ move it, Return runs it.
+    @State private var highlighted = 0
+    @FocusState private var fieldFocused: Bool
     var onReviewCleanup: () -> Void
     var onExplain: () -> Void
 
@@ -64,7 +67,7 @@ struct CommandPalette: View {
             Command(title: "Find files larger than 1 GB", subtitle: "Biggest Files", symbol: "doc.fill") {
                 model.destination = .biggestFiles
             },
-            Command(title: "Open Find", subtitle: "Search the scan: ext:mp4 size>500MB age>1y in:downloads", symbol: "magnifyingglass") {
+            Command(title: "Open Find", subtitle: "ext:mp4 size>500MB age>1y in:downloads", symbol: "magnifyingglass") {
                 model.destination = .find
             },
             Command(title: "Show biggest folders", subtitle: "Find", symbol: "folder.fill") {
@@ -148,95 +151,142 @@ struct CommandPalette: View {
         }
     }
 
+    /// Sections in display order, flattened for keyboard movement.
+    private var ordered: [Command] {
+        let list = filtered
+        return Category.allCases.flatMap { category in list.filter { $0.category == category } }
+    }
+
+    private func run(_ cmd: Command) {
+        cmd.run()
+        isPresented = false
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
+        let items = ordered
+        let current = items.isEmpty ? nil : items[min(highlighted, items.count - 1)]
+        return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .font(.system(size: DiskMapType.scaled(13), weight: .medium))
+                    .foregroundStyle(DiskMapTheme.ink3)
                     .accessibilityHidden(true)
                 TextField("Type a command, a file name, or a query like ext:mp4 size>1GB", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: DiskMapType.scaled(15)))
+                    .focused($fieldFocused)
+                    .onSubmit { if let current { run(current) } }
+                    .onKeyPress(.downArrow) {
+                        highlighted = min(max(0, items.count - 1), highlighted + 1)
+                        return .handled
+                    }
+                    .onKeyPress(.upArrow) {
+                        highlighted = max(0, highlighted - 1)
+                        return .handled
+                    }
                     .accessibilityLabel("Command palette search")
-                Button("Esc") { isPresented = false }
+                Button { isPresented = false } label: { Kbd("esc") }
                     .buttonStyle(.plain)
-                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .keyboardShortcut(.cancelAction)
                     .accessibilityLabel("Close command palette")
             }
-            .padding(14)
+            .padding(.horizontal, 16)
+            .frame(height: 52)
             if isStructuredQuery, let problems = parsedQuery?.problems, !problems.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(problems, id: \.token) { problem in
                         Text("Ignoring \(problem.token) — \(problem.message)")
-                            .font(DiskMapType.caption)
+                            .font(DiskMapType.secondary)
                             .foregroundStyle(DiskMapTheme.review)
                     }
                 }
-                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
                 .padding(.bottom, 8)
             }
-            Divider()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(Category.allCases, id: \.self) { category in
-                        let section = filtered.filter { $0.category == category }
-                        if !section.isEmpty {
-                            Text(category.rawValue.uppercased())
-                                .font(DiskMapType.microStrong)
-                                .tracking(0.8)
-                                .foregroundStyle(DiskMapTheme.mutedLabel)
-                                .padding(.horizontal, 12)
-                                .padding(.top, 8)
-                            ForEach(section) { cmd in
-                        Button {
-                            cmd.run()
-                            isPresented = false
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: cmd.symbol)
-                                    .frame(width: 22)
-                                    .foregroundStyle(DiskMapTheme.ink)
-                                    .accessibilityHidden(true)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(cmd.title)
-                                        .font(DiskMapType.bodyMedium)
-                                        .foregroundStyle(DiskMapTheme.ink)
-                                    Text(cmd.subtitle)
-                                        .font(DiskMapType.caption)
-                                        .foregroundStyle(DiskMapTheme.mutedLabel)
+            Hairline()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        ForEach(Category.allCases, id: \.self) { category in
+                            let section = items.filter { $0.category == category }
+                            if !section.isEmpty {
+                                MonoLabel(category.rawValue)
+                                    .padding(.horizontal, 10)
+                                    .padding(.top, 10)
+                                    .padding(.bottom, 4)
+                                ForEach(section) { cmd in
+                                    let on = cmd.id == current?.id
+                                    Button { run(cmd) } label: {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: cmd.symbol)
+                                                .font(.system(size: DiskMapType.scaled(13)))
+                                                .frame(width: 20)
+                                                .foregroundStyle(on ? DiskMapTheme.accent : DiskMapTheme.ink2)
+                                                .accessibilityHidden(true)
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text(cmd.title)
+                                                    .font(DiskMapType.bodyEmphasis)
+                                                    .foregroundStyle(DiskMapTheme.ink)
+                                                    .lineLimit(1)
+                                                Text(cmd.subtitle)
+                                                    .font(cmd.category == .actions ? DiskMapType.secondary : DiskMapType.figureSmall)
+                                                    .foregroundStyle(DiskMapTheme.ink3)
+                                                    .lineLimit(1)
+                                                    .truncationMode(.middle)
+                                            }
+                                            Spacer(minLength: 8)
+                                            if on { Kbd("↩") }
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .frame(minHeight: 40)
+                                        .background(RowBackground(selected: on, hovering: false))
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .id(cmd.id)
+                                    .onHover { if $0, let index = items.firstIndex(where: { $0.id == cmd.id }) { highlighted = index } }
+                                    .accessibilityLabel("\(cmd.title). \(cmd.subtitle)")
+                                    .accessibilityAddTraits(on ? .isSelected : [])
                                 }
-                                Spacer()
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(cmd.title). \(cmd.subtitle)")
                             }
                         }
+                        if isSearching {
+                            ProgressView("Searching this scan…")
+                                .controlSize(.small)
+                                .padding(12)
+                        }
                     }
-                    if isSearching {
-                        ProgressView("Searching this scan…")
-                            .controlSize(.small)
-                            .padding(12)
-                    }
+                    .padding(8)
                 }
-                .padding(8)
+                .onChange(of: highlighted) { _, index in
+                    guard items.indices.contains(index) else { return }
+                    withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(items[index].id) }
+                }
             }
-            Text("Destructive actions never run from here — they only open review flows.")
-                .font(DiskMapType.micro)
-                .foregroundStyle(DiskMapTheme.mutedLabel)
-                .padding(10)
-                .accessibilityLabel("Safety note: destructive actions never run from the command palette")
+            Hairline()
+            HStack(spacing: 10) {
+                Kbd("↑↓"); Text("move").font(DiskMapType.figureSmall).foregroundStyle(DiskMapTheme.ink3)
+                Kbd("↩"); Text("run").font(DiskMapType.figureSmall).foregroundStyle(DiskMapTheme.ink3)
+                Spacer()
+                Text("Nothing here deletes — cleanup only opens review")
+                    .font(DiskMapType.figureSmall)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .accessibilityLabel("Safety note: destructive actions never run from the command palette")
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 34)
         }
-        .frame(width: 520, height: 420)
-        .background(DiskMapTheme.cardFill)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: .black.opacity(0.2), radius: 24, y: 8)
+        .frame(width: 560, height: 440)
+        .background(DiskMapTheme.raised)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DiskMapTheme.line, lineWidth: 1))
+        .shadow(color: .black.opacity(0.18), radius: 30, y: 12)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Command palette")
         .task(id: query) { await updateSearch() }
+        .onChange(of: query) { _, _ in highlighted = 0 }
+        .onAppear { fieldFocused = true }
     }
 
     @MainActor
