@@ -7,7 +7,7 @@ exists) and by Sparkle in the shipped app when a user opts in.
 ## Build
 
 ```bash
-scripts/make-icon.sh 1      # optional: re-render Resources/AppIcon.icns (variants 1–3 in docs/icon/)
+scripts/make-icon.sh        # optional: re-render Resources/AppIcon.icns (variant 4, the logo, by default)
 scripts/build-adhoc.sh      # dist/DiskMap.app + dist/DiskMap-<VERSION>.dmg, ad-hoc signed
 ```
 
@@ -16,9 +16,12 @@ scripts/build-adhoc.sh      # dist/DiskMap.app + dist/DiskMap-<VERSION>.dmg, ad-
 
 ## Choosing the icon
 
-Three variants are drawn in code (`Sources/IconRender`) and previewed in
-`docs/icon/variant-{1,2,3}.png`. Variant 1 (cream tile, dark "D" chip) is the
-default; `scripts/make-icon.sh 2` or `3` switches.
+Four variants are drawn in code (`Sources/IconRender`) and previewed in
+`docs/icon/variant-{1,2,3,4}.png`. Variant 4 — the logo's "D" mark on a paper
+tile, redrawn from `docs/brand/diskmap-logo.png` — is the default; 1–3 are the
+earlier treemap designs (`scripts/make-icon.sh 1`, `2` or `3` switches). The
+same mark is `DiskMapMark` in the app (sidebar wordmark); keep the two copies
+in step.
 
 ## Updates (Sparkle, opt-in)
 

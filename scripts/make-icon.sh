@@ -1,10 +1,11 @@
 #!/bin/bash
 # Renders the app icon from code (Sources/IconRender) and builds
-# Resources/AppIcon.icns. Variant 1 is the default; 2 and 3 are the
-# alternatives in docs/icon/. Usage: scripts/make-icon.sh [1|2|3]
+# Resources/AppIcon.icns. Variant 4 (the logo mark, docs/brand/) is the
+# default; 1–3 are the earlier treemap alternatives in docs/icon/.
+# Usage: scripts/make-icon.sh [1|2|3|4]
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VARIANT="${1:-1}"
+VARIANT="${1:-4}"
 swift build --product IconRender >/dev/null
 BIN=$(swift build --show-bin-path)/IconRender
 ICONSET=build/AppIcon.iconset

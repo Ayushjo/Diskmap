@@ -239,16 +239,7 @@ struct AppShellView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 9) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(DiskMapTheme.ink)
-                    .frame(width: 22, height: 22)
-                    .overlay(Text("D").font(.system(size: DiskMapType.scaled(11), weight: .bold)).foregroundStyle(DiskMapTheme.onInk))
-                    .accessibilityHidden(true)
-                Text("DiskMap")
-                    .font(DiskMapType.bodyEmphasis)
-                    .foregroundStyle(DiskMapTheme.ink)
-            }
+            DiskMapWordmark(height: DiskMapType.scaled(13))
             .padding(.horizontal, 18)
             .padding(.top, 16)
             .padding(.bottom, 14)
