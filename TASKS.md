@@ -1338,3 +1338,20 @@ Twelve tickets, planned in order 075 → 076 → 078 → 077 → 082 → 079 →
   5 alternating runs): candidates 18,013 → 11,218, same 311 groups and 966
   full hashes, median 1.36 s → 1.22 s end to end; the bench now times the
   app's candidate path.
+- [x] **TASK-076: Overview makes sense for any scanned folder**
+  Found: a scan of `~/Downloads` (or a drive) showed one "Other — 100%"
+  row, because categories map the root's children by home-folder names.
+  Now `CategoryMode.detect` picks **home** (the user's home, or ≥ 2 of
+  Library/Downloads/Documents/Desktop as children), **whole disk** (`/`),
+  or **folder** — which splits by file type (the scan's File Types totals,
+  passed in on the same basis) plus "Other" for unclaimed files; rows sum
+  to the scanned total (hard links counted once — real-fixture test). Card
+  title "What's in Downloads?", type colours from
+  `file-type-categories.json`; rows are buttons: a type opens Find with
+  `kind:<type>`, Other opens Biggest Files, a home folder opens Visualize at
+  it. The story names the largest *named* category ("Video is 92% of this
+  folder"; "Other" never leads). Also: File Types after a scan were always
+  allocated even on the logical basis — now the active basis; shares under
+  0.5% read "<1%" instead of "0%". Verified on ~/Downloads (Video 59.96 GB,
+  92%; clicking it opens Find with 6,399 matches, 59.96 GB) and on ~
+  (unchanged). 259 tests green.

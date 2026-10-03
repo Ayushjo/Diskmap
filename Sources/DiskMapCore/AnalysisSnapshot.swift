@@ -6,15 +6,52 @@ public struct StorageCategory: Sendable, Equatable, Identifiable {
     public var key: String
     public var title: String
     public var bytes: Int64
-    public var colorHint: String // semantic: library, downloads, developer, caches, apps, documents, other
+    public var colorHint: String // semantic: library, downloads, developer, caches, apps, documents, filetype, other
     public var nodeID: Int32? // primary folder when known
+    /// File-type categories carry their colour from file-type-categories.json.
+    public var colorHex: String?
+    /// The file-type id (`kind:` in Find) for a file-type category.
+    public var fileKind: String?
 
-    public init(key: String, title: String, bytes: Int64, colorHint: String, nodeID: Int32? = nil) {
+    public init(key: String, title: String, bytes: Int64, colorHint: String, nodeID: Int32? = nil,
+                colorHex: String? = nil, fileKind: String? = nil) {
         self.key = key
         self.title = title
         self.bytes = bytes
         self.colorHint = colorHint
         self.nodeID = nodeID
+        self.colorHex = colorHex
+        self.fileKind = fileKind
+    }
+}
+
+/// How Overview splits a scan into categories (TASK-076). Folder names only
+/// mean something at the top of a home folder or a disk; anywhere else the
+/// root's children are arbitrary, so the split is by file type instead.
+public enum CategoryMode: String, Sendable, Equatable {
+    /// A home folder: Library, Downloads, Documents… by name.
+    case home
+    /// `/` (or the Data volume): the same name mapping, which knows System,
+    /// Users and Applications.
+    case wholeDisk
+    /// Any other folder or an external drive: totals by file type.
+    case folder
+
+    /// Home when the root is the user's home or looks like one (at least
+    /// two of Library, Downloads, Documents, Desktop as children).
+    public static func detect(tree: FileTree, root: URL, home: String = NSHomeDirectory()) -> CategoryMode {
+        let path = root.standardizedFileURL.path
+        if path == "/" || path == "/System/Volumes/Data" { return .wholeDisk }
+        if path == URL(fileURLWithPath: home).standardizedFileURL.path { return .home }
+        guard tree.count > 0 else { return .folder }
+        let homeNames: Set<String> = ["library", "downloads", "documents", "desktop"]
+        var matches = 0
+        var child = tree.firstChild[0]
+        while child != -1 {
+            if tree.isDirectory[Int(child)], homeNames.contains(tree.name(of: child).lowercased()) { matches += 1 }
+            child = tree.nextSibling[Int(child)]
+        }
+        return matches >= 2 ? .home : .folder
     }
 }
 
@@ -57,6 +94,8 @@ public struct AnalysisSnapshot: Sendable, Equatable {
     public var volume: VolumeStats?
     public var scannedBytes: Int64
     public var categories: [StorageCategory]
+    /// How `categories` were made — the UI titles and routes rows by it.
+    public var categoryMode: CategoryMode = .home
     public var topFiles: [StorageFileHit]
     public var topFolders: [StorageFileHit]
     public var reviewableBytes: Int64
@@ -120,6 +159,7 @@ public struct AnalysisSnapshot: Sendable, Equatable {
         logical: [Int64],
         basis: SizeBasis = .allocated,
         quickWins: [QuickWins.Hit] = [],
+        fileTypes: [FileTypeTotals]? = nil,
         today: Int32 = AgeMap.today()
     ) -> AnalysisSnapshot {
         let totals = basis == .logical ? logical : allocated
@@ -128,7 +168,16 @@ public struct AnalysisSnapshot: Sendable, Equatable {
         }
         let volume = VolumeStats.forPath(root.path)
         let scanned = totals[0]
-        let cats = categorize(tree: tree, root: root, totals: totals)
+        let mode = CategoryMode.detect(tree: tree, root: root)
+        let cats: [StorageCategory]
+        if mode == .folder {
+            // Callers usually computed these already (ScanModel caches them);
+            // they must be on the same basis as `totals`.
+            let types = fileTypes ?? FileTypeCatalog.totals(in: tree, sizes: totals, categories: FileTypeCatalog.loadBundled())
+            cats = categorizeByType(types, scanned: scanned)
+        } else {
+            cats = categorize(tree: tree, root: root, totals: totals)
+        }
         let topFiles = topFileHits(tree: tree, root: root, totals: totals, limit: 12)
         let topFolders = topFolderHits(tree: tree, root: root, totals: totals, limit: 12)
         let forgottenCandidates = ForgottenFiles.candidates(
@@ -156,6 +205,7 @@ public struct AnalysisSnapshot: Sendable, Equatable {
             volume: volume,
             scannedBytes: scanned,
             categories: cats,
+            categoryMode: mode,
             topFiles: topFiles,
             topFolders: topFolders,
             reviewableBytes: reviewable,
@@ -259,6 +309,22 @@ public struct AnalysisSnapshot: Sendable, Equatable {
         // Guarantee sum(categories) == sum of positive root children accounted
         // (exclusive by construction). Callers must use sum as bar denominator
         // when comparing to volume used — never inflate Other to fill volume.
+        return cats
+    }
+
+    /// Folder mode: one category per file type, biggest first, then "Other"
+    /// for files no type claims (and evicted folders). Rollups charge folders
+    /// and repeated hard-link names nothing, so the rows sum to `scanned`.
+    static func categorizeByType(_ types: [FileTypeTotals], scanned: Int64) -> [StorageCategory] {
+        var cats = types
+            .filter { $0.bytes > 0 }
+            .sorted { $0.bytes > $1.bytes }
+            .map { StorageCategory(key: "type:\($0.categoryID)", title: $0.label, bytes: $0.bytes,
+                                   colorHint: "filetype", colorHex: $0.colorHex, fileKind: $0.categoryID) }
+        let typed = cats.reduce(Int64(0)) { $0 + $1.bytes }
+        if scanned - typed > 0 {
+            cats.append(StorageCategory(key: "other", title: "Other", bytes: scanned - typed, colorHint: "other"))
+        }
         return cats
     }
 

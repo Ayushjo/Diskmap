@@ -859,3 +859,13 @@ state). Both stage through `CleanupQueue.stage()`.
 Duplicates now hash only files whose size collides with another file's
 (`DuplicateFinder.sizeCollidingCandidates`); hard-link dedup and
 cancellation stay in the same walk.
+
+### Overview categories depend on what was scanned (2026-10-03)
+
+Folder names are a meaningful split only at the top of a home folder (Library,
+Downloads, Documents…) or a disk (System, Users, Applications). For any other
+root the children are arbitrary, so `AnalysisSnapshot` splits by file type
+instead (`CategoryMode.folder`), reusing the File Types totals the scan already
+computes. A root that *looks* like a home (two of Library/Downloads/Documents/
+Desktop) — an old account on a backup drive — is treated as one. Rows always
+add up to the scanned total; "Other" is what no type claims, never padding.

@@ -286,10 +286,13 @@ final class ScanModel: ObservableObject {
             let both = scannedTree.rollUpBoth()
             let counts = scannedTree.rollUpDescendantCounts()
             let quickWins = QuickWins.find(in: scannedTree, root: url, patterns: QuickWins.bundledPatterns())
-            let fileTypes = FileTypeCatalog.totals(in: scannedTree, sizes: both.allocated, categories: categories)
+            // Same basis as everything else on screen (was always allocated,
+            // so File Types disagreed with sizes after a logical rescan).
+            let fileTypes = FileTypeCatalog.totals(in: scannedTree, sizes: basis == .logical ? both.logical : both.allocated,
+                                                   categories: categories)
             let analysis = AnalysisSnapshot.build(
                 tree: scannedTree, root: url, allocated: both.allocated, logical: both.logical,
-                basis: basis, quickWins: quickWins
+                basis: basis, quickWins: quickWins, fileTypes: fileTypes
             )
             return PreparedScan(
                 allocated: both.allocated, logical: both.logical,
@@ -877,9 +880,9 @@ struct ContentView: View {
                 model.invalidateCatalogs()
                 let worker = Task.detached(priority: .userInitiated) {
                     let totals = basis == .logical ? logical : allocated
-                    let analysis = AnalysisSnapshot.build(tree: tree, root: root, allocated: allocated,
-                        logical: logical, basis: basis, quickWins: quickWins)
                     let types = FileTypeCatalog.totals(in: tree, sizes: totals, categories: categories)
+                    let analysis = AnalysisSnapshot.build(tree: tree, root: root, allocated: allocated,
+                        logical: logical, basis: basis, quickWins: quickWins, fileTypes: types)
                     return (analysis, types)
                 }
                 let result = await withTaskCancellationHandler {

@@ -100,16 +100,29 @@ public enum StorageNarrator {
                 kind: .forgotten
             ))
         }
-        if let top = snap.categories.first, top.bytes > 0 {
-            out.append(StorageStory(
-                id: "cat-\(top.key)",
-                title: "\(top.title) leads this scan",
-                detail: "\(format(top.bytes)) — open Find or Explore to investigate the largest items.",
-                bytes: top.bytes,
-                kind: .category
-            ))
+        // The biggest named category — "Other" leading says nothing useful.
+        if let top = snap.categories.filter({ $0.key != "other" }).max(by: { $0.bytes < $1.bytes }), top.bytes > 0 {
+            if snap.categoryMode == .folder {
+                let total = max(1, snap.categories.reduce(Int64(0)) { $0 + $1.bytes })
+                let share = Int((Double(top.bytes) / Double(total) * 100).rounded())
+                out.append(StorageStory(
+                    id: "cat-\(top.key)",
+                    title: "\(top.title) is \(share)% of this folder",
+                    detail: "\(format(top.bytes)) — open Find to list every \(top.title.lowercased()) file here.",
+                    bytes: top.bytes,
+                    kind: .category
+                ))
+            } else {
+                out.append(StorageStory(
+                    id: "cat-\(top.key)",
+                    title: "\(top.title) leads this scan",
+                    detail: "\(format(top.bytes)) — open Find or Explore to investigate the largest items.",
+                    bytes: top.bytes,
+                    kind: .category
+                ))
+            }
         }
-        if let dev = snap.categories.first(where: { $0.key == "developer" }), dev.bytes > 8_000_000 {
+        if snap.categoryMode != .folder, let dev = snap.categories.first(where: { $0.key == "developer" }), dev.bytes > 8_000_000 {
             out.append(StorageStory(
                 id: "developer",
                 title: "Developer tool data is large",

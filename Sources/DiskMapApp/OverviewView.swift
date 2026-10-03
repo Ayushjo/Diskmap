@@ -216,7 +216,7 @@ struct OverviewView: View {
         HStack(spacing: 12) {
             ForEach(snap.categories.prefix(6)) { cat in
                 HStack(spacing: 4) {
-                    Circle().fill(DiskMapTheme.categoryColor(cat.colorHint)).frame(width: 8, height: 8)
+                    Circle().fill(color(of: cat)).frame(width: 8, height: 8)
                     Text("\(cat.title) \(ByteFormat.string(cat.bytes))")
                         .font(DiskMapType.caption)
                         .foregroundStyle(DiskMapTheme.mutedLabel)
@@ -251,41 +251,29 @@ struct OverviewView: View {
         )
     }
 
+    private var whereGoingTitle: String {
+        guard snap.categoryMode == .folder else { return "Where is your storage going?" }
+        let name = model.rootURL?.lastPathComponent ?? ""
+        return name.isEmpty ? "What’s in this folder?" : "What’s in \(name)?"
+    }
+
     private var whereGoingCard: some View {
         PanelCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Where is your storage going?")
+                    Text(whereGoingTitle)
                         .font(DiskMapType.section)
                         .foregroundStyle(DiskMapTheme.ink)
                     Spacer()
                 }
+                if snap.categoryMode == .folder {
+                    Text("By file type — folder names only mean something at the top of a home folder or a disk.")
+                        .font(DiskMapType.caption)
+                        .foregroundStyle(DiskMapTheme.mutedLabel)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 ForEach(snap.categories) { cat in
-                    let denom = categorySum
-                    HStack(spacing: 10) {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(DiskMapTheme.categoryColor(cat.colorHint).opacity(0.2))
-                            .frame(width: 28, height: 28)
-                            .overlay(
-                                Image(systemName: "folder.fill")
-                                    .font(DiskMapType.small)
-                                    .foregroundStyle(DiskMapTheme.categoryColor(cat.colorHint))
-                            )
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(cat.title).font(DiskMapType.bodyMedium).foregroundStyle(DiskMapTheme.ink)
-                                Spacer()
-                                Text(ByteFormat.string(cat.bytes))
-                                    .font(DiskMapType.bodyStrong.monospacedDigit())
-                                    .foregroundStyle(DiskMapTheme.ink)
-                            }
-                            ProportionBar(fraction: Double(cat.bytes) / Double(denom), tint: DiskMapTheme.categoryColor(cat.colorHint))
-                        }
-                        Text(pct(Double(cat.bytes) / Double(denom)))
-                            .font(DiskMapType.caption)
-                            .foregroundStyle(DiskMapTheme.mutedLabel)
-                            .frame(width: 40, alignment: .trailing)
-                    }
+                    categoryRow(cat)
                 }
                 Button("View in Visualizations →", action: onOpenVisualize)
                     .buttonStyle(.plain)
@@ -294,6 +282,66 @@ struct OverviewView: View {
                     .padding(.top, 4)
             }
         }
+    }
+
+    private func categoryRow(_ cat: StorageCategory) -> some View {
+        let denom = categorySum
+        let tint = color(of: cat)
+        return Button { open(cat) } label: {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(tint.opacity(0.2))
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        Image(systemName: cat.fileKind != nil ? "doc.fill" : "folder.fill")
+                            .font(DiskMapType.small)
+                            .foregroundStyle(tint)
+                    )
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(cat.title).font(DiskMapType.bodyMedium).foregroundStyle(DiskMapTheme.ink)
+                        Spacer()
+                        Text(ByteFormat.string(cat.bytes))
+                            .font(DiskMapType.bodyStrong.monospacedDigit())
+                            .foregroundStyle(DiskMapTheme.ink)
+                    }
+                    ProportionBar(fraction: Double(cat.bytes) / Double(denom), tint: tint)
+                }
+                Text(pct(Double(cat.bytes) / Double(denom)))
+                    .font(DiskMapType.caption)
+                    .foregroundStyle(DiskMapTheme.mutedLabel)
+                    .frame(width: 40, alignment: .trailing)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(openHelp(cat))
+        .accessibilityLabel("\(cat.title), \(ByteFormat.string(cat.bytes)), \(pct(Double(cat.bytes) / Double(denom)))")
+        .accessibilityHint(openHelp(cat))
+    }
+
+    /// A file type opens Find on that kind; "Other" opens Biggest Files; a
+    /// folder category opens Visualize at its folder.
+    private func open(_ cat: StorageCategory) {
+        if let kind = cat.fileKind {
+            model.findQuery = "kind:\(kind)"
+            model.destination = .find
+        } else if let node = cat.nodeID {
+            model.currentNode = node
+            model.selectedNode = node
+            onOpenVisualize()
+        } else {
+            onOpenBiggestFiles()
+        }
+    }
+
+    private func openHelp(_ cat: StorageCategory) -> String {
+        if cat.fileKind != nil { return "List every \(cat.title.lowercased()) file in Find" }
+        return cat.nodeID != nil ? "Show this folder in Visualize" : "Show the biggest files"
+    }
+
+    private func color(of cat: StorageCategory) -> Color {
+        cat.colorHex.map(DiskMapTheme.hex) ?? DiskMapTheme.categoryColor(cat.colorHint)
     }
 
     private var biggestFilesCard: some View {
@@ -485,11 +533,12 @@ struct OverviewView: View {
     private func categorySegments(total: Int64) -> [(color: Color, fraction: Double)] {
         let t = max(1, total)
         return snap.categories.map { cat in
-            (DiskMapTheme.categoryColor(cat.colorHint), Double(cat.bytes) / Double(t))
+            (color(of: cat), Double(cat.bytes) / Double(t))
         }
     }
 
     private func pct(_ f: Double) -> String {
-        String(format: "%.0f%%", min(100, max(0, f * 100)))
+        if f > 0 && f < 0.005 { return "<1%" }
+        return String(format: "%.0f%%", min(100, max(0, f * 100)))
     }
 }
