@@ -286,7 +286,8 @@ Offline. No networking.
 DiskBuddy’s left chrome (scan actions, Recent, Disk Storage, Current View,
 Quick Wins, File Types) and right Inspector stay put while the center canvas
 swaps among Treemap / Sunburst / Flame / Bubbles / Mind Map / Top Sizes /
-Age Map / Folders. Top nav is Explore | Duplicates | Applications | Monitor
+Age Map / Folders (Top Sizes and Folders were removed in the calm UI —
+see "Calm UI" below). Top nav is Explore | Duplicates | Applications | Monitor
 (stub) | Snapshots — Quick Wins is not a destination. Shared cream
 `#FAF5EC` and ink `#1C1B17` tokens live in `DesignSystem.swift`.
 `VolumeStats` and `FileTypeCatalog` are DiskMapCore; ChartLayout’s
@@ -853,7 +854,8 @@ pages stay, side by side in the Find section of the sidebar. Revisit once
 there is usage evidence (chips vs. pages); merging them would mean teaching
 `FileQuery` an index for bare-name terms, not deleting a page.
 
-PR #16's flat Quick Wins categories are kept as **Regenerable Data** next to
+(Superseded by "Calm UI": Regenerable Data is now Developer Storage's
+"By tool" tab.) PR #16's flat Quick Wins categories are kept as **Regenerable Data** next to
 Developer Storage: the first groups pattern hits by ecosystem straight from
 `quick-wins-patterns.json`; the second judges projects (rebuild cost, git
 state). Both stage through `CleanupQueue.stage()`.

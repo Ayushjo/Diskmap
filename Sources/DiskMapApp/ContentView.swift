@@ -935,13 +935,6 @@ enum ExploreViewMode: String, CaseIterable, Identifiable {
         }
     }
 
-    var showsLayoutControls: Bool {
-        switch self {
-        case .treemap, .sunburst, .flame, .bubbles, .mindMap: return true
-        default: return false
-        }
-    }
-
     /// Modes shown in the Visualize workspace picker (not File Browser / Find lists).
     static var visualizeModes: [ExploreViewMode] {
         [.treemap, .sunburst, .flame, .bubbles, .mindMap, .ageMap]

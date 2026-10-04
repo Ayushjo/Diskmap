@@ -212,16 +212,6 @@ struct OldDownloadsView: View {
         return path
     }
 
-    private func typeFilterFor(_ kind: FileKind) -> OldDownloadsTypeFilter {
-        switch kind {
-        case .video: return .video
-        case .archive: return .archive
-        case .diskImage: return .installer
-        case .document: return .document
-        default: return .other
-        }
-    }
-
     private func reveal(_ item: OldDownloadsCandidate) {
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.absolutePath)])
     }

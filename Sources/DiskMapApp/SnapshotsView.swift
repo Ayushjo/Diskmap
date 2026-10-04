@@ -564,15 +564,3 @@ struct SnapshotsView: View {
         selectedChangePath = spots.first?.path
     }
 }
-
-
-private extension SnapshotsView {
-    static func formatCount(_ n: Int) -> String {
-        let f = NumberFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.numberStyle = .decimal
-        f.groupingSeparator = ","
-        f.usesGroupingSeparator = true
-        return f.string(from: NSNumber(value: n)) ?? "\(n)"
-    }
-}

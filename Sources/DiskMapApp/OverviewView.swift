@@ -68,7 +68,7 @@ struct OverviewView: View {
     private var hero: some View {
         VStack(alignment: .leading, spacing: DiskMapSpace.sm) {
             if let vol = snap.volume {
-                MonoLabel((vol.volumeName ?? "Macintosh HD").uppercased())
+                MonoLabel(vol.volumeName.uppercased())
                 Text("\(ByteFormat.string(Int64(vol.freeBytes))) free")
                     .font(DiskMapType.display)
                     .foregroundStyle(DiskMapTheme.ink)
