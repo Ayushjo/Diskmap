@@ -170,7 +170,7 @@ struct FindView: View {
                     .disabled(trimmedQuery.isEmpty)
                     .help("Keep this search in the sidebar, with its size kept up to date")
             }
-            HStack(spacing: 2) {
+            FlowLayout(spacing: 2) {
                 ForEach(Self.chips) { chip in
                     let on = FileQuery.contains(chip.token, in: model.findQuery)
                     Chip(title: chip.title, isOn: on) {
@@ -238,7 +238,7 @@ struct FindView: View {
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     SectionHeader(label: "Keep one in the sidebar")
-                    HStack(spacing: 16) {
+                    FlowLayout(spacing: 16) {
                         ForEach(SavedSearches.starters, id: \.query) { starter in
                             let saved = model.savedSearches.contains { $0.query == starter.query }
                             Button {

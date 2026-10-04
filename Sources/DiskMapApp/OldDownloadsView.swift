@@ -120,7 +120,7 @@ struct OldDownloadsView: View {
                 DiskMapMenu(label: "Size", options: OldDownloadsSizeFilter.allCases, selection: $sizeFilter, title: { $0.title })
                 DiskMapMenu(label: "Sort", options: OldDownloadsSort.allCases, selection: $sort, title: { $0.title })
             }
-            HStack(spacing: DiskMapSpace.md) {
+            FlowLayout(spacing: DiskMapSpace.md) {
                 HStack(spacing: 2) {
                     ForEach(OldDownloadsAgeFilter.allCases) { age in
                         Chip(title: age.title, isOn: ageFilter == age) { ageFilter = age }

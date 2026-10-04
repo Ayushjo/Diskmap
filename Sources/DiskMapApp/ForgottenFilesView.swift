@@ -162,7 +162,7 @@ struct ForgottenFilesView: View {
                  Double(dist[bucket] ?? 0) / Double(total))
             })
             .accessibilityHidden(true)
-            HStack(spacing: 16) {
+            FlowLayout(spacing: 16) {
                 ForEach(ForgottenAgeBucket.allCases) { bucket in
                     let bytes = dist[bucket] ?? 0
                     if bytes > 0 {
@@ -184,7 +184,6 @@ struct ForgottenFilesView: View {
                         .accessibilityAddTraits(on ? .isSelected : [])
                     }
                 }
-                Spacer(minLength: 0)
                 if ageFilter != nil {
                     Button("Clear age") { ageFilter = nil }
                         .buttonStyle(LinkButtonStyle())

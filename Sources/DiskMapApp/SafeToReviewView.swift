@@ -102,12 +102,11 @@ struct SafeToReviewView: View {
                 (seg.color.opacity(category == nil || category == seg.category ? 1 : 0.3), Double(seg.bytes) / Double(total))
             })
             .accessibilityHidden(true)
-            HStack(spacing: DiskMapSpace.lg) {
+            FlowLayout(spacing: DiskMapSpace.lg) {
                 tab(nil, title: "All", bytes: summary.totalBytes, color: nil)
                 ForEach(segments.filter { $0.bytes > 0 }, id: \.category) { seg in
                     tab(seg.category, title: Self.shortTitle(seg.category), bytes: seg.bytes, color: seg.color)
                 }
-                Spacer(minLength: 0)
             }
         }
     }

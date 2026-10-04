@@ -274,7 +274,9 @@ struct SnapshotsView: View {
         }
         .labelsHidden()
         .pickerStyle(.menu)
-        .fixedSize()
+        // Shrinks (the label truncates) instead of forcing the page wider
+        // than the window; long dates pushed the inspector off-screen.
+        .frame(minWidth: 120, maxWidth: 280)
         .accessibilityLabel(title)
     }
 

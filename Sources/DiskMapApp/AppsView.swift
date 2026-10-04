@@ -76,7 +76,7 @@ struct AppsView: View {
                         Spacer(minLength: 8)
                         DiskMapMenu(label: "Sort", options: ApplicationsCatalog.Sort.allCases, selection: $sort, title: { $0.title })
                     }
-                    HStack(spacing: 2) {
+                    FlowLayout(spacing: 2) {
                         chip(.all, summary.appCount)
                         chip(.large, summary.largeCount)
                         chip(.notRecentlyUsed, summary.notRecentlyUsedCount)

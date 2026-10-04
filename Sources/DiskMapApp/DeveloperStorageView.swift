@@ -155,7 +155,7 @@ struct DeveloperStorageView: View {
                  Double($0.bytes) / Double(total))
             })
             .accessibilityHidden(true)
-            HStack(spacing: 14) {
+            FlowLayout(spacing: 14) {
                 ForEach(summary.categories) { roll in
                     let on = categoryFilter == roll.category
                     Button {
@@ -178,7 +178,6 @@ struct DeveloperStorageView: View {
                     .accessibilityLabel("\(roll.category.title), \(ByteFormat.string(roll.bytes))")
                     .accessibilityAddTraits(on ? .isSelected : [])
                 }
-                Spacer(minLength: 0)
             }
         }
     }
@@ -226,14 +225,30 @@ struct DeveloperStorageView: View {
                                         .foregroundStyle(DiskMapTheme.ink2)
                                         .frame(width: 24, height: 24)
                                 } trailing: {
-                                    SafetyLabel(level: nil, title: DeveloperLabels.gitShort(proj.git), tint: DeveloperLabels.gitTint(proj.git))
+                                    // Columns give way when the list is narrow (large text, small
+                                    // window); the inspector always shows every fact.
+                                    let git = SafetyLabel(level: nil, title: DeveloperLabels.gitShort(proj.git), tint: DeveloperLabels.gitTint(proj.git))
                                         .frame(width: DiskMapType.scaled(92), alignment: .leading)
                                         .help(proj.git.detail)
-                                    TextColumn(text: DeveloperLabels.rebuildShort(proj.rebuildCost), width: 92)
-                                    MonoColumn(text: RelativeAge.short(day: proj.lastSourceDay), width: 56)
-                                    MonoColumn(text: ByteFormat.string(proj.reclaimableBytes), width: 74)
-                                        .help("Reclaimable")
-                                    MonoColumn(text: ByteFormat.string(proj.bytes), width: 74, emphasis: true)
+                                    let size = MonoColumn(text: ByteFormat.string(proj.bytes), width: 74, emphasis: true)
+                                    ViewThatFits(in: .horizontal) {
+                                        HStack(spacing: 12) {
+                                            git
+                                            TextColumn(text: DeveloperLabels.rebuildShort(proj.rebuildCost), width: 92)
+                                            MonoColumn(text: RelativeAge.short(day: proj.lastSourceDay), width: 56)
+                                            MonoColumn(text: ByteFormat.string(proj.reclaimableBytes), width: 74)
+                                                .help("Reclaimable")
+                                            size
+                                        }
+                                        HStack(spacing: 12) {
+                                            git
+                                            TextColumn(text: DeveloperLabels.rebuildShort(proj.rebuildCost), width: 92)
+                                            size
+                                        }
+                                        HStack(spacing: 12) { git; size }
+                                        size
+                                    }
+                                    .layoutPriority(1)
                                 }
                             }
                             .buttonStyle(.plain)
