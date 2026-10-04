@@ -384,22 +384,21 @@ The Windows end state should be the same grouped sidebar.
   MFT tests).
 
 - [x] **WIN-032: Find page + filter chips**
-  `FindView.swift` (TASK-060): done — the Search page is now Find: a
-  query box running the FileQuery language, the six suggestion chips
-  (Large/Old/Duplicated/Cached/Media/Downloads) toggling tokens in the
-  text, the plain-language "what this query means" line, per-token
-  problems and `is:duplicate` explanation, match count + matched bytes
-  display, checkbox staging via the shared bottom bar, saved searches
-  (WIN-029). The shared row context menu (Reveal in Explorer / Copy
-  Path / Visualize this folder / Add to Cleanup) covers the per-row
-  actions, and a "Copy paths" link in the bottom bar joins the checked
-  rows' paths newline-separated — the multi-select action.
+  `FindView.swift` (TASK-060): done — Find has its own sidebar row in
+  the macOS order (and Ctrl+2 slot), a query box running the FileQuery
+  language, the six suggestion chips (Large/Old/Duplicated/Cached/
+  Media/Downloads), starter-query rows for its empty state, one Sort
+  menu, the plain-language meaning line, per-token problems and
+  `is:duplicate` explanation, match count + matched bytes, checkbox
+  staging via the shared bottom bar, and saved searches (WIN-029).
+  The shared row context menu (Reveal in Explorer / Copy Path / Show
+  in Visualize / Add to Cleanup) covers the per-row actions.
 
 - [x] **WIN-033: Search page**
   `SearchView.swift` — merged into Find: bare-word queries hit
   `FileSearch` (interned names, size-ranked), kind pills in the
   toolbar, row clicks select into the inspector, rows get the shared
-  context menu (Reveal / Copy Path / Visualize-or-Show-in-map / Stage),
+  context menu (Reveal / Copy Path / Show in Visualize / Add to Cleanup),
   and double-click reveals files in Explorer while dirs drill — the
   remaining "show in map" jump and open-on-double-click both landed.
 
@@ -525,9 +524,10 @@ state, but the inspector and coloring layers are missing entirely.
   highlight repaints via the `_rowBorders` map), Enter activates (drill
   for dirs, Reveal for files), Delete or Ctrl+Backspace stages via the
   page's own reason, Ctrl+↓/↑ drill into/out of the selection, Ctrl+1–9
-  jumps destinations in sidebar order, Ctrl+K/F opens the palette,
-  Ctrl+R rescans, Ctrl+Shift+R drops `ScanCache` then rescans (true
-  full rescan). TextBox focus swallows its own keys first.
+  jumps destinations in sidebar order (Overview then Find), Ctrl+K/F
+  opens the palette, Ctrl+Shift+Delete opens Cleanup, Ctrl+R rescans,
+  Ctrl+Shift+R drops `ScanCache` then rescans (true full rescan).
+  TextBox focus swallows its own keys first.
 
 - [x] **WIN-052: Multi-selection** — `ScanModel.MultiSelection`
   (shared set): Ctrl+click toggles a treemap cell (accent outline),
@@ -587,16 +587,16 @@ state, but the inspector and coloring layers are missing entirely.
   system|light|dark; "system" reads `AppsUseLightTheme`. `Theme.Apply`
   now takes the resolved flag and fills the existing dark palette
   values; the Fluent `ThemeMode` follows; the View → Appearance menu
-  (File menu) switches live and rebuilds cached pages since code-built
-  brushes resolve once. Chart tiles are opaque pastels — the dark-mode
-  trap macOS hit (translucent fill over dark canvas) doesn't apply.
+  (File menu) switches live and rebuilds the code-built shell, nav,
+  pages and inspector. Windows High Contrast swaps the Calm `line`,
+  `ink2` and `ink3` values to the DESIGN.md HC values at startup and
+  when the OS setting changes. Chart tiles keep the fixed data palette.
 
-- [x] **WIN-059: Text size scaling** — `AppSettings.textScale`
-  (0.9/1.0/1.1/1.2) drives a uniform LayoutTransform on the page
-  column; sidebar stays 1x (its labels are already compact). View →
-  Text size in the File menu; persists across launches. The named-
-  FontSize-tokens refactor macOS needed is unnecessary — one transform
-  scales everything crisply.
+- [x] **WIN-059: Text size scaling** — `AppSettings.textScale` uses
+  DESIGN.md's 0.9/1.0/1.15/1.3 choices (Smaller/Default/Larger/
+  Largest), applies to page and inspector content, and grows the
+  sidebar from its 212 px base so labels still fit. View → Text size
+  and Settings share the values and persist across launches.
 
 - [x] **WIN-060: Settings window** — `SettingsWindow.cs` (Ctrl+, — the
   ⌘, convention — and File → Settings…). Carries Appearance
@@ -634,10 +634,10 @@ state, but the inspector and coloring layers are missing entirely.
 - [x] **WIN-063: First-run hero + toasts** — Overview's empty state is
   now the hero: headline, three numbered cards teaching
   scan → explore → clean up, the scan button, and a drag-a-folder hint
-  (WIN-055). Toasts: a 2.4 s top overlay (`Model.Toast` →
-  `ToastRequested` → `MainWindow.ShowToast`) fires on stage
-  ("Staged X · N — goes to the Recycle Bin when you confirm"), commit,
-  and put back.
+  (WIN-055). Adding one or many items stays on the current page and
+  shows the standard raised toast ("Added to Cleanup — Ctrl+Shift+
+  Delete to review"); only the shell button, shortcut, or an existing
+  "In Cleanup" action opens Cleanup. Commit and Put Back also toast.
 
 - [x] **WIN-064: Rescan button + short-window scrolling** — verified
   by construction: every page derives from `ListPage` whose Content is
@@ -821,6 +821,32 @@ same spirit as the macOS "do better" list. Track here so they aren't lost.
   Sparkle→no-updater + the network guard test. Stale claims fixed:
   hard links now dedupe on BOTH backends; snapshots interchangeable
   again (v4 write / v1–4 read); CLI added to layout.
+
+---
+
+## 12. Calm design parity audit
+
+- [x] **WIN-082: Current DESIGN.md shell, controls and cleanup grammar**
+  Find is a first-class sidebar destination; the shell uses the 212 px
+  single-surface sidebar, 44 px top bar, DiskMap mark, hairline volume
+  footer, raised toast and 880 × 600 minimum window; below 1200 px the
+  inspector becomes a top-bar-controlled overlay drawer, and below
+  1000 px the sidebar does the same. Shared titles,
+  buttons, chips, search fields, checkboxes, figure strips and safety
+  labels now use shared Calm spacing, row heights and vertical alignment.
+  Page navigation resets stale scroll positions. The top bar exposes a
+  visible light/dark toggle, while View and Settings retain System mode.
+  A licensed, 8 KB subset of Google Material Symbols Rounded is bundled
+  as a WPF resource, so file/folder/navigation icons are consistent and
+  remain fully offline. The fixed data and age palettes replace legacy
+  blue/green/red view colors; High Contrast uses the documented line/ink
+  values. Staging is
+  consistently called "Add to Cleanup", never navigates automatically,
+  disables protected/keeper actions, and batches its toast. The
+  inspector no longer presents staging as an immediate Recycle Bin
+  action or repeats the safety verdict. Snapshot removal now enters
+  Cleanup instead of calling `File.Delete`. The Windows excluded-paths
+  list was not changed.
 
 ---
 

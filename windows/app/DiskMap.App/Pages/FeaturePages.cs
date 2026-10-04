@@ -40,47 +40,42 @@ public sealed class SafeToReviewPage : ListPage
         {
             Root.Children.RemoveAt(Root.Children.Count - 1);
 
-            var totalPanel = new StackPanel { Orientation = Orientation.Horizontal };
-            totalPanel.Children.Add(Ui.IconTile(Icons.Caches, 44, Ui.Hex("#F3E8FF"), Ui.Hex("#7C3AED"), 10));
-            var tt = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            tt.Children.Add(Ui.T(ByteFormat.Format(data.total), 22, FontWeights.Bold));
-            tt.Children.Add(Ui.Subtle($"across {data.byCategory.Sum(g => g.Count):N0} locations", 12));
-            totalPanel.Children.Add(tt);
-            Root.Children.Add(Ui.Card(totalPanel, 16));
+            Root.Children.Add(Ui.StatRow(
+                Ui.StatCard(Icons.Caches, Ui.DataTint(3), Ui.Data(3),
+                    ByteFormat.Format(data.total), "Reviewable",
+                    $"across {data.byCategory.Sum(g => g.Count):N0} locations")));
 
-            var grid = new UniformGrid { Columns = 2 };
-            foreach (var (title, blurb, page, glyph) in new (string, string, string, string)[]
+            var section = new StackPanel();
+            section.Children.Add(Ui.SectionHeader("Review a category"));
+            section.Children.Add(Ui.Gap(8));
+            var grid = new UniformGrid { Columns = 2, Margin = new Thickness(0, 0, 0, Ui.ZoneGap) };
+            foreach (var (title, blurb, page, glyph, color) in new (string, string, string, string, int)[]
             {
-                ("Caches", "App and system caches — recreated on demand", "Caches", Icons.Caches),
-                ("Old Downloads", "Installers and zips you already opened", "Old Downloads", Icons.Downloads),
-                ("Large Media", "Videos and images over 100 MB", "Large Media", Icons.Media),
-                ("Developer Storage", "Dependencies, build outputs, tool caches", "Developer Storage", Icons.Developer),
+                ("Caches", "App and system caches — recreated on demand", "Caches", Icons.Caches, 3),
+                ("Old Downloads", "Installers and archives you already used", "Old Downloads", Icons.Downloads, 2),
+                ("Large Media", "Videos, images and audio over 100 MB", "Large Media", Icons.Media, 2),
+                ("Developer Storage", "Dependencies, build outputs and tool caches", "Developer Storage", Icons.Developer, 0),
             })
             {
-                var card = new StackPanel { Margin = new Thickness(0, 0, 8, 12) };
-                var head = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
-                var tile = Ui.IconTile(glyph, 30, Ui.Brush("AppAccentSoft"), Ui.Brush("AppAccent"), 7);
+                var row = new DockPanel { MinHeight = 56 };
+                var arrow = Ui.Glyph(Icons.Forward, 16, Ui.Brush("AppFaint"));
+                DockPanel.SetDock(arrow, Dock.Right);
+                row.Children.Add(arrow);
+                var tile = Ui.IconTile(glyph, 32, Ui.DataTint(color), Ui.Data(color), 7);
+                tile.Margin = new Thickness(0, 0, 12, 0);
                 DockPanel.SetDock(tile, Dock.Left);
-                head.Children.Add(tile);
-                head.Children.Add(new StackPanel
-                {
-                    Margin = new Thickness(10, 0, 0, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Children =
-                    {
-                        Ui.T(title, 13, FontWeights.SemiBold),
-                        Ui.Faint(blurb),
-                    },
-                });
-                card.Children.Add(head);
-                var review = Ui.T("Review →", 12, FontWeights.Medium, Ui.Brush("AppAccent"));
-                review.Cursor = System.Windows.Input.Cursors.Hand;
+                row.Children.Add(tile);
+                var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                text.Children.Add(Ui.T(title, 13, FontWeights.Medium));
+                text.Children.Add(Ui.Faint(blurb));
+                row.Children.Add(text);
                 string captured = page;
-                review.MouseLeftButtonDown += (_, _) => Model.ShowPage(captured);
-                card.Children.Add(review);
-                grid.Children.Add(Ui.Card(card, 14, new Thickness(0)));
+                var nav = Ui.HoverRow(row, () => Model.ShowPage(captured));
+                nav.Margin = new Thickness(0, 0, 8, 4);
+                grid.Children.Add(nav);
             }
-            Root.Children.Add(grid);
+            section.Children.Add(grid);
+            Root.Children.Add(section);
 
             // Everything else the scanner flagged, listed inline.
             var other = new StackPanel();
@@ -144,12 +139,11 @@ public sealed class CachesPage : ListPage
             // Summary card: total + per-category bar.
             long total = hits.Sum(h => totals[h.Id]);
             var parts = hits.GroupBy(h => h.Category)
-                .Select((g, i) => (g.Key, g.Sum(h => totals[h.Id]),
-                    i == 0 ? Ui.Brush("AppAccent") : Ui.Hex("#F0A95F")))
+                .Select((g, i) => (g.Key, g.Sum(h => totals[h.Id]), Ui.Data(i + 3)))
                 .ToList();
             var summary = new DockPanel();
             var left = new StackPanel { Margin = new Thickness(0, 0, 24, 0), VerticalAlignment = VerticalAlignment.Center };
-            left.Children.Add(Ui.IconTile(Icons.Caches, 44, Ui.Hex("#F3E8FF"), Ui.Hex("#7C3AED"), 10));
+            left.Children.Add(Ui.IconTile(Icons.Caches, 44, Ui.DataTint(3), Ui.Data(3), 10));
             var lt = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             lt.Children.Add(Ui.T(ByteFormat.Format(total), 20, FontWeights.Bold));
             lt.Children.Add(Ui.Subtle($"across {hits.Count:N0} locations", 11.5));
@@ -190,7 +184,7 @@ public sealed class CachesPage : ListPage
         check.Checked += (_, _) => { _checked.Add(hit.Id); _repaintBar?.Invoke(); };
         check.Unchecked += (_, _) => { _checked.Remove(hit.Id); _repaintBar?.Invoke(); };
         Ui.Cell(row, check, 0);
-        Ui.Cell(row, Ui.NameCell(Icons.Caches, Ui.Hex("#F3E8FF"), Ui.Hex("#7C3AED"),
+        Ui.Cell(row, Ui.NameCell(Icons.Caches, Ui.DataTint(3), Ui.Data(3),
             hit.Name, Model.DisplayPath(hit.Id), 26), 1);
         Ui.Cell(row, Ui.Subtle(hit.Category, 11.5), 2);
         Ui.Cell(row, Ui.T(ByteFormat.Format(totals[hit.Id]), 12), 3, right: true);
@@ -221,16 +215,23 @@ public sealed class CachesPage : ListPage
             bar.Children.Add(left);
             var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             DockPanel.SetDock(right, Dock.Right);
-            right.Children.Add(Ui.Button("Reveal in Explorer", Icons.Open, Ui.ButtonStyle.Outline,
-                () => { if (selected.Count > 0) Explorer.Reveal(Model.PathOf(selected[0].Id)); }));
+            var reveal = Ui.Button("Reveal in Explorer", Icons.Open, Ui.ButtonStyle.Outline,
+                () => { if (selected.Count > 0) Explorer.Reveal(Model.PathOf(selected[0].Id)); });
+            reveal.IsEnabled = selected.Count > 0;
+            right.Children.Add(reveal);
             right.Children.Add(new Border { Width = 8 });
-            right.Children.Add(Ui.Button("Add to Cleanup →", null, Ui.ButtonStyle.Dark,
+            var add = Ui.Button("Add to Cleanup", null, Ui.ButtonStyle.Primary,
                 () =>
                 {
-                    foreach (var h in selected) Model.Stage(h.Id, "caches");
+                    int added = 0;
+                    foreach (var h in selected)
+                        if (Model.Stage(h.Id, "caches", notify: false)) added++;
                     _checked.Clear();
                     Repaint();
-                }));
+                    if (added > 0) Model.ToastAdded(added);
+                });
+            add.IsEnabled = selected.Count > 0;
+            right.Children.Add(add);
             bar.Children.Add(right);
         }
         Repaint();
@@ -277,7 +278,7 @@ public sealed class DeveloperStoragePage : ListPage
 
             // Hero stats — the decision numbers, not just bytes.
             var stats = Ui.StatRow(
-                Ui.StatCard(Icons.Developer, Ui.Hex("#E0F2FE"), Ui.Hex("#0284C7"),
+                Ui.StatCard(Icons.Developer, Ui.DataTint(0), Ui.Data(0),
                     ByteFormat.Format(summary.TotalBytes),
                     "Developer storage", $"{summary.ItemCount:N0} locations"),
                 Ui.StatCard(Icons.SafeReview, Ui.Brush("AppSuccessBg"), Ui.Brush("AppSuccess"),
@@ -297,8 +298,7 @@ public sealed class DeveloperStoragePage : ListPage
                 var strip = new StackPanel();
                 strip.Children.Add(Ui.TypeBarWithLegend(
                     summary.Categories
-                        .Select((c, i) => (c.Category.Title(), c.Bytes,
-                            i % 2 == 0 ? Ui.Hex("#0284C7") : Ui.Hex("#F0A95F") as Brush)).ToList(),
+                        .Select((c, i) => (c.Category.Title(), c.Bytes, Ui.Data(i) as Brush)).ToList(),
                     Math.Max(1, summary.TotalBytes)));
                 Root.Children.Add(Ui.Card(strip, 14));
             }
@@ -349,16 +349,17 @@ public sealed class DeveloperStoragePage : ListPage
                     if (project.ReclaimableBytes > 0)
                     {
                         var stageAll = Ui.Button(
-                            $"Stage reclaimable ({ByteFormat.Format(project.ReclaimableBytes)})",
+                            $"Add reclaimable ({ByteFormat.Format(project.ReclaimableBytes)}) to Cleanup",
                             Icons.Cleanup, Ui.ButtonStyle.Outline,
                             () =>
                             {
+                                int added = 0;
                                 foreach (var item in result.Items.Where(i =>
                                     i.ProjectKey == project.Key
                                     && i.Reclaimability != DeveloperReclaimability.Keep
                                     && !i.IsProtected))
-                                    Model.Stage(item.NodeID, "developer storage");
-                                Model.ShowPage("Cleanup");
+                                    if (Model.Stage(item.NodeID, "developer storage", notify: false)) added++;
+                                if (added > 0) Model.ToastAdded(added);
                             });
                         stageAll.Margin = new Thickness(0, 6, 0, 0);
                         stageAll.HorizontalAlignment = HorizontalAlignment.Left;
@@ -369,7 +370,7 @@ public sealed class DeveloperStoragePage : ListPage
                 }
                 if (result.Projects.Count > 20)
                     body.Children.Add(Ui.Faint($"… and {result.Projects.Count - 20:N0} smaller projects"));
-                Root.Children.Add(Ui.HeadedCard(Icons.Code, Ui.Hex("#E0F2FE"), Ui.Hex("#0284C7"),
+                Root.Children.Add(Ui.HeadedCard(Icons.Code, Ui.DataTint(0), Ui.Data(0),
                     "Projects", "Folders that own dependencies or build output", body));
             }
 
@@ -379,7 +380,7 @@ public sealed class DeveloperStoragePage : ListPage
                 itemsBody.Children.Add(ItemRow(tree, totals, item));
             if (result.Items.Count > 40)
                 itemsBody.Children.Add(Ui.Faint($"… and {result.Items.Count - 40:N0} smaller locations"));
-            Root.Children.Add(Ui.HeadedCard(Icons.Developer, Ui.Hex("#E0F2FE"), Ui.Hex("#0284C7"),
+            Root.Children.Add(Ui.HeadedCard(Icons.Developer, Ui.DataTint(0), Ui.Data(0),
                 "All locations", "Every developer-owned folder in the scan", itemsBody));
         });
     }
@@ -393,9 +394,9 @@ public sealed class DeveloperStoragePage : ListPage
         };
         var row = Ui.TableRowGrid(
             new GridLength(1, GridUnitType.Star), new GridLength(150),
-            new GridLength(80), new GridLength(80));
+            new GridLength(80), new GridLength(110));
         outer.Child = row;
-        Ui.Cell(row, Ui.NameCell(Icons.Developer, Ui.Hex("#E0F2FE"), Ui.Hex("#0284C7"),
+        Ui.Cell(row, Ui.NameCell(Icons.Developer, Ui.DataTint(0), Ui.Data(0),
             item.DisplayName, Model.DisplayPath(item.NodeID), 26), 0);
         Ui.Cell(row, Ui.Subtle(item.RebuildCost.Title(), 11), 1);
         Ui.Cell(row, Ui.T(ByteFormat.Format(item.Bytes), 12, FontWeights.Medium), 2, right: true);
@@ -415,7 +416,7 @@ public sealed class DeveloperStoragePage : ListPage
         }
         else if (!item.IsProtected && item.Reclaimability != DeveloperReclaimability.Keep)
         {
-            var stage = Ui.Button("Stage", null, Ui.ButtonStyle.Outline,
+            var stage = Ui.Button("Add to Cleanup", null, Ui.ButtonStyle.Outline,
                 () => { Model.Stage(item.NodeID, "developer storage"); });
             stage.Padding = new Thickness(10, 3, 10, 3);
             stage.VerticalAlignment = VerticalAlignment.Center;
@@ -473,13 +474,10 @@ public sealed class DuplicatesPage : ListPage
             // Every group's recoverable space assumes "keep one, remove rest".
             long recoverable = groups.Sum(g =>
                 g.ReclaimableBytes(g.FileIDs.Skip(1).ToHashSet()));
-            var summary = new StackPanel { Orientation = Orientation.Horizontal };
-            summary.Children.Add(Ui.IconTile(Icons.Duplicates, 44, Ui.Brush("AppSuccessBg"), Ui.Brush("AppSuccess"), 10));
-            var st = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            st.Children.Add(Ui.T(ByteFormat.Format(recoverable), 22, FontWeights.Bold));
-            st.Children.Add(Ui.Subtle($"potentially recoverable · {groups.Count:N0} groups · {groups.Sum(g => g.FileIDs.Count):N0} copies", 12));
-            summary.Children.Add(st);
-            Root.Children.Add(Ui.Card(summary, 16));
+            Root.Children.Add(Ui.StatRow(
+                Ui.StatCard(Icons.Duplicates, Ui.Brush("AppHover"), Ui.Brush("AppSubtle"),
+                    ByteFormat.Format(recoverable), "Extra copies free",
+                    $"{groups.Count:N0} groups · {groups.Sum(g => g.FileIDs.Count):N0} copies")));
 
             foreach (var group in groups.Take(60))
             {
@@ -499,22 +497,24 @@ public sealed class DuplicatesPage : ListPage
                     };
                     var row = Ui.TableRowGrid(
                         new GridLength(28), new GridLength(84),
-                        new GridLength(1, GridUnitType.Star), new GridLength(80));
+                        new GridLength(1, GridUnitType.Star), new GridLength(110));
                     rowOuter.Child = row;
                     var check = new CheckBox
                     {
                         IsChecked = !isKeeper,
+                        IsEnabled = !isKeeper,
                         VerticalAlignment = VerticalAlignment.Center,
                     };
                     Ui.Cell(row, check, 0);
-                    var tag = isKeeper
-                        ? Ui.Badge("keeps", Ui.Brush("AppSuccess"), Ui.Brush("AppSuccessBg"))
-                        : Ui.Badge("older copy", Ui.Brush("AppSubtle"), Ui.Brush("AppHover"));
+                    UIElement tag = isKeeper
+                        ? Ui.SafetyLabel(Ui.Brush("AppSuccess"), "Keeper", 11)
+                        : Ui.Subtle("Extra copy", 11);
                     Ui.Cell(row, tag, 1);
                     Ui.Cell(row, Ui.NameCell(Icons.File, Ui.Brush("AppHover"), Ui.Brush("AppSubtle"),
                         Path.GetFileName(path), Path.GetDirectoryName(path), 24), 2);
-                    var stage = Ui.Button("Stage", null, Ui.ButtonStyle.Outline,
+                    var stage = Ui.Button("Add to Cleanup", null, Ui.ButtonStyle.Outline,
                         () => Model.Stage(id, "duplicate", group.Hash, group.FileIDs.Count));
+                    stage.IsEnabled = !isKeeper;
                     stage.Padding = new Thickness(10, 3, 10, 3);
                     stage.VerticalAlignment = VerticalAlignment.Center;
                     Ui.Cell(row, stage, 3, right: true);
@@ -528,12 +528,13 @@ public sealed class DuplicatesPage : ListPage
                     };
                     body.Children.Add(rowOuter);
                 }
-                var stageChecked = Ui.Button("Stage copies except keeper", Icons.Cleanup, Ui.ButtonStyle.Dark,
+                var stageChecked = Ui.Button("Add extra copies to Cleanup", Icons.Cleanup, Ui.ButtonStyle.Primary,
                     () =>
                     {
+                        int added = 0;
                         foreach (var memberId in group.FileIDs.Where(m => m != keeper))
-                            Model.Stage(memberId, "duplicate", group.Hash, group.FileIDs.Count);
-                        Model.ShowPage("Cleanup");
+                            if (Model.Stage(memberId, "duplicate", group.Hash, group.FileIDs.Count, notify: false)) added++;
+                        if (added > 0) Model.ToastAdded(added);
                     });
                 stageChecked.Margin = new Thickness(0, 10, 0, 0);
                 stageChecked.HorizontalAlignment = HorizontalAlignment.Left;
@@ -633,7 +634,7 @@ public sealed class ApplicationsPage : ListPage
             _body.Children.Add(Ui.StatRow(
                 Ui.StatCard(Icons.Applications, Ui.Brush("AppAccentSoft"), Ui.Brush("AppAccent"),
                     $"{apps.Count:N0}", "Applications", "installed"),
-                Ui.StatCard(Icons.Drive, Ui.Hex("#F3E8FF"), Ui.Hex("#7C3AED"),
+                Ui.StatCard(Icons.Drive, Ui.DataTint(3), Ui.Data(3),
                     ByteFormat.Format(installBytes), "Size of apps with leftovers"),
                 Ui.StatCard(Icons.Cleanup, Ui.Brush("AppSuccessBg"), Ui.Brush("AppSuccess"),
                     ByteFormat.Format(leftoverBytes), "Potentially removable",
@@ -670,8 +671,8 @@ public sealed class ApplicationsPage : ListPage
                 var check = new CheckBox { VerticalAlignment = VerticalAlignment.Center };
                 Ui.Cell(row, check, 0);
                 Ui.Cell(row, Ui.Faint((i + 1).ToString()), 1);
-                Ui.Cell(row, Ui.NameCell(Icons.Applications, Ui.Brush("AppAccentSoft"),
-                    Ui.Brush("AppAccent"), app.AppName,
+                Ui.Cell(row, Ui.NameCell(Icons.Applications, Ui.DataTint(5),
+                    Ui.Data(5), app.AppName,
                     app.InstallPath.Length > 0 ? app.InstallPath : "—", 26), 2);
                 // Footprint = install dir + its leftovers — the per-app
                 // total the macOS page shows.
@@ -680,8 +681,8 @@ public sealed class ApplicationsPage : ListPage
                 Ui.Cell(row, Ui.T(leftover > 0 ? ByteFormat.Format(leftover)
                     : app.LeftoverPaths.Count > 0 ? $"{app.LeftoverPaths.Count} items" : "—", 12), 4, right: true);
                 Ui.Cell(row, leftover > 0 || app.LeftoverPaths.Count > 0
-                    ? Ui.Badge("Review first", Ui.Brush("AppWarning"), Ui.Brush("AppWarningBg"))
-                    : Ui.Badge("Keep", Ui.Brush("AppSuccess"), Ui.Brush("AppSuccessBg")), 5);
+                    ? Ui.SafetyLabel(Ui.Brush("AppWarning"), "Review first", 11)
+                    : Ui.SafetyLabel(Ui.Brush("AppFaint"), "Keep", 11), 5);
                 var captured = app;
                 Ui.Cell(row, Ui.MoreButton(() =>
                 {
@@ -728,12 +729,12 @@ public sealed class ApplicationsPage : ListPage
                 foreach (var (path, size) in items.Take(12))
                 {
                     var row = Ui.TableRowGrid(
-                        new GridLength(1, GridUnitType.Star), new GridLength(80), new GridLength(80));
+                        new GridLength(1, GridUnitType.Star), new GridLength(80), new GridLength(110));
                     row.Margin = new Thickness(0, 3, 0, 3);
                     var capturedPath = path;
                     var capturedSize = size;
                     var appName = app.AppName;
-                    var stage = Ui.Button("Stage", null, Ui.ButtonStyle.Outline,
+                    var stage = Ui.Button("Add to Cleanup", null, Ui.ButtonStyle.Outline,
                         () => Model.StagePath(capturedPath, capturedSize, $"leftover of {appName}"));
                     stage.Padding = new Thickness(10, 3, 10, 3);
                     stage.VerticalAlignment = VerticalAlignment.Center;
@@ -743,12 +744,13 @@ public sealed class ApplicationsPage : ListPage
                     Ui.Cell(row, stage, 2, right: true);
                     body.Children.Add(row);
                 }
-                var stageAll = Ui.Button("Stage all leftovers", Icons.Cleanup, Ui.ButtonStyle.Dark,
+                var stageAll = Ui.Button("Add all leftovers to Cleanup", Icons.Cleanup, Ui.ButtonStyle.Primary,
                     () =>
                     {
+                        int added = 0;
                         foreach (var (p, s) in items)
-                            Model.StagePath(p, s, $"leftover of {app.AppName}");
-                        Model.ShowPage("Cleanup");
+                            if (Model.StagePath(p, s, $"leftover of {app.AppName}", notify: false)) added++;
+                        if (added > 0) Model.ToastAdded(added);
                     });
                 stageAll.Margin = new Thickness(0, 10, 0, 0);
                 stageAll.HorizontalAlignment = HorizontalAlignment.Left;
@@ -768,14 +770,14 @@ public sealed class ApplicationsPage : ListPage
                         new GridLength(1, GridUnitType.Star), new GridLength(90));
                     row.Margin = new Thickness(0, 3, 0, 3);
                     long sz = installSizes.TryGetValue(pkg.RegistryKeyName ?? pkg.Name, out var v) ? v : 0;
-                    Ui.Cell(row, Ui.NameCell(Icons.Applications, Ui.Hex("#F3E8FF"), Ui.Hex("#7C3AED"),
+                    Ui.Cell(row, Ui.NameCell(Icons.Applications, Ui.DataTint(5), Ui.Data(5),
                         pkg.Name, pkg.InstallLocation ?? "", 24), 0);
                     Ui.Cell(row, Ui.T(sz > 0 ? ByteFormat.Format(sz) : "—", 12, FontWeights.Medium), 1, right: true);
                     storeBody.Children.Add(row);
                 }
                 if (store.Count > 40)
                     storeBody.Children.Add(Ui.Faint($"… and {store.Count - 40:N0} more packages"));
-                _body.Children.Add(Ui.HeadedCard(Icons.Applications, Ui.Hex("#F3E8FF"), Ui.Hex("#7C3AED"),
+                _body.Children.Add(Ui.HeadedCard(Icons.Applications, Ui.DataTint(3), Ui.Data(3),
                     "Store apps", $"{store.Count:N0} MSIX packages — managed by Windows; uninstall from Settings", storeBody));
             }
             if (apps.Count == 0)
@@ -898,16 +900,11 @@ public sealed class SnapshotsPage : ListPage
                 var open = new MenuItem { Header = "Open" };
                 open.Click += (_, _) => Load(captured);
                 menu.Items.Add(open);
-                var del = new MenuItem { Header = "Delete snapshot" };
+                var del = new MenuItem { Header = "Add snapshot to Cleanup" };
                 del.Click += (_, _) =>
                 {
-                    if (MessageBox.Show("Delete this snapshot file?", "Snapshots",
-                            MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
-                    {
-                        File.Delete(captured);
-                        RefreshList();
-                        RefreshCompare();
-                    }
+                    long size = new FileInfo(captured).Length;
+                    Model.StagePath(captured, size, "snapshot");
                 };
                 menu.Items.Add(del);
                 menu.IsOpen = true;
@@ -1010,17 +1007,12 @@ public sealed class SnapshotsPage : ListPage
 
         var root = cmp.Root;
         long delta = root.Delta;
-        var summary = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 10) };
-        summary.Children.Add(Ui.IconTile(Icons.Drive,
-            36, delta >= 0 ? Ui.Brush("AppDangerBg") : Ui.Brush("AppSuccessBg"),
-            delta >= 0 ? Ui.Brush("AppDanger") : Ui.Brush("AppSuccess"), 8));
-        var st = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        st.Children.Add(Ui.T($"{(delta >= 0 ? "+" : "−")}{ByteFormat.Format(Math.Abs(delta))}", 18, FontWeights.Bold,
-            delta >= 0 ? Ui.Brush("AppDanger") : Ui.Brush("AppSuccess")));
+        var summary = new StackPanel { Margin = new Thickness(0, 4, 0, 10) };
+        summary.Children.Add(Ui.Mono(
+            $"{(delta >= 0 ? "+" : "−")}{ByteFormat.Format(Math.Abs(delta))}", 28, FontWeights.SemiBold));
         var (grew, shrank) = cmp.SplitOf(_drill ?? root);
-        st.Children.Add(Ui.Faint(
+        summary.Children.Add(Ui.Faint(
             $"net change · +{ByteFormat.Format(grew)} grew · −{ByteFormat.Format(Math.Abs(shrank))} freed here"));
-        summary.Children.Add(st);
         _compareResult.Children.Add(summary);
 
         // The story: where the change actually happened, not every
@@ -1158,7 +1150,7 @@ public sealed class CleanupQueuePage : ListPage
     {
         Root.Children.Clear();
         Root.Children.Add(Header("Cleanup",
-            "Everything you staged, waiting for review. Commit moves it to the Recycle Bin — recoverable until you empty it.",
+            "Everything you've added, waiting for review. Nothing moves to the Recycle Bin until you confirm.",
             glyph: Icons.Cleanup, iconBg: Ui.Brush("AppDangerBg"), iconFg: Ui.Brush("AppDanger")));
         var items = Model.Cleanup.AllItems();
 
@@ -1186,30 +1178,25 @@ public sealed class CleanupQueuePage : ListPage
 
         if (items.Count == 0)
         {
-            Root.Children.Add(Ui.EmptyState(Icons.Cleanup, "Nothing staged",
-                "Stage items from any page — the treemap, file lists, quick wins — and they'll wait here for review.",
+            Root.Children.Add(Ui.EmptyState(Icons.Cleanup, "Nothing in Cleanup",
+                "Add items from the map, file lists or review pages, then confirm them here.",
                 Ui.Button("Find things to clean", Icons.SafeReview, Ui.ButtonStyle.Outline,
                     () => Model.ShowPage("Safe to Review"))));
             return;
         }
 
         var estimate = Model.Cleanup.Estimate();
-        var summary = new StackPanel { Orientation = Orientation.Horizontal };
-        summary.Children.Add(Ui.IconTile(Icons.Cleanup, 44, Ui.Brush("AppDangerBg"), Ui.Brush("AppDanger"), 10));
-        var st = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        st.Children.Add(Ui.T(
-            estimate.IsCalculating ? $"~{ByteFormat.Format(estimate.Bytes)}"
-                : estimate.IsLowerBound ? $"≥{ByteFormat.Format(estimate.Bytes)}"
-                : ByteFormat.Format(estimate.Bytes),
-            22, FontWeights.Bold));
-        var subline = $"freed when the Recycle Bin is emptied · {items.Count} items staged";
+        string reclaimable = estimate.IsCalculating ? $"~{ByteFormat.Format(estimate.Bytes)}"
+            : estimate.IsLowerBound ? $"≥{ByteFormat.Format(estimate.Bytes)}"
+            : ByteFormat.Format(estimate.Bytes);
+        var subline = $"{items.Count} items in Cleanup · freed when the Recycle Bin is emptied";
         if (estimate.IsCalculating)
-            subline = "measuring sizes… · " + subline;
+            subline = "Measuring sizes… · " + subline;
         else if (estimate.HeldByUnqueuedCopies > 0)
             subline += $" · {ByteFormat.Format(estimate.HeldByUnqueuedCopies)} stays in use (hard-linked elsewhere)";
-        summary.Children.Add(Ui.T(subline, 12, null, Ui.Brush("AppSubtle")));
-        summary.Children.Add(st);
-        Root.Children.Add(Ui.Card(summary, 16));
+        Root.Children.Add(Ui.StatRow(
+            Ui.StatCard(Icons.Cleanup, Ui.Brush("AppHover"), Ui.Brush("AppSubtle"),
+                reclaimable, "Reclaimable", subline)));
 
         foreach (var group in items.GroupBy(i => i.Reason).OrderByDescending(g => g.Sum(i => i.Size)))
         {
@@ -1218,7 +1205,7 @@ public sealed class CleanupQueuePage : ListPage
             {
                 var row = Ui.TableRowGrid(
                     new GridLength(1, GridUnitType.Star), new GridLength(80),
-                    new GridLength(60), new GridLength(60));
+                    new GridLength(60), new GridLength(120));
                 row.Margin = new Thickness(0, 3, 0, 3);
                 var captured = item;
                 Ui.Cell(row, Ui.NameCell(Icons.File, Ui.Brush("AppHover"), Ui.Brush("AppSubtle"),
@@ -1234,7 +1221,7 @@ public sealed class CleanupQueuePage : ListPage
                 reveal.VerticalAlignment = VerticalAlignment.Center;
                 reveal.MouseLeftButtonDown += (_, _) => Explorer.Reveal(captured.Path);
                 Ui.Cell(row, reveal, 2, right: true);
-                var remove = Ui.T("Remove", 11.5, FontWeights.Medium, Ui.Brush("AppDanger"));
+                var remove = Ui.T("Remove from Cleanup", 11.5, FontWeights.Medium, Ui.Brush("AppAccent"));
                 remove.Cursor = System.Windows.Input.Cursors.Hand;
                 remove.VerticalAlignment = VerticalAlignment.Center;
                 remove.MouseLeftButtonDown += (_, _) => { Model.Unstage(captured.Id); Refresh(); };
@@ -1247,12 +1234,12 @@ public sealed class CleanupQueuePage : ListPage
 
         // The destructive action is never offered on a provisional figure.
         var commit = Ui.Button(
-            estimate.IsCalculating ? "Measuring sizes…" : $"Move {items.Count} items to the Recycle Bin",
-            Icons.Trash, Ui.ButtonStyle.Danger, Commit);
-        commit.Padding = new Thickness(18, 9, 18, 9);
+            estimate.IsCalculating ? "Measuring sizes…" : $"Move {items.Count} items to the Recycle Bin…",
+            Icons.Trash, Ui.ButtonStyle.Primary, Commit);
         commit.HorizontalAlignment = HorizontalAlignment.Left;
         commit.IsEnabled = !estimate.IsCalculating;
-        Root.Children.Add(Ui.Card(commit, 12, new Thickness(0)));
+        commit.Margin = new Thickness(0, 12, 0, 0);
+        Root.Children.Add(commit);
     }
 
     private static string ReasonLabel(string reason) => reason switch
@@ -1261,8 +1248,8 @@ public sealed class CleanupQueuePage : ListPage
         "caches" => "Caches",
         "developer storage" => "Developer storage",
         var r when r.StartsWith("leftover of ") => "App leftovers",
-        var r when r.StartsWith("from treemap") => "Staged from the map",
-        _ => "Staged items",
+        var r when r.StartsWith("from treemap") => "Added from the map",
+        _ => "Cleanup items",
     };
 
     private async void Commit()

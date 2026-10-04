@@ -199,7 +199,7 @@ public sealed class MindMapControl : FrameworkElement
         var reveal = new MenuItem { Header = "Reveal in Explorer" };
         reveal.Click += (_, _) => Explorer.Reveal(model.PathOf(id));
         menu.Items.Add(reveal);
-        var stage = new MenuItem { Header = "Stage for cleanup" };
+        var stage = new MenuItem { Header = "Add to Cleanup" };
         stage.Click += (_, _) => model.Stage(id, "from mind map");
         menu.Items.Add(stage);
         menu.IsOpen = true;

@@ -155,7 +155,7 @@ public sealed class BubblesControl : FrameworkElement
         var reveal = new MenuItem { Header = "Reveal in Explorer" };
         reveal.Click += (_, _) => Explorer.Reveal(model.PathOf(id));
         menu.Items.Add(reveal);
-        var stage = new MenuItem { Header = "Stage for cleanup" };
+        var stage = new MenuItem { Header = "Add to Cleanup" };
         stage.Click += (_, _) => model.Stage(id, "from bubbles");
         menu.Items.Add(stage);
         menu.IsOpen = true;

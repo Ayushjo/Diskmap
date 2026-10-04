@@ -44,4 +44,61 @@ public class NetworkPolicyTests
         }
         Assert.Empty(offenders);
     }
+
+    [Fact]
+    public void AppDoesNotDeleteFilesDirectly()
+    {
+        string windows = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        string appRoot = Path.Combine(windows, "app");
+        var offenders = Directory.EnumerateFiles(appRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar)
+                     && !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar))
+            .Where(f =>
+            {
+                string text = File.ReadAllText(f);
+                return text.Contains("File.Delete(", StringComparison.Ordinal)
+                    || text.Contains("Directory.Delete(", StringComparison.Ordinal);
+            })
+            .Select(Path.GetFileName)
+            .ToList();
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void WindowsUiUsesCleanupGrammar()
+    {
+        string windows = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        string appRoot = Path.Combine(windows, "app", "DiskMap.App");
+        string[] forbidden = ["Stage for cleanup", "Add to Cleanup Review", "Delete snapshot"];
+        var offenders = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(appRoot, "*.*", SearchOption.AllDirectories)
+                     .Where(f => Path.GetExtension(f) is ".cs" or ".xaml")
+                     .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar)
+                              && !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)))
+        {
+            string text = File.ReadAllText(file);
+            foreach (string term in forbidden)
+                if (text.Contains(term, StringComparison.OrdinalIgnoreCase))
+                    offenders.Add($"{Path.GetFileName(file)}: {term}");
+        }
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void MaterialIconFontIsBundledAndOffline()
+    {
+        string windows = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        string appRoot = Path.Combine(windows, "app", "DiskMap.App");
+        string font = Path.Combine(appRoot, "Assets", "Fonts", "MaterialSymbolsRounded.ttf");
+        string license = Path.Combine(appRoot, "Assets", "Fonts", "LICENSE-material-symbols.txt");
+        Assert.True(File.Exists(font));
+        Assert.InRange(new FileInfo(font).Length, 1, 100_000);
+        Assert.True(File.Exists(license));
+        Assert.DoesNotContain("Segoe MDL2 Assets", File.ReadAllText(Path.Combine(appRoot, "Icons.cs")));
+        Assert.Contains("Assets\\Fonts\\MaterialSymbolsRounded.ttf",
+            File.ReadAllText(Path.Combine(appRoot, "DiskMap.App.csproj")));
+    }
 }

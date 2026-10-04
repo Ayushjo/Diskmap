@@ -8,8 +8,8 @@ namespace DiskMap.App;
 /// The app's palette — colors are swapped in place by <see cref="Apply"/>
 /// and controls reference them via DynamicResource (or
 /// <see cref="Ui.Brush"/> for code-built UI). Light values follow the
-/// reference design: near-white content, gray sidebar, blue accent,
-/// pastel chart tiles.
+/// Calm design: one warm canvas, ink text, one violet accent and the
+/// fixed data palette for charts.
 /// </summary>
 public static class Theme
 {
@@ -34,20 +34,30 @@ public static class Theme
     public static void Apply(bool dark)
     {
         var r = Application.Current.Resources;
+        bool highContrast = SystemParameters.HighContrast;
+        string line = highContrast
+            ? (dark ? "#FF4A4A50" : "#FFB9B8B3")
+            : (dark ? "#FF26262A" : "#FFE4E3DF");
+        string ink2 = highContrast
+            ? (dark ? "#FFCDCDD2" : "#FF404852")
+            : (dark ? "#FFA3A3A8" : "#FF66717E");
+        string ink3 = highContrast
+            ? (dark ? "#FFAAAAB0" : "#FF626870")
+            : (dark ? "#FF76767C" : "#FF949AA2");
 
         // Surfaces — one canvas everywhere; raised is for floats only.
         Set(r, "AppBackground", dark ? "#FF0B0B0C" : "#FFF8F7F4");
         Set(r, "AppSidebar", dark ? "#FF0B0B0C" : "#FFF8F7F4");
         Set(r, "AppCard", dark ? "#FF141416" : "#FFFFFFFF");
-        Set(r, "AppCardBorder", dark ? "#FF26262A" : "#FFE4E3DF");
+        Set(r, "AppCardBorder", line);
         Set(r, "AppChrome", dark ? "#FF0B0B0C" : "#FFF8F7F4");
         Set(r, "AppField", dark ? "#FF101012" : "#FFFCFBFA");   // raised @ 55%
         Set(r, "AppHover", dark ? "#FF161617" : "#FFEEEDEB");   // ink/white @ 4.5%
 
         // Text — ink, ink2, ink3.
         Set(r, "AppForeground", dark ? "#FFF2F2F3" : "#FF252B31");
-        Set(r, "AppSubtle", dark ? "#FFA3A3A8" : "#FF66717E");
-        Set(r, "AppFaint", dark ? "#FF76767C" : "#FF949AA2");
+        Set(r, "AppSubtle", ink2);
+        Set(r, "AppFaint", ink3);
 
         // Accent + selection — one violet.
         Set(r, "AppAccent", dark ? "#FF9A8BF0" : "#FF7966DA");
@@ -70,7 +80,7 @@ public static class Theme
 
         // Kept for existing references (pages rewritten to the new names).
         Set(r, "AppPanel", dark ? "#FF0B0B0C" : "#FFF8F7F4");
-        Set(r, "AppBorder", dark ? "#FF26262A" : "#FFE4E3DF");
+        Set(r, "AppBorder", line);
     }
 
     private static void Set(ResourceDictionary r, string key, string hex)

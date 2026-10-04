@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DiskMap.Core\DiskMap.Core.csproj" />
+    <Resource Include="Assets\Fonts\MaterialSymbolsRounded.ttf" />
     <!-- TrayIcon.cs is the only file touching WinForms; keep its
          namespaces out of ImplicitUsings so WPF names stay unambiguous. -->
     <Using Remove="System.Windows.Forms" />

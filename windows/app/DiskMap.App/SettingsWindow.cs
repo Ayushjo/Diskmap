@@ -73,7 +73,7 @@ public sealed class SettingsWindow : Window
     private static readonly (string Id, string Label)[] Appearances =
         [("system", "Follow Windows"), ("light", "Light"), ("dark", "Dark")];
     private static readonly (double Scale, string Label)[] TextScales =
-        [(0.9, "Small"), (1.0, "Default"), (1.1, "Large"), (1.2, "Extra large")];
+        [(0.9, "Smaller"), (1.0, "Default"), (1.15, "Larger"), (1.3, "Largest")];
 
     private void BuildAppearanceRow()
     {

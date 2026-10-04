@@ -14,6 +14,14 @@ public partial class App : Application
         ThemeMode = settings.WantsDark ? ThemeMode.Dark : ThemeMode.Light;
 #pragma warning restore WPF0001
         Theme.Apply(settings.WantsDark); // our own palette brushes on top of Fluent
+        SystemParameters.StaticPropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(SystemParameters.HighContrast))
+            {
+                Theme.Apply(AppSettings.Load().WantsDark);
+                (Current.MainWindow as MainWindow)?.RebuildForTheme();
+            }
+        };
         // A failing click reports instead of taking the app (and the scan) down.
         DispatcherUnhandledException += (_, args) =>
         {

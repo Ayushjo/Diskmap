@@ -18,7 +18,18 @@ namespace DiskMap.App;
 public static class Ui
 {
     private static readonly Dictionary<string, Brush> _brushes = new(StringComparer.Ordinal);
-    private static readonly FontFamily _iconFont = new(Icons.Font);
+    private static readonly FontFamily _iconFont = Icons.FontFamily;
+    public static double TextScale { get; set; } = 1;
+    public static double Scaled(double value) => value * TextScale;
+    public const double PageSide = 28;
+    public const double PageTop = 28;
+    public const double ZoneGap = 18;
+    public const double GroupGap = 16;
+    public const double InlineGap = 8;
+    public const double RowHeight = 36;
+    public const double TwoLineRowHeight = 44;
+
+    public static Border Gap(double height) => new() { Height = height };
 
     public static Brush Brush(string resourceKey) =>
         (Brush)Application.Current.Resources[resourceKey];
@@ -39,21 +50,22 @@ public static class Ui
         return new TextBlock
         {
             Text = text,
-            FontSize = size,
+            FontSize = Scaled(size),
             FontWeight = weight ?? FontWeights.Normal,
             Foreground = fg ?? Brush("AppForeground"),
             TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
             TextTrimming = wrap ? TextTrimming.None : TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
         };
     }
 
-    /// <summary>28 px semibold page title.</summary>
+    /// <summary>20 px semibold page title.</summary>
     public static TextBlock PageTitle(string text) =>
-        T(text, 26, FontWeights.SemiBold);
+        T(text, 20, FontWeights.SemiBold);
 
-    /// <summary>13 px gray line under the page title.</summary>
+    /// <summary>12 px gray line under the page title.</summary>
     public static TextBlock PageSubtitle(string text) =>
-        new() { Text = text, FontSize = 13, Foreground = Brush("AppSubtle"), TextWrapping = TextWrapping.Wrap };
+        new() { Text = text, FontSize = Scaled(12), Foreground = Brush("AppSubtle"), TextWrapping = TextWrapping.Wrap };
 
     /// <summary>Small uppercase-ish gray section label ("FIND", "Safety").</summary>
     public static TextBlock SectionLabel(string text) => MonoLabel(text);
@@ -70,7 +82,7 @@ public static class Ui
         {
             Text = glyph,
             FontFamily = _iconFont,
-            FontSize = size,
+            FontSize = Scaled(size),
             Foreground = fg ?? Brush("AppForeground"),
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -105,12 +117,47 @@ public static class Ui
             {
                 Text = glyph,
                 FontFamily = _iconFont,
-                FontSize = size * 0.42,
+                FontSize = Scaled(size * 0.56),
                 Foreground = fg ?? Brush("AppAccent"),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             },
         };
+    }
+
+    public static FrameworkElement BrandMark(double height)
+    {
+        double width = height * 260 / 273;
+        var mark = new Canvas { Width = width, Height = height };
+        var bar = new Border
+        {
+            Width = width * 69 / 260, Height = height,
+            CornerRadius = new CornerRadius(height * 8 / 273),
+            Background = Brush("AppForeground"),
+        };
+        var top = new Border
+        {
+            Width = width * 173 / 260, Height = height * 129 / 273,
+            CornerRadius = new CornerRadius(
+                height * 8 / 273, height * 129 / 273,
+                height * 6 / 273, height * 30 / 273),
+            Background = Brush("AppAccent"),
+        };
+        var bottom = new Border
+        {
+            Width = width * 173 / 260, Height = height * 126 / 273,
+            CornerRadius = new CornerRadius(
+                height * 34 / 273, height * 6 / 273,
+                height * 126 / 273, height * 8 / 273),
+            Background = Brush("AppForeground"),
+        };
+        Canvas.SetLeft(top, width * 87 / 260);
+        Canvas.SetLeft(bottom, width * 87 / 260);
+        Canvas.SetTop(bottom, height * 147 / 273);
+        mark.Children.Add(bar);
+        mark.Children.Add(top);
+        mark.Children.Add(bottom);
+        return mark;
     }
 
     /// <summary>Kind badge pill — light tinted background, colored text.</summary>
@@ -122,7 +169,7 @@ public static class Ui
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(7, 2, 7, 2),
             VerticalAlignment = VerticalAlignment.Center,
-            Child = new TextBlock { Text = text, FontSize = 11, FontWeight = FontWeights.Medium, Foreground = fg },
+            Child = new TextBlock { Text = text, FontSize = Scaled(11), FontWeight = FontWeights.Medium, Foreground = fg },
         };
     }
 
@@ -157,25 +204,29 @@ public static class Ui
 
     public static System.Windows.Controls.Button Button(string text, string? glyph, ButtonStyle style, Action? onClick = null)
     {
-        var content = new StackPanel { Orientation = Orientation.Horizontal };
+        var content = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         if (glyph is not null)
         {
             Brush glyphFg = style switch
             {
-                ButtonStyle.Primary or ButtonStyle.Dark => Brushes.White,
+                ButtonStyle.Primary or ButtonStyle.Dark => Brush("AppInkButtonFg"),
                 ButtonStyle.Danger => Brush("AppDanger"),
                 _ => Brush("AppForeground"),
             };
             content.Children.Add(new TextBlock
             {
-                Text = glyph, FontFamily = _iconFont, FontSize = 12,
+                Text = glyph, FontFamily = _iconFont, FontSize = Scaled(15),
                 Foreground = glyphFg, VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 6, 0),
             });
         }
         content.Children.Add(new TextBlock
         {
-            Text = text, FontSize = 12.5,
+            Text = text, FontSize = Scaled(13),
             // Explicit — Foreground does not reliably inherit through the
             // templated ContentPresenter into element content.
             Foreground = style switch
@@ -184,18 +235,33 @@ public static class Ui
                 ButtonStyle.Danger => Brush("AppDanger"),
                 _ => Brush("AppForeground"),
             },
-            FontWeight = style is ButtonStyle.Primary or ButtonStyle.Dark ? FontWeights.SemiBold : FontWeights.Normal,
+            FontWeight = FontWeights.Medium,
             VerticalAlignment = VerticalAlignment.Center,
         });
 
         var btn = new System.Windows.Controls.Button
         {
             Content = content,
-            Padding = new Thickness(13, 7, 13, 7),
+            MinHeight = 28,
+            Padding = new Thickness(12, 0, 12, 0),
             Cursor = Cursors.Hand,
         };
         ApplyButtonStyle(btn, style);
         if (onClick is not null) btn.Click += (_, _) => onClick();
+        return btn;
+    }
+
+    public static System.Windows.Controls.Button IconButton(string glyph, string label, Action onClick)
+    {
+        var btn = new System.Windows.Controls.Button
+        {
+            Content = Glyph(glyph, 16, Brush("AppSubtle")),
+            Width = 28, Height = 28, Padding = new Thickness(0),
+            Cursor = Cursors.Hand, ToolTip = label,
+        };
+        System.Windows.Automation.AutomationProperties.SetName(btn, label);
+        ApplyButtonStyle(btn, ButtonStyle.Ghost);
+        btn.Click += (_, _) => onClick();
         return btn;
     }
 
@@ -233,7 +299,7 @@ public static class Ui
         border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
         border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
         border.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Control.BorderThicknessProperty));
-        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(7));
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
         border.SetValue(Border.PaddingProperty, new TemplateBindingExtension(Control.PaddingProperty));
         var content = new FrameworkElementFactory(typeof(ContentPresenter));
         content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
@@ -249,28 +315,28 @@ public static class Ui
         return template;
     }
 
-    /// <summary>Filter chip — accent tint when selected, bordered pill otherwise (§9).</summary>
+    /// <summary>Filter chip — compact accent tint when selected, no outline when idle (§9).</summary>
     public static System.Windows.Controls.Button Pill(string text, bool selected, Action onClick)
     {
+        var foreground = selected ? Brush("AppForeground") : Brush("AppSubtle");
         var btn = new System.Windows.Controls.Button
         {
             Content = new TextBlock
             {
-                Text = text, FontSize = 12,
-                FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal,
-                Foreground = selected ? Brush("AppAccent") : Brush("AppSubtle"),
-                VerticalAlignment = VerticalAlignment.Center,
+                Text = text, FontSize = Scaled(13), FontWeight = FontWeights.Medium,
+                Foreground = foreground, VerticalAlignment = VerticalAlignment.Center,
             },
-            Foreground = selected ? Brush("AppAccent") : Brush("AppSubtle"),
-            Padding = new Thickness(13, 5, 13, 5),
+            Foreground = foreground,
+            Background = selected ? Brush("AppAccentSoft") : Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Height = 26,
+            Padding = new Thickness(9, 0, 9, 0),
             Cursor = Cursors.Hand,
         };
         var template = new ControlTemplate(typeof(System.Windows.Controls.Button));
         var border = new FrameworkElementFactory(typeof(Border));
         border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
-        border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
-        border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
-        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(14));
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
         border.SetValue(Border.PaddingProperty, new TemplateBindingExtension(Control.PaddingProperty));
         var content = new FrameworkElementFactory(typeof(ContentPresenter));
         content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
@@ -278,58 +344,68 @@ public static class Ui
         border.AppendChild(content);
         template.VisualTree = border;
         var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-        hover.Setters.Add(new Setter(UIElement.OpacityProperty, 0.8));
+        hover.Setters.Add(new Setter(Control.BackgroundProperty, selected ? Brush("AppAccentSoft") : Brush("AppHover")));
         template.Triggers.Add(hover);
         btn.Template = template;
-        btn.Background = selected ? Brush("AppAccentSoft") : Brushes.Transparent;
-        btn.Foreground = selected ? Brush("AppAccent") : Brush("AppSubtle");
-        btn.BorderBrush = selected ? Brush("AppAccentSoft") : Brush("AppCardBorder");
         btn.Click += (_, _) => onClick();
         return btn;
     }
 
     // ---- Fields ----
 
-    /// <summary>Rounded gray search field: icon + borderless TextBox.</summary>
+    /// <summary>Thirty-pixel search field with a clear action and focus outline (§9.1).</summary>
     public static (Border Box, TextBox Input) SearchBox(string placeholder, double width = 300)
     {
         var input = new TextBox
         {
-            FontSize = 12.5,
+            FontSize = Scaled(13),
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             VerticalAlignment = VerticalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
-            MinWidth = width - 44,
         };
-        // Placeholder: empty text shows the hint as a gray overlay.
         var hint = new TextBlock
         {
-            Text = placeholder, FontSize = 12.5, Foreground = Brush("AppFaint"),
+            Text = placeholder, FontSize = Scaled(13), Foreground = Brush("AppFaint"),
             IsHitTestVisible = false, VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(2, 0, 0, 0),
         };
         var textHost = new Grid();
         textHost.Children.Add(input);
         textHost.Children.Add(hint);
-        input.TextChanged += (_, _) => hint.Visibility =
-            input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
 
         var row = new DockPanel();
-        var icon = Glyph(Icons.Search, 13, Brush("AppFaint"));
+        var icon = Glyph(Icons.Search, 12, Brush("AppFaint"));
         icon.Margin = new Thickness(0, 0, 8, 0);
         DockPanel.SetDock(icon, Dock.Left);
         row.Children.Add(icon);
+        var clear = T("×", 14, FontWeights.Medium, Brush("AppFaint"));
+        clear.Visibility = Visibility.Collapsed;
+        clear.Cursor = Cursors.Hand;
+        clear.Margin = new Thickness(8, 0, 0, 0);
+        clear.VerticalAlignment = VerticalAlignment.Center;
+        clear.MouseLeftButtonDown += (_, e) => { input.Clear(); input.Focus(); e.Handled = true; };
+        DockPanel.SetDock(clear, Dock.Right);
+        row.Children.Add(clear);
         row.Children.Add(textHost);
         var box = new Border
         {
             Background = Brush("AppField"),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(11, 7, 11, 7),
+            BorderBrush = Brush("AppCardBorder"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(9, 0, 9, 0),
+            Height = 30,
             Width = width,
             Child = row,
         };
-        // Click anywhere in the pill focuses the box.
+        input.TextChanged += (_, _) =>
+        {
+            hint.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            clear.Visibility = input.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        };
+        input.GotKeyboardFocus += (_, _) => box.BorderBrush = WithOpacity("AppAccent", 0.6);
+        input.LostKeyboardFocus += (_, _) => box.BorderBrush = Brush("AppCardBorder");
         box.MouseLeftButtonDown += (_, _) => input.Focus();
         return (box, input);
     }
@@ -345,7 +421,7 @@ public static class Ui
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = cols[i].Width });
             var label = new TextBlock
             {
-                Text = cols[i].Label, FontSize = 11, FontWeight = FontWeights.Medium,
+                Text = cols[i].Label, FontSize = Scaled(11), FontWeight = FontWeights.Medium,
                 Foreground = Brush("AppFaint"),
                 HorizontalAlignment = cols[i].Right ? HorizontalAlignment.Right : HorizontalAlignment.Left,
                 Margin = new Thickness(i == 0 ? 0 : 8, 0, 0, 0),
@@ -359,7 +435,7 @@ public static class Ui
     /// <summary>A row's shared column grid; callers place cell content.</summary>
     public static Grid TableRowGrid(params GridLength[] widths)
     {
-        var grid = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+        var grid = new Grid { MinHeight = RowHeight };
         foreach (var w in widths) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = w });
         return grid;
     }
@@ -454,23 +530,25 @@ public static class Ui
         string value, string label, string? sub = null)
     {
         var stack = new StackPanel();
-        var vt = Mono(value, 18, FontWeights.SemiBold);
-        vt.Margin = new Thickness(0, 0, 4, 0);
+        var vt = Mono(value, 20, FontWeights.SemiBold);
+        vt.Margin = new Thickness(0, 0, 0, 3);
         stack.Children.Add(vt);
         var labelLine = new StackPanel { Orientation = Orientation.Horizontal };
         labelLine.Children.Add(T(label, 11.5, FontWeights.Medium, Brush("AppSubtle")));
         if (sub is not null) labelLine.Children.Add(Faint("  " + sub));
         stack.Children.Add(labelLine);
-        return Card(stack, 14, new Thickness(0));
+        return new Border { Child = stack };
     }
 
-    /// <summary>Row of stat cards in equal columns.</summary>
+    /// <summary>One flat figure strip with hairlines between figures.</summary>
     public static UniformGrid StatRow(params Border[] cards)
     {
-        var grid = new UniformGrid { Columns = cards.Length, Margin = new Thickness(0, 0, 0, 14) };
+        var grid = new UniformGrid { Columns = cards.Length, Margin = new Thickness(0, 2, 0, GroupGap) };
         for (int i = 0; i < cards.Length; i++)
         {
-            cards[i].Margin = new Thickness(i == 0 ? 0 : 6, 0, i == cards.Length - 1 ? 0 : 6, 0);
+            cards[i].BorderBrush = Brush("AppBorder");
+            cards[i].BorderThickness = new Thickness(i == 0 ? 0 : 1, 0, 0, 0);
+            cards[i].Padding = new Thickness(i == 0 ? 0 : 24, 0, i == cards.Length - 1 ? 0 : 24, 0);
             grid.Children.Add(cards[i]);
         }
         return grid;
@@ -560,7 +638,11 @@ public static class Ui
             mid.Children.Add(b);
         }
         dock.Children.Add(mid);
-        return Card(dock, 12, new Thickness(0));
+        return new Border
+        {
+            BorderBrush = Brush("AppBorder"), BorderThickness = new Thickness(0, 1, 0, 0),
+            MinHeight = 48, Padding = new Thickness(10, 8, 10, 0), Child = dock,
+        };
     }
 
 
@@ -601,15 +683,16 @@ public static class Ui
         text.Children.Add(new Border { Height = 3 });
         text.Children.Add(new TextBlock
         {
-            Text = body, FontSize = 11.5, Foreground = Brush("AppSubtle"),
+            Text = body, FontSize = Scaled(11.5), Foreground = Brush("AppSubtle"),
             TextWrapping = TextWrapping.Wrap,
         });
         row.Children.Add(icon);
         row.Children.Add(text);
         return new Border
         {
-            Background = Brush("AppInfoBg"),
-            CornerRadius = new CornerRadius(8),
+            Background = Brushes.Transparent,
+            BorderBrush = Brush("AppBorder"), BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
             Padding = new Thickness(12, 10, 12, 10),
             Margin = margin ?? new Thickness(0, 0, 0, 12),
             Child = row,
@@ -631,7 +714,7 @@ public static class Ui
         inner.Children.Add(head);
         var b = new TextBlock
         {
-            Text = body, FontSize = 11.5, Foreground = Brush("AppSubtle"),
+            Text = body, FontSize = Scaled(11.5), Foreground = Brush("AppSubtle"),
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0),
         };
         inner.Children.Add(b);
@@ -656,18 +739,20 @@ public static class Ui
     public static TextBlock Mono(string text, double size = 12, FontWeight? weight = null, Brush? fg = null) =>
         new()
         {
-            Text = text, FontFamily = MonoFont, FontSize = size,
+            Text = text, FontFamily = MonoFont, FontSize = Scaled(size),
             FontWeight = weight ?? FontWeights.Regular,
             Foreground = fg ?? Brush("AppForeground"),
             TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
         };
 
     /// <summary>Eyebrow/section label — 10 pt medium mono, uppercase (§4.1 `label`).</summary>
     public static TextBlock MonoLabel(string text, Brush? fg = null, double size = 10) =>
         new()
         {
-            Text = text.ToUpperInvariant(), FontFamily = MonoFont, FontSize = size,
+            Text = text.ToUpperInvariant(), FontFamily = MonoFont, FontSize = Scaled(size),
             FontWeight = FontWeights.Medium, Foreground = fg ?? Brush("AppFaint"),
+            VerticalAlignment = VerticalAlignment.Center,
         };
 
     /// <summary>The one separator — 1 px of `line` (§6).</summary>
@@ -776,6 +861,7 @@ public static class Ui
         ["#849BB8", "#A795C7", "#C78797", "#7BA89C", "#B9A071", "#8FACC0", "#A2A4AC"];
 
     public static Brush Data(int i) => Hex(DataPalette[i % DataPalette.Length]);
+    public static Brush DataTint(int i) => Tint(((SolidColorBrush)Data(i)).Color, 41);
 
     /// <summary>§3.4 — file-kind colour map (fixed, both appearances).</summary>
     public static Brush KindColor(string kindId) => kindId switch

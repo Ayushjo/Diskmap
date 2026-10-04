@@ -33,7 +33,7 @@ public class StorageHistoryTests
     [Fact]
     public void RetentionKeepsLastPerDayThenPerWeek()
     {
-        var now = DateTimeOffset.Now;
+        var now = new DateTimeOffset(new DateTime(2026, 6, 15, 12, 0, 0, DateTimeKind.Local));
         var entries = new List<StorageHistory.Entry>();
         // Three scans today + three yesterday → one kept each, and the
         // LAST one of the day wins.

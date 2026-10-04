@@ -38,7 +38,7 @@ public sealed class VisualizePage : ListPage
 
     public VisualizePage()
     {
-        Root.Margin = new Thickness(24, 20, 24, 20);
+        Root.Margin = new Thickness(Ui.PageSide, Ui.PageTop, Ui.PageSide, 24);
         Root.Children.Add(BuildHeader());
         Root.Children.Add(BuildSwitcher());
         Root.Children.Add(BuildColoringBar());
@@ -87,12 +87,12 @@ public sealed class VisualizePage : ListPage
         {
             int staged = 0;
             foreach (int id in set.ToList())
-                if (Model.Stage(id, "visualize multi-select")) staged++;
+                if (Model.Stage(id, "visualize multi-select", notify: false)) staged++;
             Model.ClearMulti();
-            if (staged > 0) Model.ShowPage("Cleanup");
+            if (staged > 0) Model.ToastAdded(staged);
         });
         stage.Margin = new Thickness(10, 0, 0, 0);
-        var copy = Ui.Button("Copy paths", Icons.Copy, Ui.ButtonStyle.Outline, () =>
+        var copy = Ui.Button("Copy Path", Icons.Copy, Ui.ButtonStyle.Outline, () =>
         {
             var paths = set.Select(id => TreeExporter.QuotePathIfNeeded(Model.PathOf(id)));
             Clipboard.SetText(string.Join(Environment.NewLine, paths));
@@ -261,7 +261,7 @@ public sealed class VisualizePage : ListPage
             titleRow.Children.Add(new TextBlock
             {
                 Text = glyph, FontSize = 13,
-                FontFamily = privateUseGlyph ? new FontFamily(Icons.Font) : FontFamily,
+                FontFamily = privateUseGlyph ? Icons.FontFamily : FontFamily,
                 Foreground = selected ? Ui.Brush("AppAccent") : Ui.Brush("AppSubtle"),
                 VerticalAlignment = VerticalAlignment.Center,
             });

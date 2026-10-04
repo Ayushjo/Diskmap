@@ -21,10 +21,17 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, UserControl> _pages = new(StringComparer.Ordinal);
     private string _currentPage = "Overview";
     private TextBox? _searchInput;
+    private Border? _topSearchBox;
+    private double _textScale = 1;
+    private bool _compactInspectorOpen;
+    private bool _compactSidebarOpen;
+    private bool? _lastCompact;
+    private bool? _lastSidebarCompact;
 
     public MainWindow()
     {
         InitializeComponent();
+        ApplyTextScale(AppSettings.Load());
         BuildNav();
         BuildTopBar();
         BuildLogo();
@@ -38,7 +45,7 @@ public partial class MainWindow : Window
         _model.StagedChanged += (_, _) => RefreshCleanupBadge();
         _model.PropertyChanged += OnModelChanged;
         RefreshScanBanner();
-        ApplyTextScale(AppSettings.Load());
+        SizeChanged += (_, _) => RefreshAdaptiveLayout();
         SelectPage("Overview");
         // WIN-051: the shared keyboard map — destination shortcuts,
         // rescan, list navigation, stage/activate — one handler, routed
@@ -106,27 +113,14 @@ public partial class MainWindow : Window
 
     private void BuildLogo()
     {
-        LogoTile.Background = Ui.Hex("#1D2B4F");
-        LogoTile.Child = new TextBlock
-        {
-            Text = "D", FontSize = 15, FontWeight = FontWeights.Bold,
-            Foreground = System.Windows.Media.Brushes.White,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
+        LogoTile.Background = System.Windows.Media.Brushes.Transparent;
+        LogoTile.Child = Ui.BrandMark(27);
     }
 
     // ---- Sidebar ----
 
     private void BuildNav()
     {
-        // Scan action sits at the top of the nav — the one global action
-        // the reference top bar doesn't carry.
-        var scan = Ui.Button("Scan Folder…", Icons.Add, Ui.ButtonStyle.Outline,
-            async () => await PickAndScan());
-        scan.Margin = new Thickness(6, 0, 6, 10);
-        NavPanel.Children.Add(scan);
-
         var sections = new List<(string Header, List<(string Name, string Glyph, Func<UserControl> Factory)> Items)>
         {
             ("MAIN",
@@ -135,6 +129,7 @@ public partial class MainWindow : Window
             ]),
             ("FIND",
             [
+                ("Find", Icons.Search, () => (UserControl)new SearchPage()),
                 ("Biggest Files", Icons.BiggestFiles, () => (UserControl)new BiggestFilesPage()),
                 ("Biggest Folders", Icons.BiggestFolders, () => (UserControl)new BiggestFoldersPage()),
                 ("Forgotten Files", Icons.Forgotten, () => (UserControl)new ForgottenFilesPage()),
@@ -169,7 +164,7 @@ public partial class MainWindow : Window
                 row.Children.Add(Ui.Glyph(glyph, 13, Ui.Brush("AppSubtle")));
                 row.Children.Add(new TextBlock
                 {
-                    Text = name, FontSize = 13,
+                    Text = name, FontSize = Ui.Scaled(13),
                     Margin = new Thickness(10, 0, 0, 0),
                     VerticalAlignment = VerticalAlignment.Center,
                 });
@@ -189,9 +184,6 @@ public partial class MainWindow : Window
             }
         }
 
-        // The Search page exists but has no sidebar slot — reached via the
-        // top-bar search box.
-        _pageFactories["Search"] = () => new SearchPage();
         _pageFactories["Cleanup"] = () => new CleanupQueuePage();
 
         // WIN-065: saved searches sit at the bottom of the nav — they
@@ -223,7 +215,7 @@ public partial class MainWindow : Window
             row.Children.Add(Ui.Glyph(Icons.Search, 13, Ui.Brush("AppSubtle")));
             row.Children.Add(new TextBlock
             {
-                Text = search.Name, FontSize = 12.5,
+                Text = search.Name, FontSize = Ui.Scaled(12.5),
                 Margin = new Thickness(10, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis,
@@ -232,7 +224,7 @@ public partial class MainWindow : Window
             {
                 row.Children.Add(new TextBlock
                 {
-                    Text = $"  {ByteFormat.Format(live.Bytes)}", FontSize = 11,
+                    Text = $"  {ByteFormat.Format(live.Bytes)}", FontSize = Ui.Scaled(11),
                     Foreground = Ui.Brush("AppFaint"),
                     VerticalAlignment = VerticalAlignment.Center,
                 });
@@ -251,7 +243,7 @@ public partial class MainWindow : Window
             item.MouseLeftButtonDown += (_, _) =>
             {
                 _model.SearchQuery = query;
-                SelectPage("Search");
+                SelectPage("Find");
             };
             // Manage: rename/remove live on a right-click.
             Guid id = search.Id;
@@ -284,20 +276,26 @@ public partial class MainWindow : Window
             if (border.Child is StackPanel row && row.Children.Count == 2)
             {
                 ((TextBlock)row.Children[0]).Foreground =
-                    selected ? Ui.Brush("AppForeground") : Ui.Brush("AppSubtle");
+                    selected ? Ui.Brush("AppAccent") : Ui.Brush("AppFaint");
                 ((TextBlock)row.Children[1]).FontWeight =
                     selected ? FontWeights.SemiBold : FontWeights.Normal;
             }
         }
         if (!_pages.TryGetValue(name, out var page)) _pages[name] = page = factory();
         PageHost.Content = page;
+        if (page is ListPage listPage) listPage.ResetScrollPosition();
+        if (_lastSidebarCompact == true)
+        {
+            _compactSidebarOpen = false;
+            RefreshAdaptiveLayout();
+        }
         RefreshSavedSearches();
     }
 
     /// <summary>Sidebar order — the Ctrl+1..N destination map.</summary>
     private static readonly string[] DestinationOrder =
     [
-        "Overview", "Biggest Files", "Biggest Folders", "Forgotten Files",
+        "Overview", "Find", "Biggest Files", "Biggest Folders", "Forgotten Files",
         "Duplicates", "Safe to Review", "Caches", "Old Downloads",
         "Large Media", "File Browser", "Visualize", "Developer Storage",
         "Applications", "Snapshots",
@@ -335,6 +333,12 @@ public partial class MainWindow : Window
         if (e.Key == Key.OemComma && mods == ModifierKeys.Control)
         {
             OpenSettings();
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == Key.Delete && mods == (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            SelectPage("Cleanup");
             e.Handled = true;
             return;
         }
@@ -484,7 +488,7 @@ public partial class MainWindow : Window
         }
         view.Items.Add(appearance);
         var textSize = new MenuItem { Header = "Text size" };
-        foreach (var (scale, label) in new[] { (0.9, "Small"), (1.0, "Default"), (1.1, "Large"), (1.2, "Extra large") })
+        foreach (var (scale, label) in new[] { (0.9, "Smaller"), (1.0, "Default"), (1.15, "Larger"), (1.3, "Largest") })
         {
             var item = new MenuItem { Header = label };
             double captured = scale;
@@ -555,30 +559,99 @@ public partial class MainWindow : Window
         Application.Current.ThemeMode = dark ? ThemeMode.Dark : ThemeMode.Light;
 #pragma warning restore WPF0001
         Theme.Apply(dark);
-        _pages.Clear();               // code-built brushes resolve once — rebuild
+        RebuildForTheme();
+    }
+
+    internal void RebuildForTheme()
+    {
+        _pages.Clear();
+        NavPanel.Children.Clear();
+        _pageFactories.Clear();
+        _navItems.Clear();
+        BuildNav();
+        BuildTopBar();
+        BuildLogo();
+        InspectorHost.Content = new Controls.InspectorPanel();
         SelectPage(_currentPage);
     }
 
-    /// <summary>WIN-059: text scale as a LayoutTransform on the content root.</summary>
+    /// <summary>WIN-059: rebuild code-built typography at the selected text scale.</summary>
     private void SetTextScale(double scale)
     {
         var settings = AppSettings.Load();
         settings.TextScale = scale;
         settings.Save();
         ApplyTextScale(settings);
+        RebuildForTheme();
     }
 
     private void ApplyTextScale(AppSettings settings)
     {
-        // Uniform scale on the page+inspector column; sidebar stays 1x —
-        // its labels are already compact.
-        PageHost.LayoutTransform = new System.Windows.Media.ScaleTransform(
-            settings.TextScale, settings.TextScale);
+        _textScale = settings.TextScale;
+        Ui.TextScale = settings.TextScale;
+        RefreshAdaptiveLayout();
+    }
+
+    private void RefreshAdaptiveLayout()
+    {
+        bool compact = ActualWidth > 0 && ActualWidth < 1200;
+        bool compactChanged = _lastCompact != compact;
+        if (compactChanged)
+        {
+            _compactInspectorOpen = false;
+            _lastCompact = compact;
+        }
+        InspectorButtonHost.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
+        if (compact)
+        {
+            InspectorColumn.Width = new GridLength(0);
+            Grid.SetColumn(InspectorBorder, 0);
+            InspectorBorder.HorizontalAlignment = HorizontalAlignment.Right;
+            InspectorBorder.Width = 320 * Math.Max(1, _textScale);
+            InspectorBorder.Visibility = _compactInspectorOpen ? Visibility.Visible : Visibility.Collapsed;
+        }
+        else
+        {
+            Grid.SetColumn(InspectorBorder, 1);
+            InspectorBorder.HorizontalAlignment = HorizontalAlignment.Stretch;
+            InspectorBorder.Width = double.NaN;
+            InspectorBorder.Visibility = Visibility.Visible;
+            double baseWidth = ActualWidth >= 1450 ? 320 : 290;
+            InspectorColumn.Width = new GridLength(baseWidth * Math.Max(1, _textScale));
+        }
+
+        bool compactSidebar = ActualWidth > 0 && ActualWidth < 1000;
+        if (_lastSidebarCompact != compactSidebar)
+        {
+            _compactSidebarOpen = false;
+            _lastSidebarCompact = compactSidebar;
+        }
+        SidebarButtonHost.Visibility = compactSidebar ? Visibility.Visible : Visibility.Collapsed;
+        if (compactSidebar)
+        {
+            SidebarColumn.Width = new GridLength(0);
+            Grid.SetColumn(SidebarBorder, 1);
+            SidebarBorder.HorizontalAlignment = HorizontalAlignment.Left;
+            SidebarBorder.Width = 212 * Math.Max(1, _textScale);
+            SidebarBorder.Visibility = _compactSidebarOpen ? Visibility.Visible : Visibility.Collapsed;
+        }
+        else
+        {
+            Grid.SetColumn(SidebarBorder, 0);
+            SidebarBorder.HorizontalAlignment = HorizontalAlignment.Stretch;
+            SidebarBorder.Width = double.NaN;
+            SidebarBorder.Visibility = Visibility.Visible;
+            SidebarColumn.Width = new GridLength(212 * Math.Max(1, _textScale));
+        }
+        MenuButton.Content = compact ? "☰" : "☰  DiskMap";
+        if (_topSearchBox is not null) _topSearchBox.Width = compact ? 260 : 460;
+        if (compactChanged && _topSearchBox is not null) RefreshScanButton();
     }
 
     private void BuildTopBar()
     {
         var (box, input) = Ui.SearchBox("Search files, folders or ask anything…  (Ctrl+K)", 460);
+        _topSearchBox = box;
         _searchInput = input;
         input.PreviewMouseLeftButtonDown += (_, e) =>
         {
@@ -595,11 +668,27 @@ public partial class MainWindow : Window
             if (e.Key == Key.Enter && input.Text.Trim().Length > 0)
             {
                 _model.SearchQuery = input.Text.Trim();
-                SelectPage("Search");
+                SelectPage("Find");
                 e.Handled = true;
             }
         };
         SearchHost.Content = box;
+        var appearance = AppSettings.Load();
+        AppearanceButtonHost.Content = Ui.IconButton(
+            appearance.WantsDark ? Icons.LightMode : Icons.DarkMode,
+            appearance.WantsDark ? "Use light appearance" : "Use dark appearance",
+            () => SetAppearance(appearance.WantsDark ? "light" : "dark"));
+        SidebarButtonHost.Content = Ui.IconButton(Icons.List, "Sidebar", () =>
+        {
+            _compactSidebarOpen = !_compactSidebarOpen;
+            RefreshAdaptiveLayout();
+        });
+        InspectorButtonHost.Content = Ui.IconButton(Icons.Info, "Inspector", () =>
+        {
+            _compactInspectorOpen = !_compactInspectorOpen;
+            RefreshAdaptiveLayout();
+        });
+        RefreshAdaptiveLayout();
         RefreshCleanupBadge();
         RefreshScanButton();
         ScanCancelHost.Content = Ui.Button("Cancel", Icons.Cancel, Ui.ButtonStyle.Outline,
@@ -695,7 +784,7 @@ public partial class MainWindow : Window
                 {
                     popup.IsOpen = false;
                     _model.SearchQuery = q;
-                    SelectPage("Search");
+                    SelectPage("Find");
                 };
                 footer.Children.Add(all);
             }
@@ -718,7 +807,7 @@ public partial class MainWindow : Window
                         {
                             popup.IsOpen = false;
                             _model.SearchQuery = query;
-                            SelectPage("Search");
+                            SelectPage("Find");
                         };
                         footer.Children.Add(row);
                     }
@@ -733,7 +822,7 @@ public partial class MainWindow : Window
             {
                 popup.IsOpen = false;
                 _model.SearchQuery = input.Text.Trim();
-                SelectPage("Search");
+                SelectPage("Find");
                 e.Handled = true;
             }
             else if (e.Key == Key.Escape) { popup.IsOpen = false; e.Handled = true; }
@@ -748,9 +837,14 @@ public partial class MainWindow : Window
     /// </summary>
     private void RefreshScanButton()
     {
-        RescanButtonHost.Content = _model.IsScanning
-            ? Ui.Button("Cancel", Icons.Cancel, Ui.ButtonStyle.Outline, () => _model.CancelScan())
-            : Ui.Button("Rescan", Icons.Rescan, Ui.ButtonStyle.Outline, async () => await Rescan());
+        bool compact = ActualWidth > 0 && ActualWidth < 1200;
+        RescanButtonHost.Content = compact
+            ? _model.IsScanning
+                ? Ui.IconButton(Icons.Cancel, "Cancel scan", () => _model.CancelScan())
+                : Ui.IconButton(Icons.Rescan, "Rescan", async () => await Rescan())
+            : _model.IsScanning
+                ? Ui.Button("Cancel", Icons.Cancel, Ui.ButtonStyle.Outline, () => _model.CancelScan())
+                : Ui.Button("Rescan", Icons.Rescan, Ui.ButtonStyle.Outline, async () => await Rescan());
     }
 
     private void OnModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

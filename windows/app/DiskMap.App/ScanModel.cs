@@ -480,8 +480,12 @@ public sealed class ScanModel : ViewModelBase
     /// <summary>Transient confirmations — stage/commit/put-back (WIN-063).</summary>
     public event Action<string>? ToastRequested;
     public void Toast(string text) => ToastRequested?.Invoke(text);
+    public void ToastAdded(int count) => Toast(count == 1
+        ? "Added to Cleanup — Ctrl+Shift+Delete to review"
+        : $"Added {count:N0} items to Cleanup — Ctrl+Shift+Delete to review");
 
-    public bool Stage(int nodeId, string reason, string? group = null, int groupCount = 1)
+    public bool Stage(int nodeId, string reason, string? group = null, int groupCount = 1,
+        bool notify = true)
     {
         if (Tree is null || nodeId < 0 || nodeId >= Tree.Count) return false;
         string path = PathOf(nodeId);
@@ -490,19 +494,19 @@ public sealed class ScanModel : ViewModelBase
         if (ok)
         {
             RefreshStaged();
-            Toast($"Staged {Tree.NameOf(nodeId)} · {ByteFormat.Format(size)} — goes to the Recycle Bin when you confirm");
+            if (notify) ToastAdded(1);
         }
         return ok;
     }
 
     /// <summary>Stage a raw path (leftovers, staged folders).</summary>
-    public bool StagePath(string path, long size, string reason)
+    public bool StagePath(string path, long size, string reason, bool notify = true)
     {
         bool ok = Cleanup.Stage(path, size, reason);
         if (ok)
         {
             RefreshStaged();
-            Toast($"Staged {Path.GetFileName(path.TrimEnd('\\'))} · {ByteFormat.Format(size)}");
+            if (notify) ToastAdded(1);
         }
         return ok;
     }

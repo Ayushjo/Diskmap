@@ -13,7 +13,15 @@ namespace DiskMap.App.Pages;
 public abstract class ListPage : UserControl
 {
     protected ScanModel Model => ScanModel.Shared;
-    protected readonly StackPanel Root = new() { Margin = new Thickness(24, 20, 24, 20) };
+    protected readonly StackPanel Root = new()
+    {
+        Margin = new Thickness(Ui.PageSide, Ui.PageTop, Ui.PageSide, 24),
+    };
+    protected readonly ScrollViewer Scroller = new()
+    {
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+    };
 
     /// <summary>Secondary-text brush, follows the theme palette.</summary>
     protected static Brush Subtle => Ui.Brush("AppSubtle");
@@ -22,9 +30,13 @@ public abstract class ListPage : UserControl
 
     protected ListPage()
     {
-        Content = new ScrollViewer { Content = Root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Scroller.Content = Root;
+        Content = Scroller;
         ModelEvents.WhileLoaded(this, Refresh);
     }
+
+    internal void ResetScrollPosition() =>
+        Dispatcher.BeginInvoke(Scroller.ScrollToTop, System.Windows.Threading.DispatcherPriority.Loaded);
 
     protected abstract void Refresh();
 
@@ -59,17 +71,21 @@ public abstract class ListPage : UserControl
     protected DockPanel Header(string title, string subtitle, string? rightStat = null,
         string? glyph = null, Brush? iconBg = null, Brush? iconFg = null)
     {
-        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 14) };
+        var header = new DockPanel { Margin = new Thickness(0, 0, 0, Ui.ZoneGap) };
         if (rightStat is not null)
         {
             var stat = Ui.Mono(rightStat, 11, null, Ui.Brush("AppFaint"));
-            stat.VerticalAlignment = VerticalAlignment.Bottom;
+            stat.VerticalAlignment = VerticalAlignment.Center;
             DockPanel.SetDock(stat, Dock.Right);
             header.Children.Add(stat);
         }
         var titles = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        titles.Children.Add(Ui.MonoLabel(EyebrowFor(title), Ui.Brush("AppSubtle")));
-        titles.Children.Add(Ui.PageTitle(title));
+        var eyebrow = Ui.MonoLabel(EyebrowFor(title), Ui.Brush("AppSubtle"));
+        eyebrow.Margin = new Thickness(0, 0, 0, 4);
+        titles.Children.Add(eyebrow);
+        var pageTitle = Ui.PageTitle(title);
+        pageTitle.Margin = new Thickness(0, 0, 0, 4);
+        titles.Children.Add(pageTitle);
         titles.Children.Add(Ui.PageSubtitle(subtitle));
         header.Children.Add(titles);
         return header;
@@ -78,7 +94,7 @@ public abstract class ListPage : UserControl
     private static string EyebrowFor(string title) => title switch
     {
         "Overview" => "MAIN",
-        "Biggest Files" or "Biggest Folders" or "Forgotten Files" or "Duplicates" => "FIND",
+        "Find" or "Biggest Files" or "Biggest Folders" or "Forgotten Files" or "Duplicates" => "FIND",
         "Safe to Review" or "Caches" or "Old Downloads" or "Large Media" or "Cleanup" => "CLEAN",
         "File Browser" or "Visualize" or "Developer Storage" or "Applications" or "Snapshots" => "EXPLORE",
         _ => title,
@@ -102,7 +118,7 @@ public abstract class FileListPage : ListPage
 {
     private string _filterText = "";
     private string _kindFilter = "all";
-    private string _sort = "largest";
+    protected string SortMode = "largest";
 
     /// <summary>Candidate node ids for this page (already basis-aware).</summary>
     protected abstract List<int> Collect(FileTree tree, long[] totals, string rootPath);
@@ -133,6 +149,7 @@ public abstract class FileListPage : ListPage
 
     /// <summary>Optional hero content (stat cards, breakdowns) between header and toolbar.</summary>
     protected virtual UIElement? Hero(FileTree tree, long[] totals, List<int> ids) => null;
+    protected virtual bool UsesStandardToolbar => true;
 
     protected override void Refresh()
     {
@@ -151,7 +168,7 @@ public abstract class FileListPage : ListPage
         _table.Children.Add(Working("Ranking…"));
         var filterText = _filterText;
         var kindFilter = _kindFilter;
-        var sort = _sort;
+        var sort = SortMode;
         Compute(() => Collect(tree, totals, rootPath), ids =>
         {
             _table.Children.Clear();
@@ -161,10 +178,10 @@ public abstract class FileListPage : ListPage
             _checked.IntersectWith(filtered);
             var hero = Hero(tree, totals, filtered);
             if (hero is not null) _heroHost.Content = hero;
-            BuildToolbar(tree, totals, ids);
+            if (UsesStandardToolbar) BuildToolbar(tree, totals, ids);
             long bytes = filtered.Sum(id => totals[id]);
             _headerHost.Content = Header(PageName, PageBlurb,
-                $"Showing {filtered.Count:N0} {Noun} · Total {ByteFormat.Format(bytes)}",
+                $"{filtered.Count:N0} {Noun} · {ByteFormat.Format(bytes)}",
                 PageIcon, PageIconBg, PageIconFg);
             _table.Children.Add(BuildTable(tree, totals, filtered.Take(500).ToList(), rootPath));
             if (filtered.Count > 500)
@@ -211,9 +228,7 @@ public abstract class FileListPage : ListPage
     public bool StageSelection()
     {
         if (Model.SelectedNode < 0) return false;
-        if (!Model.Stage(Model.SelectedNode, PageName.ToLowerInvariant())) return false;
-        Model.ShowPage("Cleanup");
-        return true;
+        return Model.Stage(Model.SelectedNode, PageName.ToLowerInvariant());
     }
 
     /// <summary>WIN-052: Ctrl+A checks every filtered row.</summary>
@@ -241,60 +256,43 @@ public abstract class FileListPage : ListPage
 
     private void PaintSelected() { /* per-row closures handle hover; keyboard nav repaints via _rowBorders */ }
 
-    /// <summary>The mockup's bottom bar: "N selected · X | Add to Cleanup Review | M files · Y".</summary>
+    /// <summary>The review hint or the active selection toolbar (§13).</summary>
     protected void PaintBottomBar()
     {
         var totals = Model.Totals;
         var selected = _filtered.Where(_checked.Contains).ToList();
         long selBytes = selected.Sum(id => totals[id]);
-        long allBytes = _filtered.Sum(id => totals[id]);
-
-        // Copy-paths multi-select: newline-joined list for whatever is
-        // checked — one line per path, no shell quoting guesses.
-        var right = new StackPanel
+        if (selected.Count == 0)
         {
-            Orientation = Orientation.Horizontal,
-            VerticalAlignment = VerticalAlignment.Center,
-            Children =
+            var hint = new DockPanel();
+            hint.Children.Add(Ui.Subtle("Tick items to add them to Cleanup.", 12));
+            _bottomHost.Content = new Border
             {
-                Ui.Mono($"{_filtered.Count:N0} {Noun} · {ByteFormat.Format(allBytes)}", 11, null, Ui.Brush("AppSubtle")),
-                new Border { Width = 14 },
-                RescanLink(),
-            },
-        };
-        if (selected.Count > 0)
-        {
-            var copy = Ui.T("Copy paths", 12, FontWeights.Medium, Ui.Brush("AppAccent"));
-            copy.Cursor = System.Windows.Input.Cursors.Hand;
-            copy.ToolTip = new ToolTip { Content = "Copy the selected paths, one per line" };
-            copy.MouseLeftButtonDown += (_, _) =>
-            {
-                var paths = selected.Select(id => TreeExporter.QuotePathIfNeeded(Model.PathOf(id)));
-                Clipboard.SetText(string.Join(Environment.NewLine, paths));
+                BorderBrush = Ui.Brush("AppBorder"), BorderThickness = new Thickness(0, 1, 0, 0),
+                MinHeight = 44, Padding = new Thickness(10, 0, 10, 0), Child = hint,
             };
-            right.Children.Insert(0, copy);
-            right.Children.Insert(1, new Border { Width = 14 });
+            return;
         }
 
+        var clear = Ui.Button("Clear", null, Ui.ButtonStyle.Ghost, ClearChecked);
+        var copy = Ui.Button("Copy Path", Icons.Copy, Ui.ButtonStyle.Outline, () =>
+        {
+            var paths = selected.Select(id => TreeExporter.QuotePathIfNeeded(Model.PathOf(id)));
+            Clipboard.SetText(string.Join(Environment.NewLine, paths));
+        });
+        var add = Ui.Button("Add to Cleanup", Icons.Cleanup, Ui.ButtonStyle.Primary, () =>
+        {
+            int added = 0;
+            foreach (var id in selected)
+                if (Model.Stage(id, PageName.ToLowerInvariant(), notify: false)) added++;
+            _checked.Clear();
+            foreach (var cb in EnumerateCheckBoxes()) cb.IsChecked = false;
+            PaintBottomBar();
+            if (added > 0) Model.ToastAdded(added);
+        });
         _bottomHost.Content = Ui.BottomBar(
             Ui.Mono($"{selected.Count} selected · {ByteFormat.Format(selBytes)}", 12, FontWeights.Medium),
-            right,
-            Ui.Button("Add to Cleanup Review", Icons.Cleanup, Ui.ButtonStyle.Dark,
-                () =>
-                {
-                    foreach (var id in selected) Model.Stage(id, PageName.ToLowerInvariant());
-                    _checked.Clear();
-                    PaintBottomBar();
-                    Model.ShowPage("Cleanup");
-                }));
-    }
-
-    private static UIElement RescanLink()
-    {
-        var link = Ui.T("Rescan", 12, FontWeights.Medium, Ui.Brush("AppAccent"));
-        link.Cursor = System.Windows.Input.Cursors.Hand;
-        link.MouseLeftButtonDown += async (_, _) => await ScanModel.Shared.RescanAsync();
-        return link;
+            add, clear, copy);
     }
 
     private void BuildToolbar(FileTree tree, long[] totals, List<int> ids)
@@ -335,21 +333,21 @@ public abstract class FileListPage : ListPage
         {
             var item = new ComboBoxItem { Content = label, Tag = id };
             sort.Items.Add(item);
-            if (id == _sort) sort.SelectedItem = item;
+            if (id == SortMode) sort.SelectedItem = item;
         }
         sort.SelectionChanged += (_, _) =>
         {
-            _sort = (sort.SelectedItem as ComboBoxItem)?.Tag as string ?? "largest";
+            SortMode = (sort.SelectedItem as ComboBoxItem)?.Tag as string ?? "largest";
             RefreshTableOnly(tree, totals, ids);
         };
         row.Children.Add(sort);
         _toolbar.Children.Add(row);
     }
 
-    private void RefreshTableOnly(FileTree tree, long[] totals, List<int> ids)
+    protected void RefreshTableOnly(FileTree tree, long[] totals, List<int> ids)
     {
         // Rebuild just the table region: header and toolbar stay.
-        var filtered = ApplyFilters(tree, totals, ids, _filterText, _kindFilter, _sort);
+        var filtered = ApplyFilters(tree, totals, ids, _filterText, _kindFilter, SortMode);
         _filtered = filtered;
         _checked.IntersectWith(filtered);
         _table.Children.Clear();
@@ -389,7 +387,9 @@ public abstract class FileListPage : ListPage
         var headerRow = Ui.TableRowGrid(
             new GridLength(30), new GridLength(30), new GridLength(1, GridUnitType.Star),
             new GridLength(110), new GridLength(110), new GridLength(90), new GridLength(36));
-        headerRow.Margin = new Thickness(0, 0, 0, 8);
+        headerRow.MinHeight = 0;
+        headerRow.Height = 28;
+        headerRow.Margin = new Thickness(0);
         var selectAll = new CheckBox
         {
             VerticalAlignment = VerticalAlignment.Center,
@@ -423,7 +423,11 @@ public abstract class FileListPage : ListPage
             _rowsHost.Children.Add(FileRow(tree, totals, ids[i], i + 1, rootPath));
         }
         if (ids.Count == 0)
-            _rowsHost.Children.Add(Ui.Subtle("Nothing matches these filters."));
+        {
+            var empty = Ui.Subtle("Nothing matches these filters.");
+            empty.Margin = new Thickness(0, 8, 0, 8);
+            _rowsHost.Children.Add(empty);
+        }
         _rowsHost.Tag = (tree, ids, rootPath);
         table.Children.Add(_rowsHost);
         return table;
@@ -447,7 +451,7 @@ public abstract class FileListPage : ListPage
     private UIElement FileRow(FileTree tree, long[] totals, int id, int rank, string rootPath)
     {
         string kind = FileTypes.KindOf(tree, id);
-        var cat = FileTypes.Categories.FirstOrDefault(c => c.Id == kind);
+        var kindBrush = Ui.KindColor(kind);
         bool isDir = tree.IsDirectory[id];
 
         var outer = new Border { CornerRadius = new CornerRadius(6), Background = Brushes.Transparent };
@@ -470,10 +474,9 @@ public abstract class FileListPage : ListPage
         bool cloud = (tree.Flags[id] & NodeFlags.NotDownloaded) != 0;
         var nameCell = Ui.NameCell(
             cloud ? "☁" : Icons.ForKind(kind),
-            cloud ? Ui.Hex("#E0F2FE")
-                : isDir ? Ui.Brush("AppAccentSoft") : Ui.Hex(cat?.BadgeBackground ?? "#F1F5F9"),
-            cloud ? Ui.Hex("#0284C7")
-                : isDir ? Ui.Brush("AppAccent") : Ui.Hex(cat?.BadgeForeground ?? "#475569"),
+            isDir || cloud ? Ui.Brush("AppHover")
+                : Ui.Tint(((SolidColorBrush)kindBrush).Color, 41),
+            isDir || cloud ? Ui.Brush("AppSubtle") : kindBrush,
             tree.NameOf(id),
             cloud
                 ? $"{Model.DisplayPath(id)}  ·  cloud-only — opening downloads it"
@@ -514,7 +517,7 @@ public abstract class FileListPage : ListPage
         menu.Items.Add(copy);
         if (tree.IsDirectory[id])
         {
-            var vis = new MenuItem { Header = "Visualize this folder" };
+            var vis = new MenuItem { Header = "Show in Visualize" };
             vis.Click += (_, _) => Model.Visualize(id);
             menu.Items.Add(vis);
         }
@@ -617,9 +620,9 @@ public sealed class ForgottenFilesPage : FileListPage
         var order = new[] { AgeBucket.OneToTwoYears, AgeBucket.OverTwoYears };
         var colors = new Dictionary<AgeBucket, Brush>
         {
-            [AgeBucket.Under30] = Ui.Hex("#4ADE80"), [AgeBucket.Days30To90] = Ui.Hex("#86EFAC"),
-            [AgeBucket.Days90To365] = Ui.Hex("#FDE68A"), [AgeBucket.OneToTwoYears] = Ui.Hex("#F0A95F"),
-            [AgeBucket.OverTwoYears] = Ui.Hex("#DC2626"), [AgeBucket.Unknown] = Ui.Brush("AppBarTrack"),
+            [AgeBucket.Under30] = Ui.Hex("#7BA89C"), [AgeBucket.Days30To90] = Ui.Hex("#8FACC0"),
+            [AgeBucket.Days90To365] = Ui.Hex("#B9A071"), [AgeBucket.OneToTwoYears] = Ui.Hex("#C99A7E"),
+            [AgeBucket.OverTwoYears] = Ui.Hex("#C78797"), [AgeBucket.Unknown] = Ui.Brush("AppFaint"),
         };
         var present = order.Where(b => bucketBytes.GetValueOrDefault(b) > 0).ToList();
         long barTotal = Math.Max(1, present.Sum(b => bucketBytes[b]));
@@ -705,8 +708,8 @@ public sealed class LargeMediaPage : FileListPage
         byType.Children.Add(Ui.T("Media storage by type", 13, FontWeights.SemiBold));
         var kindColors = new Dictionary<string, Brush>
         {
-            ["video"] = Ui.Hex("#F472B6"), ["image"] = Ui.Hex("#4ADE80"),
-            ["audio"] = Ui.Hex("#818CF8"), ["other"] = Ui.Brush("AppBarTrack"),
+            ["video"] = Ui.Hex("#C78797"), ["image"] = Ui.Hex("#8FACC0"),
+            ["audio"] = Ui.Hex("#A795C7"), ["other"] = Ui.Hex("#A2A4AC"),
         };
         foreach (var kv in byKind.OrderByDescending(k => k.Value.Bytes).Take(5))
         {
@@ -727,9 +730,9 @@ public sealed class LargeMediaPage : FileListPage
         }
         var ageColors = new Dictionary<AgeBucket, Brush>
         {
-            [AgeBucket.Under30] = Ui.Hex("#60A5FA"), [AgeBucket.Days30To90] = Ui.Hex("#93C5FD"),
-            [AgeBucket.Days90To365] = Ui.Hex("#F0A95F"), [AgeBucket.OneToTwoYears] = Ui.Hex("#A78BFA"),
-            [AgeBucket.OverTwoYears] = Ui.Hex("#F472B6"), [AgeBucket.Unknown] = Ui.Brush("AppBarTrack"),
+            [AgeBucket.Under30] = Ui.Hex("#7BA89C"), [AgeBucket.Days30To90] = Ui.Hex("#8FACC0"),
+            [AgeBucket.Days90To365] = Ui.Hex("#B9A071"), [AgeBucket.OneToTwoYears] = Ui.Hex("#C99A7E"),
+            [AgeBucket.OverTwoYears] = Ui.Hex("#C78797"), [AgeBucket.Unknown] = Ui.Brush("AppFaint"),
         };
         foreach (var b in new[] { AgeBucket.Under30, AgeBucket.Days30To90, AgeBucket.Days90To365,
                      AgeBucket.OneToTwoYears, AgeBucket.OverTwoYears, AgeBucket.Unknown }
@@ -831,13 +834,10 @@ public sealed class OldDownloadsPage : FileListPage
             $"Downloads has {ByteFormat.Format(total)} of files — " +
             $"{ByteFormat.Format(top3Bytes)} comes from {top3.Count} large files. " +
             $"{ByteFormat.Format(yearOld)} hasn't been modified in over a year. " +
-            "Review the files below and add the ones you don't need to Cleanup Review.",
+            "Review the files below and add the ones you don't need to Cleanup.",
             13, null, Ui.Brush("AppForeground"), wrap: true));
         heroText.Children.Add(new Border { Height = 12 });
         var actions = new StackPanel { Orientation = Orientation.Horizontal };
-        actions.Children.Add(Ui.Button($"Review files ({ids.Count:N0})", null, Ui.ButtonStyle.Dark,
-            () => { }));
-        actions.Children.Add(new Border { Width = 10 });
         var reveal = Ui.Button("Reveal Downloads in Explorer", null, Ui.ButtonStyle.Outline,
             () =>
             {
@@ -852,7 +852,8 @@ public sealed class OldDownloadsPage : FileListPage
         heroText.Children.Add(actions);
         var hero = new Border
         {
-            Background = Ui.Brush("AppSuccessBg"),
+            Background = Brushes.Transparent,
+            BorderBrush = Ui.Brush("AppBorder"), BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Padding = new Thickness(18, 14, 18, 14),
             Margin = new Thickness(0, 0, 0, 12),
@@ -870,9 +871,9 @@ public sealed class OldDownloadsPage : FileListPage
         }
         var ageColors = new Dictionary<AgeBucket, Brush>
         {
-            [AgeBucket.Under30] = Ui.Hex("#60A5FA"), [AgeBucket.Days30To90] = Ui.Hex("#93C5FD"),
-            [AgeBucket.Days90To365] = Ui.Hex("#F0A95F"), [AgeBucket.OneToTwoYears] = Ui.Hex("#A78BFA"),
-            [AgeBucket.OverTwoYears] = Ui.Hex("#DC2626"), [AgeBucket.Unknown] = Ui.Brush("AppBarTrack"),
+            [AgeBucket.Under30] = Ui.Hex("#7BA89C"), [AgeBucket.Days30To90] = Ui.Hex("#8FACC0"),
+            [AgeBucket.Days90To365] = Ui.Hex("#B9A071"), [AgeBucket.OneToTwoYears] = Ui.Hex("#C99A7E"),
+            [AgeBucket.OverTwoYears] = Ui.Hex("#C78797"), [AgeBucket.Unknown] = Ui.Brush("AppFaint"),
         };
         foreach (var b in new[] { AgeBucket.Under30, AgeBucket.Days30To90, AgeBucket.Days90To365,
                      AgeBucket.OneToTwoYears, AgeBucket.OverTwoYears, AgeBucket.Unknown }
@@ -1014,8 +1015,10 @@ public sealed class SearchPage : FileListPage
     protected override Brush PageIconBg => Ui.Brush("AppHover");
     protected override Brush PageIconFg => Ui.Brush("AppSubtle");
     protected override string Noun => "matches";
-    protected override string PageBlurb =>
-        $"Results for \"{Model.SearchQuery}\"";
+    protected override bool UsesStandardToolbar => false;
+    protected override string PageBlurb => string.IsNullOrWhiteSpace(Model.SearchQuery)
+        ? "Search the scan by name, path, size, age, type or location."
+        : $"Results for \"{Model.SearchQuery}\"";
 
     private static readonly (string Label, string Token)[] Chips =
     [
@@ -1056,10 +1059,10 @@ public sealed class SearchPage : FileListPage
     /// </summary>
     protected override UIElement? Hero(FileTree tree, long[] totals, List<int> ids)
     {
-        var hero = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+        var hero = new StackPanel { Margin = new Thickness(0, 0, 0, Ui.GroupGap) };
 
         var (box, input) = Ui.SearchBox(
-            "ext:mp4 size>500MB age>1y in:downloads — or plain words", 460);
+            "ext:mp4 size>500MB age>1y — or plain words", 340);
         input.Text = Model.SearchQuery;
         input.KeyDown += (_, e) =>
         {
@@ -1070,7 +1073,11 @@ public sealed class SearchPage : FileListPage
                 e.Handled = true;
             }
         };
-        var queryRow = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+        var queryRow = new WrapPanel
+        {
+            Margin = new Thickness(0, 0, 0, 10),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         var save = Ui.Button("Save search", Icons.Add, Ui.ButtonStyle.Outline, () =>
         {
             string text = Model.SearchQuery.Trim();
@@ -1081,14 +1088,38 @@ public sealed class SearchPage : FileListPage
             SavedSearches.Save(list);
             Refresh();
         });
-        DockPanel.SetDock(save, Dock.Right);
-        save.Margin = new Thickness(8, 0, 0, 0);
-        queryRow.Children.Add(save);
-        DockPanel.SetDock(box, Dock.Left);
+        save.Margin = new Thickness(Ui.InlineGap, 0, 0, 4);
+        save.VerticalAlignment = VerticalAlignment.Center;
+        var sort = new ComboBox
+        {
+            Width = 125, Height = 28,
+            Margin = new Thickness(Ui.InlineGap, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        foreach (var (id, label) in new[]
+        {
+            ("largest", "Sort: Largest"), ("smallest", "Sort: Smallest"),
+            ("name", "Sort: Name"), ("oldest", "Sort: Oldest"), ("newest", "Sort: Newest"),
+        })
+        {
+            var item = new ComboBoxItem { Content = label, Tag = id };
+            sort.Items.Add(item);
+            if (id == SortMode) sort.SelectedItem = item;
+        }
+        sort.SelectionChanged += (_, _) =>
+        {
+            SortMode = (sort.SelectedItem as ComboBoxItem)?.Tag as string ?? "largest";
+            RefreshTableOnly(tree, totals, ids);
+        };
+        box.Margin = new Thickness(0, 0, 0, 4);
+        box.VerticalAlignment = VerticalAlignment.Center;
+        sort.Margin = new Thickness(Ui.InlineGap, 0, 0, 4);
         queryRow.Children.Add(box);
+        queryRow.Children.Add(sort);
+        queryRow.Children.Add(save);
         hero.Children.Add(queryRow);
 
-        var chips = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
+        var chips = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
         foreach (var (label, token) in Chips)
         {
             bool on = FileQuery.ContainsToken(token, Model.SearchQuery);
@@ -1101,6 +1132,32 @@ public sealed class SearchPage : FileListPage
             chips.Children.Add(pill);
         }
         hero.Children.Add(chips);
+
+        if (string.IsNullOrWhiteSpace(Model.SearchQuery))
+        {
+            var examples = new StackPanel { Margin = new Thickness(0, 4, 0, 12) };
+            examples.Children.Add(Ui.SectionHeader("Try", "QUERY / MEANING"));
+            foreach (var (query, meaning) in new[]
+            {
+                ("size>1GB", "Files and folders larger than 1 GB"),
+                ("age>1y kind:media", "Media untouched for over a year"),
+                ("in:downloads type:archive", "Archives in Downloads"),
+            })
+            {
+                var row = new DockPanel();
+                var detail = Ui.Subtle(meaning, 12);
+                DockPanel.SetDock(detail, Dock.Right);
+                row.Children.Add(detail);
+                row.Children.Add(Ui.Mono(query, 12, FontWeights.Medium));
+                string captured = query;
+                examples.Children.Add(Ui.HoverRow(row, () =>
+                {
+                    Model.SearchQuery = captured;
+                    Refresh();
+                }));
+            }
+            hero.Children.Add(examples);
+        }
 
         // WIN-029: saved searches — live totals over this scan; right-click
         // a pill to forget it.
@@ -1135,30 +1192,32 @@ public sealed class SearchPage : FileListPage
             hero.Children.Add(savedRow);
         }
 
+        var explanation = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
         if (_usedQuery)
         {
             var parts = _lastParsed.Query.Describe();
-            hero.Children.Add(Ui.Subtle(string.Join("  ·  ", parts), 12));
+            explanation.Children.Add(Ui.Subtle(string.Join("  ·  ", parts), 12));
             if (_lastParsed.Problems.Count > 0)
-                hero.Children.Add(Ui.Subtle(
+                explanation.Children.Add(Ui.Subtle(
                     "Not understood: " + string.Join("; ", _lastParsed.Problems.Select(p =>
                         $"{p.Token} ({p.Message})")), 11.5));
         }
         if (_lastResult is { } result)
         {
             if (result.MatchCount > result.Ids.Count)
-                hero.Children.Add(Ui.Subtle(
+                explanation.Children.Add(Ui.Subtle(
                     $"{result.MatchCount:N0} matches · " +
                     $"{ByteFormat.Format(result.MatchedBytes)} matched · showing the largest {result.Ids.Count}", 12));
             else if (result.MatchedBytes > 0)
-                hero.Children.Add(Ui.Subtle(
+                explanation.Children.Add(Ui.Subtle(
                     $"{result.MatchCount:N0} matches · {ByteFormat.Format(result.MatchedBytes)} matched", 12));
             foreach (var note in result.Notes)
-                hero.Children.Add(Ui.Subtle(note, 11.5));
+                explanation.Children.Add(Ui.Subtle(note, 11.5));
             if (FileQuery.ContainsToken("is:duplicate", Model.SearchQuery))
-                hero.Children.Add(Ui.Subtle(
+                explanation.Children.Add(Ui.Subtle(
                     "Duplicated means in a same-content group — run Duplicates to refresh.", 11.5));
         }
+        if (explanation.Children.Count > 0) hero.Children.Add(explanation);
         return hero;
     }
 }

@@ -54,15 +54,15 @@ public sealed class InspectorPanel : UserControl
         long size = totals[id];
 
         // Header: icon tile, name, size, kind line.
-        var cat = FileTypes.Categories.FirstOrDefault(c => c.Id == kind);
+        var kindBrush = Ui.KindColor(kind);
         var header = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
         var tile = Ui.IconTile(Icons.ForKind(kind), 40,
-            isDir ? Ui.Brush("AppAccentSoft") : Ui.Hex(cat?.BadgeBackground ?? "#F1F5F9"),
-            isDir ? Ui.Brush("AppAccent") : Ui.Hex(cat?.BadgeForeground ?? "#475569"), 9);
+            isDir ? Ui.Brush("AppHover") : Ui.Tint(((SolidColorBrush)kindBrush).Color, 41),
+            isDir ? Ui.Brush("AppSubtle") : kindBrush, 9);
         DockPanel.SetDock(tile, Dock.Left);
         var headText = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         headText.Children.Add(Ui.T(name, 15, FontWeights.SemiBold, wrap: true));
-        headText.Children.Add(Ui.T(ByteFormat.Format(size), 17, FontWeights.Bold));
+        headText.Children.Add(Ui.Mono(ByteFormat.Format(size), 28, FontWeights.SemiBold));
         string kindLine = isDir ? "Folder" : FileTypes.LabelOf(kind);
         if (!isDir && tree.NameOf(id).LastIndexOf('.') is int dot && dot >= 0 && dot < tree.NameOf(id).Length - 1)
             kindLine += $" · {tree.NameOf(id)[(dot + 1)..].ToUpperInvariant()}";
@@ -77,12 +77,12 @@ public sealed class InspectorPanel : UserControl
         {
             bool selected = _tab == label;
             var tabContent = new StackPanel();
-            tabContent.Children.Add(Ui.T(label, 12.5, selected ? FontWeights.SemiBold : FontWeights.Normal,
-                selected ? Ui.Brush("AppAccent") : Ui.Brush("AppSubtle")));
+            tabContent.Children.Add(Ui.T(label, 13, selected ? FontWeights.Medium : FontWeights.Normal,
+                selected ? Ui.Brush("AppForeground") : Ui.Brush("AppSubtle")));
             tabContent.Children.Add(new Border
             {
-                Height = 2, Margin = new Thickness(0, 4, 0, 0),
-                Background = selected ? Ui.Brush("AppAccent") : Brushes.Transparent,
+                Height = 1.5, Margin = new Thickness(0, 4, 0, 0),
+                Background = selected ? Ui.Brush("AppForeground") : Brushes.Transparent,
             });
             var tab = new Border
             {
@@ -260,31 +260,19 @@ public sealed class InspectorPanel : UserControl
                     : "This file contributes to the folder's total.",
             };
         }
-        _root.Children.Add(Ui.InfoCard("Why is it large?", why, new Thickness(0, 8, 0, 8)));
+        var note = new StackPanel { Margin = new Thickness(0, 8, 0, 12) };
+        note.Children.Add(Ui.MonoLabel("Why it's large", Ui.Brush("AppSubtle")));
+        var noteText = Ui.Subtle(why, 12);
+        noteText.TextWrapping = TextWrapping.Wrap;
+        noteText.Margin = new Thickness(0, 4, 0, 0);
+        note.Children.Add(noteText);
+        _root.Children.Add(note);
 
         // Can I remove it? + What happens?
         string path = Model.PathOf(id);
         bool regenerable = Model.QuickWins?.Any(h => h.Id == id) == true;
         var (verdict, detail, safe) = EvaluateRemovability(tree, id, path, regenerable);
         _root.Children.Add(SafetyBlock("Can I remove it?", verdict, detail, safe));
-
-        var risk = new DockPanel { Margin = new Thickness(0, 4, 0, 10) };
-        var shield = Ui.Glyph(Icons.Shield, 13, safe ? Ui.Brush("AppSuccess") : Ui.Brush("AppWarning"));
-        shield.Margin = new Thickness(0, 0, 6, 0);
-        DockPanel.SetDock(shield, Dock.Left);
-        var badge = Ui.SafetyBadge(safe, safe ? "Low" : "Review");
-        DockPanel.SetDock(badge, Dock.Left);
-        risk.Children.Add(shield);
-        risk.Children.Add(badge);
-        risk.Children.Add(Ui.Subtle(safe ? "  Regenerable — apps rebuild it" : "  Look before you remove", 11.5));
-        _root.Children.Add(new StackPanel
-        {
-            Children =
-            {
-                new TextBlock { Text = "Risk level", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = Ui.Brush("AppFaint") },
-                risk,
-            },
-        });
     }
 
     private (string Verdict, string Detail, bool Safe) EvaluateRemovability(
@@ -317,24 +305,18 @@ public sealed class InspectorPanel : UserControl
 
     private static Border SafetyBlock(string title, string verdict, string detail, bool safe)
     {
-        var row = new DockPanel();
-        var icon = Ui.Glyph(safe ? Icons.Check : Icons.Info, 13,
-            safe ? Ui.Brush("AppSuccess") : Ui.Brush("AppWarning"));
-        icon.Margin = new Thickness(0, 1, 8, 0);
-        DockPanel.SetDock(icon, Dock.Top);
         var text = new StackPanel();
-        text.Children.Add(Ui.T(title, 12, FontWeights.SemiBold));
-        text.Children.Add(Ui.T(verdict, 12, FontWeights.SemiBold,
-            safe ? Ui.Brush("AppSuccess") : Ui.Brush("AppWarning")));
-        text.Children.Add(new Border { Height = 3 });
+        text.Children.Add(Ui.T(title, 12, FontWeights.Medium));
+        var safety = Ui.SafetyLabel(
+            safe ? Ui.Brush("AppSuccess") : Ui.Brush("AppWarning"), verdict, 11.5);
+        safety.Margin = new Thickness(0, 3, 0, 0);
+        text.Children.Add(safety);
         text.Children.Add(new TextBlock
         {
             Text = detail, FontSize = 11.5, Foreground = Ui.Brush("AppSubtle"),
-            TextWrapping = TextWrapping.Wrap,
+            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0),
         });
-        row.Children.Add(icon);
-        row.Children.Add(text);
-        return new Border { Margin = new Thickness(0, 0, 0, 10), Child = row };
+        return new Border { Margin = new Thickness(0, 0, 0, 10), Child = text };
     }
 
     // ---- Actions ----
@@ -349,30 +331,33 @@ public sealed class InspectorPanel : UserControl
         _root.Children.Add(label);
 
         var stack = new StackPanel();
-        stack.Children.Add(Ui.Button("Reveal in Explorer", Icons.Open, Ui.ButtonStyle.Primary,
-            () => Explorer.Reveal(path)));
+        bool inCleanup = Model.StagedItems.Any(item =>
+            string.Equals(item.Path, path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase));
+        bool canStage = id != 0 && !CleanupQueue.IsExcludedPath(path);
+        var cleanup = inCleanup
+            ? Ui.Button("In Cleanup ✓", Icons.Cleanup, Ui.ButtonStyle.Outline,
+                () => Model.ShowPage("Cleanup"))
+            : Ui.Button("Add to Cleanup", Icons.Cleanup, Ui.ButtonStyle.Primary,
+                () =>
+                {
+                    if (!Model.Stage(id, "from inspector"))
+                        Model.Toast("Blocked by safety rules");
+                });
+        cleanup.IsEnabled = inCleanup || canStage;
+        if (!canStage && !inCleanup) cleanup.ToolTip = "Protected paths can't be added to Cleanup.";
+        stack.Children.Add(cleanup);
         stack.Children.Add(new Border { Height = 8 });
-        stack.Children.Add(Ui.Button("Open Containing Folder", Icons.Folder, Ui.ButtonStyle.Outline,
-            () => Explorer.Reveal(isDir ? path : System.IO.Path.GetDirectoryName(path) ?? path)));
+        stack.Children.Add(Ui.Button("Reveal in Explorer", Icons.Open, Ui.ButtonStyle.Outline,
+            () => Explorer.Reveal(path)));
         stack.Children.Add(new Border { Height = 8 });
         stack.Children.Add(Ui.Button("Copy Path", Icons.Copy, Ui.ButtonStyle.Outline,
             () => Clipboard.SetText(path)));
         if (isDir)
         {
             stack.Children.Add(new Border { Height = 8 });
-            stack.Children.Add(Ui.Button("Visualize this folder", Icons.Visualize, Ui.ButtonStyle.Outline,
+            stack.Children.Add(Ui.Button("Show in Visualize", Icons.Visualize, Ui.ButtonStyle.Outline,
                 () => Model.Visualize(id)));
         }
-        stack.Children.Add(new Border { Height = 14 });
-        stack.Children.Add(Ui.Button("Move to Recycle Bin…", Icons.Trash, Ui.ButtonStyle.Danger,
-            () =>
-            {
-                if (!Model.Stage(id, "from inspector"))
-                    MessageBox.Show("This location is protected — DiskMap never offers it for cleanup.",
-                        "DiskMap", MessageBoxButton.OK, MessageBoxImage.Information);
-                else
-                    Model.ShowPage("Cleanup");
-            }));
         _root.Children.Add(stack);
     }
 

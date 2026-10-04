@@ -1,65 +1,70 @@
+using System.Windows.Media;
+
 namespace DiskMap.App;
 
 /// <summary>
-/// Icon glyphs — Segoe MDL2 Assets codepoints (available on every
-/// supported Windows). All icon text flows through here so a wrong
-/// glyph is a one-line fix.
+/// Google Material Symbols Rounded glyphs, subset and bundled for
+/// offline use. All icon text flows through here.
 /// </summary>
 public static class Icons
 {
-    public const string Font = "Segoe MDL2 Assets";
+    public static readonly FontFamily FontFamily = new(
+        new Uri("pack://application:,,,/"), "./Assets/Fonts/#Material Symbols Rounded");
 
     // Chrome
-    public const string Search = "\uE721";
-    public const string Rescan = "\uE72C";
-    public const string Trash = "\uE74D";
-    public const string Back = "\uE76B";
-    public const string Forward = "\uE76C";
-    public const string Settings = "\uE713";
-    public const string Add = "\uE710";
-    public const string More = "\uE712";
-    public const string Info = "\uE946";
-    public const string Warning = "\uE7BA";
-    public const string Cancel = "\uE711";
-    public const string Check = "\uE8FB";
-    public const string Shield = "\uEA18";
-    public const string Focus = "\uE740";
-    public const string Copy = "\uE8C8";
-    public const string Open = "\uE8DA";
-    public const string Link = "\uE71B";
-    public const string Drive = "\uEDA2";
-    public const string ChevronDown = "\uE70D";
-    public const string Grid = "\uE80A";
+    public const string Search = "\uEF7A";
+    public const string Rescan = "\uE5D5";
+    public const string Trash = "\uE92E";
+    public const string Back = "\uE5C4";
+    public const string Forward = "\uE5C8";
+    public const string Settings = "\uE8B8";
+    public const string Add = "\uE145";
+    public const string More = "\uE5D3";
+    public const string Info = "\uE88E";
+    public const string Warning = "\uF083";
+    public const string Cancel = "\uE5CD";
+    public const string Check = "\uF0BE";
+    public const string Shield = "\uE9E0";
+    public const string Focus = "\uE3B4";
+    public const string Copy = "\uE14D";
+    public const string Open = "\uE89E";
+    public const string Link = "\uE250";
+    public const string Drive = "\uF80E";
+    public const string ChevronDown = "\uE5CF";
+    public const string Grid = "\uE9B0";
+    public const string DarkMode = "\uE51C";
+    public const string LightMode = "\uE518";
+    public const string Visibility = "\uE8F4";
 
     // Sidebar destinations
-    public const string Overview = "\uE80F";
-    public const string BiggestFiles = "\uE8A5";
-    public const string BiggestFolders = "\uE8B7";
-    public const string Forgotten = "\uE81C";
-    public const string Duplicates = "\uE8C8";
-    public const string SafeReview = "\uE8FB";
-    public const string Caches = "\uE7B8";
-    public const string Downloads = "\uE896";
-    public const string Media = "\uE714";
-    public const string FileBrowser = "\uE8F1";
-    public const string Visualize = "\uE71D";
-    public const string Developer = "\uE943";
-    public const string Applications = "\uED35";
-    public const string Snapshots = "\uE722";
-    public const string Cleanup = "\uE74D";
+    public const string Overview = "\uE871";
+    public const string BiggestFiles = "\uE873";
+    public const string BiggestFolders = "\uE2C7";
+    public const string Forgotten = "\uE8B3";
+    public const string Duplicates = "\uE14D";
+    public const string SafeReview = "\uF0BE";
+    public const string Caches = "\uE86A";
+    public const string Downloads = "\uF090";
+    public const string Media = "\uE404";
+    public const string FileBrowser = "\uE2C8";
+    public const string Visualize = "\uE9B0";
+    public const string Developer = "\uE86F";
+    public const string Applications = "\uE5C3";
+    public const string Snapshots = "\uE412";
+    public const string Cleanup = "\uE92E";
 
     // File kinds
-    public const string Folder = "\uE8B7";
-    public const string File = "\uE8A5";
-    public const string Video = "\uE714";
-    public const string Audio = "\uE8D6";
-    public const string Image = "\uE91B";
-    public const string Document = "\uE8A5";
-    public const string Code = "\uE943";
-    public const string Archive = "\uE7B8";
-    public const string DiskImage = "\uEDA2";
-    public const string Application = "\uED35";
-    public const string List = "\uEA37";
+    public const string Folder = "\uE2C7";
+    public const string File = "\uE873";
+    public const string Video = "\uE404";
+    public const string Audio = "\uEB82";
+    public const string Image = "\uE3F4";
+    public const string Document = "\uE873";
+    public const string Code = "\uE86F";
+    public const string Archive = "\uE149";
+    public const string DiskImage = "\uF80E";
+    public const string Application = "\uE5C3";
+    public const string List = "\uE5D2";
 
     /// <summary>Glyph for a FileTypes category id.</summary>
     public static string ForKind(string kindId) => kindId switch

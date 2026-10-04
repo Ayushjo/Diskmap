@@ -18,7 +18,7 @@ namespace DiskMap.App.Controls;
 ///
 /// Interactions: click selects (inspector), double-click a directory to
 /// drill in; hover shows name + size; right-click offers Reveal in
-/// Explorer / Stage for cleanup.
+/// Explorer / Add to Cleanup.
 /// </summary>
 public sealed class TreemapControl : FrameworkElement
 {
@@ -217,11 +217,11 @@ public sealed class TreemapControl : FrameworkElement
         var dominant = buckets.OrderByDescending(kv => kv.Value).FirstOrDefault().Key;
         return dominant switch
         {
-            AgeBucket.Under30 => Ui.Hex("#4ADE80"),
-            AgeBucket.Days30To90 => Ui.Hex("#86EFAC"),
-            AgeBucket.Days90To365 => Ui.Hex("#FDE68A"),
-            AgeBucket.OneToTwoYears => Ui.Hex("#F0A95F"),
-            AgeBucket.OverTwoYears => Ui.Hex("#DC2626"),
+            AgeBucket.Under30 => Ui.Hex("#7BA89C"),
+            AgeBucket.Days30To90 => Ui.Hex("#8FACC0"),
+            AgeBucket.Days90To365 => Ui.Hex("#B9A071"),
+            AgeBucket.OneToTwoYears => Ui.Hex("#C99A7E"),
+            AgeBucket.OverTwoYears => Ui.Hex("#C78797"),
             _ => NodeColors.OtherBrush,
         };
     }
@@ -229,12 +229,9 @@ public sealed class TreemapControl : FrameworkElement
     /// <summary>Folder mode: one stable pastel per name — siblings read as distinct owners.</summary>
     private static Brush FolderBrush(string name)
     {
-        string[] palette =
-            ["#BFDBFE", "#FBCFE8", "#BBF7D0", "#FDE68A", "#DDD6FE",
-             "#FED7AA", "#A5F3FC", "#FECACA", "#D9F99D", "#F5D0FE"];
         int hash = 0;
         foreach (char c in name) hash = hash * 31 + char.ToLowerInvariant(c);
-        return Ui.Hex(palette[Math.Abs(hash) % palette.Length]);
+        return Ui.Data(Math.Abs(hash) % Ui.DataPalette.Length);
     }
 
     private void Redraw()
@@ -406,7 +403,7 @@ public sealed class TreemapControl : FrameworkElement
         var reveal = new MenuItem { Header = "Reveal in Explorer" };
         reveal.Click += (_, _) => Explorer.Reveal(model.PathOf(id));
         menu.Items.Add(reveal);
-        var stage = new MenuItem { Header = "Stage for cleanup" };
+        var stage = new MenuItem { Header = "Add to Cleanup" };
         stage.Click += (_, _) => model.Stage(id, "from treemap");
         menu.Items.Add(stage);
         menu.IsOpen = true;

@@ -4,17 +4,18 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="DiskMap" Height="780" Width="1280" MinHeight="500" MinWidth="900"
+        Title="DiskMap" Height="780" Width="1280" MinHeight="600" MinWidth="880"
         AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="236" />
+            <ColumnDefinition x:Name="SidebarColumn" Width="212" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
         <!-- Sidebar: logo, grouped nav, drive card. -->
-        <Border Grid.Column="0" BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="0,0,1,0"
-                Background="{DynamicResource AppSidebar}">
+        <Border x:Name="SidebarBorder" Grid.Column="0"
+                BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="0,0,1,0"
+                Background="{DynamicResource AppSidebar}" Panel.ZIndex="6">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -22,23 +23,19 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <DockPanel Grid.Row="0" Margin="16,18,16,10">
-                    <Border x:Name="LogoTile" Width="32" Height="32" CornerRadius="8" DockPanel.Dock="Left" />
-                    <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="DiskMap" FontSize="15" FontWeight="SemiBold" />
-                        <TextBlock Text="Understand your storage." FontSize="11"
-                                   Foreground="{DynamicResource AppSubtle}" />
-                    </StackPanel>
+                <DockPanel Grid.Row="0" Margin="18,16,18,14">
+                    <Border x:Name="LogoTile" Width="26" Height="27" DockPanel.Dock="Left" />
+                    <TextBlock Text="DiskMap" FontSize="15" FontWeight="Bold"
+                               Margin="8,0,0,0" VerticalAlignment="Center" />
                 </DockPanel>
 
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                     <StackPanel x:Name="NavPanel" Margin="10,0,10,0" />
                 </ScrollViewer>
 
-                <Border Grid.Row="2" Margin="12" Padding="10"
-                        Background="{DynamicResource AppCard}"
-                        BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="1"
-                        CornerRadius="8">
+                <Border Grid.Row="2" Margin="12,0,12,12" Padding="6,12,6,0"
+                        Background="Transparent"
+                        BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="0,1,0,0">
                     <StackPanel>
                         <DockPanel Margin="0,0,0,6">
                             <ContentControl x:Name="DriveIcon" DockPanel.Dock="Left" Margin="0,0,8,0" />
@@ -57,26 +54,32 @@
         <!-- Right side: top bar over content + inspector. -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
+                <RowDefinition Height="44" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
             <Border Grid.Row="0" BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="0,0,0,1"
-                    Padding="16,10" Background="{DynamicResource AppBackground}">
+                    Padding="8,7" Background="{DynamicResource AppBackground}">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <!-- WIN-056: window menu — File / Go, the macOS menu bar's duties. -->
-                    <Button x:Name="MenuButton" Grid.Column="0" Content="☰  DiskMap"
-                            HorizontalAlignment="Left" Padding="10,5" Cursor="Hand"
-                            Background="Transparent" BorderThickness="0" FontSize="12.5"
-                            Click="MenuButton_Click" />
-                    <ContentControl x:Name="SearchHost" Grid.Column="1" />
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <ContentControl x:Name="SidebarButtonHost" Margin="0,0,4,0" />
+                        <Button x:Name="MenuButton" Content="☰  DiskMap"
+                                HorizontalAlignment="Left" Padding="8,0" Cursor="Hand"
+                                Background="Transparent" BorderThickness="0" FontSize="12.5"
+                                Click="MenuButton_Click" />
+                    </StackPanel>
+                    <ContentControl x:Name="SearchHost" Grid.Column="1" Margin="12,0,0,0"
+                                    HorizontalAlignment="Left" />
                     <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <ContentControl x:Name="AppearanceButtonHost" Margin="0,0,4,0" />
+                        <ContentControl x:Name="InspectorButtonHost" Margin="0,0,8,0" />
                         <ContentControl x:Name="CleanupButtonHost" />
                         <ContentControl x:Name="RescanButtonHost" Margin="8,0,0,0" />
                     </StackPanel>
@@ -86,7 +89,7 @@
             <!-- Live scan strip: items found, rate, current folder, cancel. -->
             <Border x:Name="ScanBanner" Grid.Row="1" Visibility="Collapsed"
                     BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="0,0,0,1"
-                    Padding="16,6" Background="{DynamicResource AppInfoBg}">
+                    Padding="16,6" Background="{DynamicResource AppBackground}">
                 <DockPanel>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock x:Name="ScanBannerText" FontSize="11.5"
@@ -103,11 +106,12 @@
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="296" />
+                    <ColumnDefinition x:Name="InspectorColumn" Width="290" />
                 </Grid.ColumnDefinitions>
                 <ContentControl x:Name="PageHost" Grid.Column="0" />
-                <Border Grid.Column="1" BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="1,0,0,0"
-                        Background="{DynamicResource AppBackground}">
+                <Border x:Name="InspectorBorder" Grid.Column="1"
+                        BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="1,0,0,0"
+                        Background="{DynamicResource AppBackground}" Panel.ZIndex="5">
                     <ContentControl x:Name="InspectorHost" />
                 </Border>
             </Grid>
@@ -115,11 +119,12 @@
 
         <!-- WIN-063: transient confirmations — stage / commit / put-back. -->
         <Border x:Name="ToastHost" Grid.ColumnSpan="2" Visibility="Collapsed"
-                HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,54,0,0"
-                Background="{DynamicResource AppForeground}" CornerRadius="8"
-                Padding="14,8" Panel.ZIndex="10"
-                Effect="{x:Null}">
-            <TextBlock x:Name="ToastText" Foreground="{DynamicResource AppCard}" FontSize="12.5" />
+                HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,56,0,0"
+                Background="{DynamicResource AppCard}" CornerRadius="17"
+                BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="1"
+                Padding="14,8" Panel.ZIndex="10">
+            <TextBlock x:Name="ToastText" Foreground="{DynamicResource AppForeground}" FontSize="13"
+                       FontWeight="Medium" />
         </Border>
     </Grid>
 </Window>

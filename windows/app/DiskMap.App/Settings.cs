@@ -12,7 +12,7 @@ namespace DiskMap.App;
 public sealed class AppSettings
 {
     [JsonPropertyName("appearance")] public string Appearance { get; set; } = "system"; // system|light|dark
-    [JsonPropertyName("textScale")] public double TextScale { get; set; } = 1.0;        // 0.9 / 1.0 / 1.1 / 1.2
+    [JsonPropertyName("textScale")] public double TextScale { get; set; } = 1.0;        // 0.9 / 1.0 / 1.15 / 1.3
     /// <summary>Record a history entry after each scan (the "what grew" comparisons).</summary>
     [JsonPropertyName("keepHistory")] public bool KeepHistory { get; set; } = true;
     /// <summary>WIN-066: after each scan on a ReFS volume, map extents and count block clones once.</summary>
@@ -26,7 +26,10 @@ public sealed class AppSettings
     {
         try
         {
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(Path0)) ?? new AppSettings();
+            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(Path0)) ?? new AppSettings();
+            if (Math.Abs(settings.TextScale - 1.1) < 0.001) settings.TextScale = 1.15;
+            if (Math.Abs(settings.TextScale - 1.2) < 0.001) settings.TextScale = 1.3;
+            return settings;
         }
         catch { return new AppSettings(); }
     }
