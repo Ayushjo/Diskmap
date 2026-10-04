@@ -314,7 +314,7 @@ public enum SnapshotCompare {
         let top = report.categoryDeltas.prefix(3)
         if top.isEmpty {
             let dir = report.usedDelta > 0 ? "increased" : "decreased"
-            return "Storage \(dir) by \(byteString(abs(report.usedDelta))), but DiskMap couldn’t confidently attribute the main categories."
+            return "Storage \(dir) by \(byteString(abs(report.usedDelta))), but freedisk.space couldn’t confidently attribute the main categories."
         }
         let parts = top.map { "\($0.title) (\(signed($0.delta)))" }
         let dir = report.usedDelta > 0 ? "increased" : "decreased"

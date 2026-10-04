@@ -76,7 +76,7 @@ struct AppsView: View {
                         Spacer(minLength: 8)
                         DiskMapMenu(label: "Sort", options: ApplicationsCatalog.Sort.allCases, selection: $sort, title: { $0.title })
                     }
-                    HStack(spacing: 2) {
+                    FlowLayout(spacing: 2) {
                         chip(.all, summary.appCount)
                         chip(.large, summary.largeCount)
                         chip(.notRecentlyUsed, summary.notRecentlyUsedCount)
@@ -94,7 +94,7 @@ struct AppsView: View {
                 DiskMapLoadingState(title: "Finding applications", detail: "Reading /Applications and ~/Applications.")
             } else if visible.isEmpty {
                 DiskMapEmptyState(symbol: "app.dashed", title: "No applications found",
-                                  message: apps.isEmpty ? "DiskMap couldn’t find installed applications in the usual places."
+                                  message: apps.isEmpty ? "freedisk.space couldn’t find installed applications in the usual places."
                                       : "Try another name or filter.")
             } else {
                 appList

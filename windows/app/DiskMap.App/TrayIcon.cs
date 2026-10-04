@@ -16,7 +16,7 @@ public sealed class TrayIcon : IDisposable
     {
         _window = window;
         var menu = new System.Windows.Forms.ContextMenuStrip();
-        menu.Items.Add(new System.Windows.Forms.ToolStripLabel("DiskMap") { Enabled = false });
+        menu.Items.Add(new System.Windows.Forms.ToolStripLabel("freedisk.space") { Enabled = false });
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         var free = new System.Windows.Forms.ToolStripMenuItem("Free space: —") { Enabled = false };
         var last = new System.Windows.Forms.ToolStripMenuItem("No scan yet") { Enabled = false };
@@ -24,7 +24,7 @@ public sealed class TrayIcon : IDisposable
         var delta = new System.Windows.Forms.ToolStripMenuItem("") { Enabled = false, Visible = false };
         var rescan = new System.Windows.Forms.ToolStripMenuItem("Rescan");
         rescan.Click += async (_, _) => { await ScanModel.Shared.RescanAsync(); Refresh(); };
-        var open = new System.Windows.Forms.ToolStripMenuItem("Open DiskMap");
+        var open = new System.Windows.Forms.ToolStripMenuItem("Open freedisk.space");
         open.Click += (_, _) => Show();
         var exit = new System.Windows.Forms.ToolStripMenuItem("Quit");
         exit.Click += (_, _) => _window.Close();
@@ -38,7 +38,7 @@ public sealed class TrayIcon : IDisposable
         _icon = new System.Windows.Forms.NotifyIcon
         {
             Icon = exeIcon,
-            Text = "DiskMap",
+            Text = "freedisk.space",
             Visible = true,
             ContextMenuStrip = menu,
         };

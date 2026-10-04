@@ -848,6 +848,18 @@ same spirit as the macOS "do better" list. Track here so they aren't lost.
   Cleanup instead of calling `File.Delete`. The Windows excluded-paths
   list was not changed.
 
+- [x] **WIN-083: freedisk.space 0.2.0 release parity** — the public name,
+  Dusty app icon and About surface now match main while internal assembly,
+  cache and preference names remain compatible. Show Dusty is optional;
+  the mascot appears in empty/first-run/scanning states and after a cleanup,
+  never on the Recycle Bin confirmation step. Search fields use the new
+  32 px raised/hover/focus treatment and Esc-to-clear. Cleanup removal has
+  a six-second exact Undo, and a successful commit becomes an in-page Put
+  Back/Done result. File Browser no longer repeats the current folder in its
+  breadcrumb; Age Map hides its irrelevant color control; Flame requests a
+  four-level icicle hierarchy; all layout charts honor folder/type/age color
+  modes. Developer legends wrap and Snapshots stack at narrow widths.
+
 ---
 
 ## Suggested order

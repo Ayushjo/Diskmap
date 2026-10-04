@@ -1,5 +1,5 @@
 {
-  "_comment": "Tool-native cleanup commands (TASK-055). DiskMap SHOWS these and never runs them — CleanupQueue.commit() stays the only way DiskMap removes anything. trashIsUnsafe: moving the folder to the Trash damages the tool's state, so the app should steer to the command instead. Matching: a path matches if its last component is in `names`, it ends with an entry in `pathSuffixes`, or it contains an entry in `pathContains`.",
+  "_comment": "Tool-native cleanup commands (TASK-055). freedisk.space SHOWS these and never runs them — CleanupQueue.commit() stays the only way freedisk.space removes anything. trashIsUnsafe: moving the folder to the Trash damages the tool's state, so the app should steer to the command instead. Matching: a path matches if its last component is in `names`, it ends with an entry in `pathSuffixes`, or it contains an entry in `pathContains`.",
   "recipes": [
     {
       "id": "docker",

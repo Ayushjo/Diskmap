@@ -85,7 +85,7 @@ struct MenuBarLabel: View {
             Label(ByteFormat.string(Int64(volume.freeBytes)) + " free", systemImage: "externaldrive.badge.exclamationmark")
         } else {
             Image(systemName: "internaldrive")
-                .accessibilityLabel("DiskMap")
+                .accessibilityLabel("freedisk.space")
         }
     }
 }
@@ -94,6 +94,7 @@ struct MenuBarStatusView: View {
     @ObservedObject var model: ScanModel
     @Environment(\.openWindow) private var openWindow
     @AppStorage("ShowMenuBarExtra") private var showMenuBarExtra = true
+    @AppStorage(DustyPreference.key) private var showDusty = true
     // Read up front so the first layout already has its real height.
     @State private var volume: VolumeStats? = VolumeStats.forPath("/")
     @State private var record: LastScanRecord? = LastScanRecord.load()
@@ -103,7 +104,14 @@ struct MenuBarStatusView: View {
         VStack(alignment: .leading, spacing: 12) {
             if let volume {
                 VStack(alignment: .leading, spacing: 6) {
-                    MonoLabel(volume.volumeName.uppercased())
+                    HStack(alignment: .center, spacing: 6) {
+                        MonoLabel(volume.volumeName.uppercased())
+                        Spacer(minLength: 0)
+                        if showDusty {
+                            Dusty(pose: MenuBarText.isLow(volume) ? .smallDusty : .smallHello, width: 26)
+                                .help(MenuBarText.isLow(volume) ? "Dusty’s gathering dust: space is low" : "Plenty of room")
+                        }
+                    }
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("\(ByteFormat.string(Int64(volume.freeBytes))) free")
                             .font(.system(size: DiskMapType.scaled(20), weight: .semibold).monospacedDigit())
@@ -156,7 +164,7 @@ struct MenuBarStatusView: View {
                 Button(model.isScanning ? "Scanning…" : "Rescan") { rescan() }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(model.isScanning || (model.rootURL ?? record.map { URL(fileURLWithPath: $0.rootPath) }) == nil)
-                Button("Open DiskMap") { openApp() }
+                Button("Open freedisk.space") { openApp() }
                     .buttonStyle(SecondaryButtonStyle())
             }
         }

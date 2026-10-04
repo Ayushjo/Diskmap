@@ -176,7 +176,7 @@ struct BiggestFilesView: View {
                 DiskMapMenu(label: "Sort", options: SortMode.allCases, selection: $sortMode, title: { $0.title })
                     .accessibilityLabel("Sort by " + sortMode.title)
             }
-            HStack(spacing: 2) {
+            FlowLayout(spacing: 2) {
                 Chip(title: "All", count: "\(entries.count)", isOn: kindFilter == nil) { kindFilter = nil }
                 ForEach(Self.kinds, id: \.self) { kind in
                     if let count = kindCounts[kind], count > 0 {

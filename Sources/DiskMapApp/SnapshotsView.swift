@@ -5,6 +5,7 @@ import SwiftUI
 /// Explore → Snapshots: storage history and comparison workspace.
 struct SnapshotsView: View {
     @ObservedObject var model: ScanModel
+    @AppStorage(DustyPreference.key) private var showDusty = true
     @Environment(\.diskMapContentWidth) private var contentWidth
 
     @State private var records: [SnapshotRecord] = []
@@ -56,7 +57,7 @@ struct SnapshotsView: View {
         let vol = VolumeStats.forPath(root.path)
         let meta = SnapshotMeta(
             name: "Current scan",
-            note: "Live scan — save to keep a DiskMap analytical checkpoint.",
+            note: "Live scan — save to keep a freedisk.space analytical checkpoint.",
             favorite: false,
             volumeName: vol?.volumeName,
             totalBytes: vol?.totalBytes,
@@ -230,12 +231,17 @@ struct SnapshotsView: View {
                     browsePath: $browsePath, selectedPath: $selectedChangePath
                 )
             } else {
-                Text(records.isEmpty
-                     ? "Save a snapshot now; compare it with a later scan to see what grew or shrank."
-                     : "Pick two snapshots to see what changed between them.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .center, spacing: DiskMapSpace.md) {
+                    if records.isEmpty && showDusty {
+                        DustyArrival(pose: .sleepy, width: DiskMapType.scaled(76))
+                    }
+                    Text(records.isEmpty
+                         ? "Save a snapshot now; compare it with a later scan to see what grew or shrank."
+                         : "Pick two snapshots to see what changed between them.")
+                        .font(DiskMapType.body)
+                        .foregroundStyle(DiskMapTheme.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if let statusMessage {
                 Text(statusMessage)
@@ -250,32 +256,23 @@ struct SnapshotsView: View {
 
     private var compareSelectors: some View {
         HStack(spacing: 8) {
-            MonoLabel("Compare")
             snapshotPicker("Before", selection: $beforeID)
             Button { swap(&beforeID, &afterID) } label: {
                 Label("Swap Before and After", systemImage: "arrow.left.arrow.right")
             }
-            .buttonStyle(IconButtonStyle(size: 24))
+            .buttonStyle(IconButtonStyle())
             .help("Swap Before and After")
             snapshotPicker("After", selection: $afterID)
             Spacer(minLength: 0)
         }
     }
 
+    /// Field-style menus (they shrink and truncate rather than widening the page).
     private func snapshotPicker(_ title: String, selection: Binding<String?>) -> some View {
-        Picker(title, selection: selection) {
-            Text("Select…").tag(String?.none)
-            if let current = currentRecord {
-                Text("Current scan (now)").tag(Optional(current.id))
-            }
-            ForEach(records) { rec in
-                Text(rec.pickerLabel).tag(Optional(rec.id))
-            }
-        }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .fixedSize()
-        .accessibilityLabel(title)
+        var options: [(id: String?, title: String)] = [(nil, "Select…")]
+        if let current = currentRecord { options.append((current.id, "Current scan (now)")) }
+        options += records.map { (Optional($0.id), $0.pickerLabel) }
+        return KitMenuField(label: title, selection: selection, options: options, minWidth: 160, maxWidth: 320)
     }
 
     private var canCompare: Bool {
@@ -478,7 +475,7 @@ struct SnapshotsView: View {
             fileCount: model.descendantFileCounts.first,
             folderCount: model.descendantFolderCounts.first,
             scanSeconds: model.lastScanSeconds,
-            diskMapVersion: "DiskMap"
+            diskMapVersion: "freedisk.space"
         )
         let snapshot = DiskSnapshot(rootPath: root.path, capturedAt: Date(), tree: tree)
         do {
@@ -562,17 +559,5 @@ struct SnapshotsView: View {
         comparedIDs = (beforeID, afterID)
         browsePath = ""
         selectedChangePath = spots.first?.path
-    }
-}
-
-
-private extension SnapshotsView {
-    static func formatCount(_ n: Int) -> String {
-        let f = NumberFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.numberStyle = .decimal
-        f.groupingSeparator = ","
-        f.usesGroupingSeparator = true
-        return f.string(from: NSNumber(value: n)) ?? "\(n)"
     }
 }

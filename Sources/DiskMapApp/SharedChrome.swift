@@ -9,43 +9,119 @@ import SwiftUI
 
 // MARK: - Shared compact controls
 
+/// The one text input: raised field, hairline, accent ring when focused.
+/// Clicking anywhere in it focuses the text; Esc clears it.
 struct DiskMapSearchField: View {
     var placeholder: String
     @Binding var text: String
     var shortcutHint: String? = nil
     @FocusState private var focused: Bool
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: DiskMapSpace.xs) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: DiskMapType.scaled(11.5), weight: .medium))
-                .foregroundStyle(DiskMapTheme.ink3)
+                .font(.system(size: DiskMapType.scaled(12), weight: .medium))
+                .foregroundStyle(focused ? DiskMapTheme.ink2 : DiskMapTheme.ink3)
                 .accessibilityHidden(true)
-            TextField(placeholder, text: $text)
+            TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(DiskMapTheme.ink3))
                 .textFieldStyle(.plain)
                 .font(DiskMapType.body)
+                .foregroundStyle(DiskMapTheme.ink)
                 .focused($focused)
+                .onExitCommand { text = "" }
+                .accessibilityLabel(placeholder)
             if !text.isEmpty {
-                Button { text = "" } label: {
+                Button { text = ""; focused = true } label: {
                     Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: DiskMapType.scaled(12)))
                         .foregroundStyle(DiskMapTheme.ink3)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Clear search")
+                .help("Clear (Esc)")
+                .accessibilityLabel("Clear search")
             } else if let shortcutHint, !focused {
                 Kbd(shortcutHint)
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 11)
         .frame(height: DiskMapMetric.searchHeight)
-        .background(
-            RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
-                .fill(DiskMapTheme.raised.opacity(focused ? 1 : 0.55))
-                .overlay(
-                    RoundedRectangle(cornerRadius: DiskMapRadius.control, style: .continuous)
-                        .stroke(focused ? DiskMapTheme.accent.opacity(0.6) : DiskMapTheme.line, lineWidth: 1)
-                )
-        )
+        .background(KitFieldBackground(focused: focused, hovering: hovering))
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: focused)
+    }
+}
+
+/// The shared look of every input: raised fill, hairline, a darker line on
+/// hover, an accent line with a soft accent ring when focused or open.
+struct KitFieldBackground: View {
+    var focused: Bool
+    var hovering: Bool = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(DiskMapTheme.raised)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(focused ? DiskMapTheme.accent.opacity(0.75)
+                            : hovering ? DiskMapTheme.ink3.opacity(0.55) : DiskMapTheme.line,
+                            lineWidth: 1)
+            )
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(DiskMapTheme.accent.opacity(focused ? 0.18 : 0), lineWidth: 3)
+                    .padding(-2)
+            )
+    }
+}
+
+/// A menu that looks like an input: optional mono label, the chosen value,
+/// a chevron, all inside the field background (Snapshots' Before / After).
+struct KitMenuField<ID: Hashable>: View {
+    var label: String?
+    @Binding var selection: ID
+    var options: [(id: ID, title: String)]
+    var minWidth: CGFloat = 140
+    var maxWidth: CGFloat = 300
+    @State private var hovering = false
+
+    private var current: String { options.first { $0.id == selection }?.title ?? "Select…" }
+
+    var body: some View {
+        Menu {
+            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                Button { selection = option.id } label: {
+                    if option.id == selection { Label(option.title, systemImage: "checkmark") } else { Text(option.title) }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                if let label { MonoLabel(label) }
+                Text(current)
+                    .font(DiskMapType.body)
+                    .foregroundStyle(DiskMapTheme.ink)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: DiskMapType.scaled(9), weight: .semibold))
+                    .foregroundStyle(DiskMapTheme.ink3)
+            }
+            .padding(.horizontal, 11)
+            .frame(minWidth: minWidth, maxWidth: maxWidth)
+            .frame(height: DiskMapMetric.searchHeight)
+            .background(KitFieldBackground(focused: false, hovering: hovering))
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(label.map { "\($0): \(current)" } ?? current)
     }
 }
 
@@ -71,21 +147,24 @@ struct DiskMapMenu<Option: Hashable>: View {
             }
         } label: {
             HStack(spacing: 5) {
-                // One Text: a borderless menu keeps only the first Text of its label.
-                (Text(label.isEmpty ? "" : label + "  ").foregroundColor(DiskMapTheme.ink3)
-                    + Text(title(selection)).foregroundColor(DiskMapTheme.ink))
-                    .lineLimit(1)
-                Spacer(minLength: 2)
+                Text(label.isEmpty ? "" : label)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                Text(title(selection))
+                    .foregroundStyle(DiskMapTheme.ink)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: DiskMapType.scaled(8.5), weight: .semibold))
                     .foregroundStyle(DiskMapTheme.ink3)
             }
             .font(DiskMapType.bodyEmphasis)
+            .lineLimit(1)
             .padding(.horizontal, 9)
             .frame(width: width, height: DiskMapMetric.controlHeight)
             .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        // A plain-button menu draws this label as written. The borderless
+        // style replaced it with a system-font title that ignored Text Size.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize(horizontal: width == nil, vertical: true)
     }
@@ -105,13 +184,21 @@ struct DiskMapEmptyState: View {
     var primaryAction: (() -> Void)? = nil
     var secondaryTitle: String? = nil
     var secondaryAction: (() -> Void)? = nil
+    /// Dusty in this empty state instead of the symbol (when Show Dusty is on).
+    var dusty: DustyPose? = nil
+    @AppStorage(DustyPreference.key) private var showDusty = true
 
     var body: some View {
         VStack(spacing: DiskMapSpace.sm) {
-            Image(systemName: symbol)
-                .font(.system(size: DiskMapType.scaled(20), weight: .regular))
-                .foregroundStyle(DiskMapTheme.ink3)
-                .accessibilityHidden(true)
+            if let dusty, showDusty {
+                DustyArrival(pose: dusty, width: DiskMapType.scaled(92))
+                    .padding(.bottom, DiskMapSpace.xs)
+            } else {
+                Image(systemName: symbol)
+                    .font(.system(size: DiskMapType.scaled(20), weight: .regular))
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .accessibilityHidden(true)
+            }
             Text(title)
                 .font(DiskMapType.bodyEmphasis)
                 .foregroundStyle(DiskMapTheme.ink)
@@ -245,13 +332,21 @@ struct DiskMapNoticeBanner: View {
     var examples: [String] = []
     var actionTitle: String?
     var action: (() -> Void)?
+    /// A small Dusty instead of the symbol (when Show Dusty is on).
+    var dusty: DustyPose? = nil
+    @AppStorage(DustyPreference.key) private var showDusty = true
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DiskMapSpace.sm) {
-            Image(systemName: symbol)
-                .font(.system(size: DiskMapType.scaled(11.5), weight: .medium))
-                .foregroundStyle(tint)
-                .accessibilityHidden(true)
+        HStack(alignment: dusty != nil && showDusty ? .center : .firstTextBaseline, spacing: DiskMapSpace.sm) {
+            if let dusty, showDusty {
+                Dusty(pose: dusty, width: DiskMapType.scaled(34))
+                    .accessibilityHidden(true)
+            } else {
+                Image(systemName: symbol)
+                    .font(.system(size: DiskMapType.scaled(11.5), weight: .medium))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(DiskMapType.bodyEmphasis)

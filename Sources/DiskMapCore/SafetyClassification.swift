@@ -74,7 +74,7 @@ public enum SafetyClassifier {
                 reason: "Keychain stores passwords and certificates.",
                 title: "Keychains",
                 consequences: "You can lose saved passwords and break app logins.",
-                recommendedAction: "Never remove via DiskMap."
+                recommendedAction: "Never remove via freedisk.space."
             )
         }
         if lower.hasPrefix("/private/var/db") || lower.hasPrefix("/private/var/folders") && lower.contains("com.apple") {

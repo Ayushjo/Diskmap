@@ -6,7 +6,7 @@ import Foundation
 // Reads only. Never deletes, never touches the network.
 
 let usage = """
-diskmap — offline disk usage for your Mac. Reads only; never deletes anything.
+diskmap — the freedisk.space CLI for offline disk usage. Reads only; never deletes anything.
 
 USAGE
   diskmap scan <path> [--top N] [--json]

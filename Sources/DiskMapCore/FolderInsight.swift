@@ -102,7 +102,7 @@ public struct FolderInsight: Sendable, Equatable {
         safety: SafetyAssessment
     ) -> String {
         if safety.level == .protected {
-            return "This space is used by macOS and system components. DiskMap does not recommend cleaning it from here."
+            return "This space is used by macOS and system components. freedisk.space does not recommend cleaning it from here."
         }
         if composition.isEmpty {
             return "This folder holds \(byteString(bytes)) across its contents. Open it to inspect what is inside."

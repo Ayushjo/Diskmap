@@ -533,7 +533,7 @@ public enum MediaCatalog {
     public static func recommendation(status: MediaStatus, kind: MediaKind) -> String {
         switch status {
         case .reviewFirst:
-            return "Personal media. DiskMap can’t determine whether you still need it — review first."
+            return "Personal media. freedisk.space can’t determine whether you still need it — review first."
         case .likelyDisposable:
             return "Looks like scratch/export media that may be safe to review, but confirm before removing."
         }

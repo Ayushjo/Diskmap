@@ -213,7 +213,7 @@ enum DiskMapMetric {
     /// Widens with the text size (TASK-085) so labels stay on one line.
     static var sidebarWidth: CGFloat { (212 * max(1, DiskMapType.scale)).rounded() }
     static let controlHeight: CGFloat = 28
-    static let searchHeight: CGFloat = 30
+    static let searchHeight: CGFloat = 32
     static let tableHeaderHeight: CGFloat = 28
     static let statusBarHeight: CGFloat = 30
     static let checkboxColumnWidth: CGFloat = 24

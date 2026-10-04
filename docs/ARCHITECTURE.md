@@ -9,6 +9,22 @@
 
 ## Decision log
 
+### Public name and compatibility
+
+The public product and planned domain are **freedisk.space**. The app bundle
+display name, artwork, website, and distribution filenames use that name.
+The Swift module/target names, CLI command `diskmap`, bundle identifier
+`com.ayushjo.diskmap`, preference keys, and Application Support directories
+retain their original names. This avoids treating existing snapshots and
+settings as a new installation. A future identifier migration would need an
+explicit data-migration plan and compatibility tests; the brand change alone
+does not require one.
+
+The current visual mark is Dusty peeking over the cleared stack: three bars
+that shrink to show space becoming free. The website SVG, native wordmark,
+and generated Mac and Windows icons share the selected vector. The previous
+stack-only assets remain in `design/brand-backup-cleared-stack/`.
+
 ### Struct-of-arrays tree instead of a class per file
 
 A `class FileNode` with a handful of stored properties costs roughly 48+
@@ -286,7 +302,8 @@ Offline. No networking.
 DiskBuddy’s left chrome (scan actions, Recent, Disk Storage, Current View,
 Quick Wins, File Types) and right Inspector stay put while the center canvas
 swaps among Treemap / Sunburst / Flame / Bubbles / Mind Map / Top Sizes /
-Age Map / Folders. Top nav is Explore | Duplicates | Applications | Monitor
+Age Map / Folders (Top Sizes and Folders were removed in the calm UI —
+see "Calm UI" below). Top nav is Explore | Duplicates | Applications | Monitor
 (stub) | Snapshots — Quick Wins is not a destination. Shared cream
 `#FAF5EC` and ink `#1C1B17` tokens live in `DesignSystem.swift`.
 `VolumeStats` and `FileTypeCatalog` are DiskMapCore; ChartLayout’s
@@ -853,7 +870,8 @@ pages stay, side by side in the Find section of the sidebar. Revisit once
 there is usage evidence (chips vs. pages); merging them would mean teaching
 `FileQuery` an index for bare-name terms, not deleting a page.
 
-PR #16's flat Quick Wins categories are kept as **Regenerable Data** next to
+(Superseded by "Calm UI": Regenerable Data is now Developer Storage's
+"By tool" tab.) PR #16's flat Quick Wins categories are kept as **Regenerable Data** next to
 Developer Storage: the first groups pattern hits by ecosystem straight from
 `quick-wins-patterns.json`; the second judges projects (rebuild cost, git
 state). Both stage through `CleanupQueue.stage()`.

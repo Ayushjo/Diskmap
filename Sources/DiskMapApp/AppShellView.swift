@@ -251,7 +251,7 @@ struct AppShellView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DiskMapWordmark(height: DiskMapType.scaled(13))
+            DiskMapWordmark(height: DiskMapType.scaled(30))
             .padding(.horizontal, 18)
             .padding(.top, 16)
             .padding(.bottom, 14)
@@ -481,13 +481,17 @@ struct AppShellView: View {
 struct ExplainStorageSheet: View {
     @ObservedObject var model: ScanModel
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(DustyPreference.key) private var showDusty = true
 
     var body: some View {
         let snap = model.analysis
         let stories = StorageNarrator.stories(from: snap)
         let recs = StorageNarrator.recommendations(from: snap)
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .center, spacing: DiskMapSpace.sm) {
+                if showDusty {
+                    Dusty(pose: .smallCurious, width: DiskMapType.scaled(40))
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     MonoLabel("From your last scan")
                     Text("Explain my storage")

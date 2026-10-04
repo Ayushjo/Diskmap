@@ -4,7 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="DiskMap" Height="780" Width="1280" MinHeight="600" MinWidth="880"
+        Title="freedisk.space" Height="780" Width="1280" MinHeight="600" MinWidth="880"
         AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -24,8 +24,8 @@
                 </Grid.RowDefinitions>
 
                 <DockPanel Grid.Row="0" Margin="18,16,18,14">
-                    <Border x:Name="LogoTile" Width="26" Height="27" DockPanel.Dock="Left" />
-                    <TextBlock Text="DiskMap" FontSize="15" FontWeight="Bold"
+                    <Border x:Name="LogoTile" Width="32" Height="32" DockPanel.Dock="Left" />
+                    <TextBlock Text="freedisk.space" FontSize="14" FontWeight="Bold"
                                Margin="8,0,0,0" VerticalAlignment="Center" />
                 </DockPanel>
 
@@ -60,7 +60,7 @@
             </Grid.RowDefinitions>
 
             <Border Grid.Row="0" BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="0,0,0,1"
-                    Padding="8,7" Background="{DynamicResource AppBackground}">
+                    Padding="8,6" Background="{DynamicResource AppBackground}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -70,7 +70,7 @@
                     <!-- WIN-056: window menu — File / Go, the macOS menu bar's duties. -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal">
                         <ContentControl x:Name="SidebarButtonHost" Margin="0,0,4,0" />
-                        <Button x:Name="MenuButton" Content="☰  DiskMap"
+                        <Button x:Name="MenuButton" Content="☰  freedisk.space"
                                 HorizontalAlignment="Left" Padding="8,0" Cursor="Hand"
                                 Background="Transparent" BorderThickness="0" FontSize="12.5"
                                 Click="MenuButton_Click" />
@@ -91,12 +91,13 @@
                     BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="0,0,0,1"
                     Padding="16,6" Background="{DynamicResource AppBackground}">
                 <DockPanel>
+                    <ContentControl x:Name="ScanCancelHost" DockPanel.Dock="Right" />
+                    <ContentControl x:Name="ScanDustyHost" DockPanel.Dock="Right" Margin="0,0,12,0" />
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock x:Name="ScanBannerText" FontSize="11.5"
                                    Foreground="{DynamicResource AppSubtle}" />
                         <ItemsControl x:Name="ScanTopLevels" Margin="0,4,0,0" />
                     </StackPanel>
-                    <ContentControl x:Name="ScanCancelHost" DockPanel.Dock="Right" />
                 </DockPanel>
             </Border>
 

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 180" role="img" aria-labelledby="title desc">
+<title id="title">freedisk.space — Open disk</title><desc id="desc">A disk with a deliberate break: space you can see.</desc>
+<path d="M130 59A48 48 0 1 0 140 109" fill="none" stroke="#252B31" stroke-width="19" stroke-linecap="round"/><path d="M126 54A48 48 0 0 1 145 89" fill="none" stroke="#7966DA" stroke-width="19" stroke-linecap="round"/><circle cx="93" cy="91" r="9" fill="#252B31"/>
+<text x="175" y="116" fill="#252B31" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif" font-size="66" font-weight="730" letter-spacing="-3">freedisk</text>
+<text x="424" y="116" fill="#7966DA" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif" font-size="66" font-weight="730" letter-spacing="-3">.space</text>
+</svg>

@@ -59,10 +59,10 @@ public sealed class FlameControl : FrameworkElement
 
         // Root bar.
         var rootRect = new Rect(0, 0, width, RowHeight);
-        dc.DrawRectangle(NodeColors.BrushFor(model.ZoomedNode), NodeColors.StrokePen, rootRect);
+        dc.DrawRectangle(NodeColors.BrushFor(model.ZoomedNode, model), NodeColors.StrokePen, rootRect);
         DrawLabel(dc, rootRect, tree.NameOf(model.ZoomedNode), rootSize);
 
-        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals, model.ChartDepth);
+        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals, model.ChartDepth, levels: 4);
         _nav = ChartNavigation.Flatten(slices);
         DrawRow(dc, slices, rootSize, 0, width, 1, tree);
     }
@@ -79,7 +79,7 @@ public sealed class FlameControl : FrameworkElement
             double w = width * slice.Size / parentSize;
             if (w < 1) { offset += w; continue; }
             var rect = new Rect(offset, y, w, RowHeight);
-            var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id) : NodeColors.OtherBrush;
+            var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id, model) : NodeColors.OtherBrush;
             dc.DrawRectangle(fill, NodeColors.StrokePen, rect);
             _hit.Add((slice.NodeID, rect));
             // Selection outlines — multi in accent, focused cell in white.

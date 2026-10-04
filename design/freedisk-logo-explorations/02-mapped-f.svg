@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 180" role="img" aria-labelledby="title desc">
+<title id="title">freedisk.space — Mapped f</title><desc id="desc">The first letter is built from storage-map tiles.</desc>
+<path d="M54 143V47c0-8 6-14 14-14h57v23H78v29h43v22H78v36Z" fill="#252B31"/><rect x="78" y="85" width="43" height="22" rx="5" fill="#7966DA"/><rect x="126" y="33" width="22" height="23" rx="5" fill="#B9A8E8"/>
+<text x="175" y="116" fill="#252B31" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif" font-size="66" font-weight="730" letter-spacing="-3">freedisk</text>
+<text x="424" y="116" fill="#7966DA" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif" font-size="66" font-weight="730" letter-spacing="-3">.space</text>
+</svg>

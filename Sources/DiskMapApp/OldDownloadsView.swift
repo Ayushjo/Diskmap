@@ -56,7 +56,7 @@ struct OldDownloadsView: View {
         Group {
             if model.tree == nil {
                 DiskMapEmptyState(symbol: "arrow.down.circle", title: "Scan to find older downloads",
-                                  message: "DiskMap looks through Downloads after a scan.",
+                                  message: "freedisk.space looks through Downloads after a scan.",
                                   primaryTitle: "Choose Folder…", primaryAction: pickFolder)
             } else {
                 AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init), main: mainColumn, inspector: inspector)
@@ -120,7 +120,7 @@ struct OldDownloadsView: View {
                 DiskMapMenu(label: "Size", options: OldDownloadsSizeFilter.allCases, selection: $sizeFilter, title: { $0.title })
                 DiskMapMenu(label: "Sort", options: OldDownloadsSort.allCases, selection: $sort, title: { $0.title })
             }
-            HStack(spacing: DiskMapSpace.md) {
+            FlowLayout(spacing: DiskMapSpace.md) {
                 HStack(spacing: 2) {
                     ForEach(OldDownloadsAgeFilter.allCases) { age in
                         Chip(title: age.title, isOn: ageFilter == age) { ageFilter = age }
@@ -210,16 +210,6 @@ struct OldDownloadsView: View {
             return String(path[...slash])
         }
         return path
-    }
-
-    private func typeFilterFor(_ kind: FileKind) -> OldDownloadsTypeFilter {
-        switch kind {
-        case .video: return .video
-        case .archive: return .archive
-        case .diskImage: return .installer
-        case .document: return .document
-        default: return .other
-        }
     }
 
     private func reveal(_ item: OldDownloadsCandidate) {

@@ -1,37 +1,27 @@
 import SwiftUI
+import DiskMapBrand
 
-/// The DiskMap "D": a bar, a violet top bowl and an ink bottom bowl.
-/// Drawn from the logo (docs/brand/diskmap-logo.png) as shapes so it stays
-/// sharp at any size and follows the appearance. IconRender keeps a copy.
+/// Dusty peeking over the cleared stack, shared with the site and Dock icon.
 struct DiskMapMark: View {
     var ink: Color = DiskMapTheme.ink
     var accent: Color = DiskMapTheme.accent
 
-    /// Width / height of the mark.
-    static let aspect: CGFloat = 260.0 / 273.0
+    static let aspect: CGFloat = 95 / 144
 
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            let u = w / 260 // logo units
-            let bowlX = w * 87 / 260, bowlW = w - bowlX
-            let topH = h * 129 / 273, bottomY = h * 147 / 273, bottomH = h - bottomY
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 8 * u, style: .continuous)
-                    .fill(ink)
-                    .frame(width: w * 69 / 260, height: h)
-                UnevenRoundedRectangle(topLeadingRadius: 8 * u, bottomLeadingRadius: 30 * u,
-                                       bottomTrailingRadius: 6 * u, topTrailingRadius: topH,
-                                       style: .continuous)
-                    .fill(accent)
-                    .frame(width: bowlW, height: topH)
-                    .offset(x: bowlX)
-                UnevenRoundedRectangle(topLeadingRadius: 34 * u, bottomLeadingRadius: 8 * u,
-                                       bottomTrailingRadius: bottomH, topTrailingRadius: 6 * u,
-                                       style: .continuous)
-                    .fill(ink)
-                    .frame(width: bowlW, height: bottomH)
-                    .offset(x: bowlX, y: bottomY)
+        Group {
+            if let mark = DiskMapBrand.peekMark {
+                Image(nsImage: mark)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                // Keep a visible mark if the resource bundle is unavailable.
+                ZStack {
+                    ClearedStackShape(segment: 0).fill(ink)
+                    ClearedStackShape(segment: 1).fill(Color(red: 109.0 / 255.0, green: 119.0 / 255.0, blue: 130.0 / 255.0))
+                    ClearedStackShape(segment: 2).fill(accent)
+                }
+                .aspectRatio(106.0 / 92.0, contentMode: .fit)
             }
         }
         .aspectRatio(Self.aspect, contentMode: .fit)
@@ -39,21 +29,46 @@ struct DiskMapMark: View {
     }
 }
 
-/// The logo's wordmark: the mark is the "D", followed by "iskMap".
+private struct ClearedStackShape: Shape {
+    let segment: Int
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        switch segment {
+        case 0:
+            path.addRoundedRect(in: CGRect(x: 0, y: 0, width: 106, height: 22), cornerSize: CGSize(width: 11, height: 11))
+        case 1:
+            path.addRoundedRect(in: CGRect(x: 0, y: 35, width: 82, height: 22), cornerSize: CGSize(width: 11, height: 11))
+        case 2:
+            path.addRoundedRect(in: CGRect(x: 0, y: 70, width: 53, height: 22), cornerSize: CGSize(width: 11, height: 11))
+        default:
+            path.addRoundedRect(in: CGRect(x: 91, y: 44, width: 15, height: 4), cornerSize: CGSize(width: 2, height: 2))
+            path.addRoundedRect(in: CGRect(x: 63, y: 79, width: 43, height: 4), cornerSize: CGSize(width: 2, height: 2))
+        }
+        let scale = min(rect.width / 106, rect.height / 92)
+        let x = rect.minX + (rect.width - 106 * scale) / 2
+        let y = rect.minY + (rect.height - 92 * scale) / 2
+        return path
+            .applying(CGAffineTransform(scaleX: scale, y: scale))
+            .applying(CGAffineTransform(translationX: x, y: y))
+    }
+}
+
+/// Product wordmark. Internal Swift types retain their original names for compatibility.
 struct DiskMapWordmark: View {
-    /// Height of the mark (the cap height of the "D").
-    var height: CGFloat = 16
+    var height: CGFloat = 30
+
     var body: some View {
-        HStack(alignment: .lastTextBaseline, spacing: height * 0.1) {
+        HStack(alignment: .bottom, spacing: height * 0.12) {
             DiskMapMark()
-                .frame(height: height)
-                .alignmentGuide(.lastTextBaseline) { $0[.bottom] }
-            Text("iskMap")
-                .font(.system(size: height * 1.2, weight: .bold))
-                .tracking(-0.01 * height)
-                .foregroundStyle(DiskMapTheme.ink)
+                .frame(width: height * DiskMapMark.aspect, height: height)
+            (Text("freedisk").foregroundColor(DiskMapTheme.ink)
+             + Text(".space").foregroundColor(DiskMapTheme.accent))
+                .font(.system(size: height * 0.53, weight: .bold))
+                .tracking(-0.018 * height)
+                .padding(.bottom, height * 0.07)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("DiskMap")
+        .accessibilityLabel("freedisk.space")
     }
 }

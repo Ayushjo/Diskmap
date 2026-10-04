@@ -253,6 +253,25 @@ public class ChartLayoutTests
         Assert.Contains(slices, s => s.Label == "big" && s.Drillable);
         Assert.Contains(slices, s => s.NodeID is null && !s.Drillable && s.Label.Contains("Other"));
     }
+
+    [Fact]
+    public void RequestedLevelsBuildADeeperIcicleHierarchy()
+    {
+        var tree = new FileTree();
+        int root = tree.AddNode("root", -1, true, 0, 0, 0);
+        int one = tree.AddNode("one", root, true, 0, 0, 0);
+        int two = tree.AddNode("two", one, true, 0, 0, 0);
+        int three = tree.AddNode("three", two, true, 0, 0, 0);
+        int leaf = tree.AddNode("leaf", three, false, 10_000, 10_000, 0);
+        var totals = tree.RollUpSizes();
+
+        var slices = ChartLayout.SlicesOf(root, tree, totals, levels: 4);
+
+        Assert.Equal(one, slices.Single().NodeID);
+        Assert.Equal(two, slices.Single().Children.Single().NodeID);
+        Assert.Equal(three, slices.Single().Children.Single().Children.Single().NodeID);
+        Assert.Equal(leaf, slices.Single().Children.Single().Children.Single().Children.Single().NodeID);
+    }
 }
 
 public class TopSizesTests

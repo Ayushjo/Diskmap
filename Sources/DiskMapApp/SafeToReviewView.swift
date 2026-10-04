@@ -77,8 +77,9 @@ struct SafeToReviewView: View {
             Hairline()
             if visible.isEmpty {
                 DiskMapEmptyState(symbol: "leaf", title: targets.isEmpty ? "Nothing to clean up" : "Nothing matches",
-                                  message: targets.isEmpty ? "DiskMap didn’t find high-confidence cleanup candidates in this scan."
-                                      : "Try another category, or clear the search.")
+                                  message: targets.isEmpty ? "freedisk.space didn’t find high-confidence cleanup candidates in this scan."
+                                      : "Try another category, or clear the search.",
+                                  dusty: targets.isEmpty ? .proud : nil)
             } else {
                 list
             }
@@ -102,12 +103,11 @@ struct SafeToReviewView: View {
                 (seg.color.opacity(category == nil || category == seg.category ? 1 : 0.3), Double(seg.bytes) / Double(total))
             })
             .accessibilityHidden(true)
-            HStack(spacing: DiskMapSpace.lg) {
+            FlowLayout(spacing: DiskMapSpace.lg) {
                 tab(nil, title: "All", bytes: summary.totalBytes, color: nil)
                 ForEach(segments.filter { $0.bytes > 0 }, id: \.category) { seg in
                     tab(seg.category, title: Self.shortTitle(seg.category), bytes: seg.bytes, color: seg.color)
                 }
-                Spacer(minLength: 0)
             }
         }
     }

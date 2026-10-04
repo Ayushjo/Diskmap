@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import DiskMapCore
 
@@ -286,7 +287,16 @@ struct CommandPalette: View {
         .accessibilityLabel("Command palette")
         .task(id: query) { await updateSearch() }
         .onChange(of: query) { _, _ in highlighted = 0 }
-        .onAppear { fieldFocused = true }
+        .onAppear {
+            fieldFocused = true
+            // Opened by typing in the top bar: keep the caret after what was
+            // typed, so the next key continues the word instead of replacing it.
+            DispatchQueue.main.async {
+                if let editor = NSApp.keyWindow?.firstResponder as? NSTextView {
+                    editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+                }
+            }
+        }
     }
 
     @MainActor

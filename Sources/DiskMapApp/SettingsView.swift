@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage(CloneAccounting.key) private var cloneMode = CloneAccounting.defaultMode.rawValue
     @AppStorage(ScanModel.keepHistoryKey) private var keepHistory = true
     @AppStorage(TextSize.storageKey) private var textSize = TextSize.standard.rawValue
+    @AppStorage(DustyPreference.key) private var showDusty = true
 
     var body: some View {
         Form {
@@ -26,7 +27,7 @@ struct SettingsView: View {
             }
             Section {
                 Toggle("Keep storage history", isOn: $keepHistory)
-                Text("Notes a few hundred folder sizes per scan so DiskMap can say what grew — kept a year on this Mac, never sent anywhere.")
+                Text("Notes a few hundred folder sizes per scan so freedisk.space can say what grew — kept a year on this Mac, never sent anywhere.")
                     .font(DiskMapType.secondary)
                     .foregroundStyle(DiskMapTheme.ink2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -42,6 +43,10 @@ struct SettingsView: View {
                     ForEach(TextSize.allCases) { Text($0.title).tag($0) }
                 }
                 Toggle("Show in Menu Bar", isOn: $showMenuBarExtra)
+                Toggle(isOn: $showDusty) {
+                    Text("Show Dusty")
+                    Text("The mascot, in empty states and after a cleanup. Never on a step that removes files.")
+                }
             } header: {
                 Text("General")
             }

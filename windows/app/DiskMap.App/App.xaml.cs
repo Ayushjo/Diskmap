@@ -25,7 +25,7 @@ public partial class App : Application
         // A failing click reports instead of taking the app (and the scan) down.
         DispatcherUnhandledException += (_, args) =>
         {
-            MessageBox.Show(args.Exception.Message, "DiskMap", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(args.Exception.Message, "freedisk.space", MessageBoxButton.OK, MessageBoxImage.Warning);
             args.Handled = true;
         };
         base.OnStartup(e);

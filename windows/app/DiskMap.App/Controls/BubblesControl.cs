@@ -69,7 +69,7 @@ public sealed class BubblesControl : FrameworkElement
             double r = c.Radius * scale;
             var center = new Point(cx + c.X * scale, cy + c.Y * scale);
             var slice = _slicesById.GetValueOrDefault(c.Id);
-            var fill = slice?.NodeID is { } id ? NodeColors.BrushFor(id) : NodeColors.OtherBrush;
+            var fill = slice?.NodeID is { } id ? NodeColors.BrushFor(id, model) : NodeColors.OtherBrush;
             dc.DrawEllipse(fill, NodeColors.StrokePen, center, r, r);
             _circles.Add((slice?.NodeID, center.X, center.Y, r));
             // Selection rings — multi in accent, focused cell in white.

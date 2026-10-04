@@ -13,17 +13,19 @@ public sealed class SettingsWindow : Window
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly Action<string> _onAppearance;
     private readonly Action<double> _onTextScale;
+    private readonly Action _onGeneralChanged;
     private readonly StackPanel _appearanceRow = new() { Orientation = Orientation.Horizontal };
     private readonly StackPanel _textScaleRow = new() { Orientation = Orientation.Horizontal };
 
-    public SettingsWindow(Action<string> onAppearance, Action<double> onTextScale)
+    public SettingsWindow(Action<string> onAppearance, Action<double> onTextScale, Action onGeneralChanged)
     {
         _onAppearance = onAppearance;
         _onTextScale = onTextScale;
+        _onGeneralChanged = onGeneralChanged;
 
-        Title = "DiskMap Settings";
-        Width = 430;
-        Height = 400;
+        Title = "freedisk.space Settings";
+        Width = 460;
+        Height = 470;
         MinWidth = 380;
         MinHeight = 360;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -40,6 +42,28 @@ public sealed class SettingsWindow : Window
         _textScaleRow.Margin = new Thickness(0, 4, 0, 14);
         body.Children.Add(_textScaleRow);
         BuildTextScaleRow();
+
+        body.Children.Add(Ui.SectionLabel("GENERAL"));
+        var dusty = new CheckBox
+        {
+            Content = new StackPanel
+            {
+                Children =
+                {
+                    Ui.T("Show Dusty", 13, FontWeights.Medium),
+                    Ui.Subtle("The mascot appears in empty states and after cleanup, never on the confirmation step.", 12),
+                },
+            },
+            IsChecked = _settings.ShowDusty,
+            Margin = new Thickness(0, 6, 0, 14),
+        };
+        dusty.Click += (_, _) =>
+        {
+            _settings.ShowDusty = dusty.IsChecked == true;
+            _settings.Save();
+            _onGeneralChanged();
+        };
+        body.Children.Add(dusty);
 
         body.Children.Add(Ui.SectionLabel("SCANNING & HISTORY"));
         var history = new CheckBox
@@ -67,7 +91,11 @@ public sealed class SettingsWindow : Window
         clones.Click += (_, _) => { _settings.CloneAccounting = clones.IsChecked == true; _settings.Save(); };
         body.Children.Add(clones);
 
-        Content = body;
+        Content = new ScrollViewer
+        {
+            Content = body,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
     }
 
     private static readonly (string Id, string Label)[] Appearances =

@@ -114,7 +114,7 @@ public partial class MainWindow : Window
     private void BuildLogo()
     {
         LogoTile.Background = System.Windows.Media.Brushes.Transparent;
-        LogoTile.Child = Ui.BrandMark(27);
+        LogoTile.Child = Ui.BrandIcon(32);
     }
 
     // ---- Sidebar ----
@@ -457,7 +457,7 @@ public partial class MainWindow : Window
                     catch (Exception ex)
                     {
                         MessageBox.Show($"Couldn't write the export: {ex.Message}",
-                            "DiskMap", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            "freedisk.space", MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                 }
             }
@@ -501,6 +501,9 @@ public partial class MainWindow : Window
         var settings = new MenuItem { Header = "Settings…\tCtrl+," };
         settings.Click += (_, _) => OpenSettings();
         menu.Items.Add(settings);
+        var about = new MenuItem { Header = "About freedisk.space" };
+        about.Click += (_, _) => OpenAbout();
+        menu.Items.Add(about);
         menu.Items.Add(new Separator());
         var exit = new MenuItem { Header = "Exit" };
         exit.Click += (_, _) => Close();
@@ -543,9 +546,47 @@ public partial class MainWindow : Window
             _settingsWindow.Activate();
             return;
         }
-        _settingsWindow = new SettingsWindow(SetAppearance, SetTextScale) { Owner = this };
+        _settingsWindow = new SettingsWindow(SetAppearance, SetTextScale, RebuildForTheme) { Owner = this };
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
+    }
+
+    private void OpenAbout()
+    {
+        var body = new StackPanel
+        {
+            Margin = new Thickness(36, 28, 36, 26),
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        var mark = Ui.BrandIcon(132);
+        mark.HorizontalAlignment = HorizontalAlignment.Center;
+        body.Children.Add(mark);
+        var name = Ui.T("freedisk.space", 20, FontWeights.SemiBold);
+        name.HorizontalAlignment = HorizontalAlignment.Center;
+        name.Margin = new Thickness(0, 12, 0, 4);
+        body.Children.Add(name);
+        var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        var versionText = Ui.Mono(version is null ? "Development build" : $"Version {version}",
+            11, null, Ui.Brush("AppFaint"));
+        versionText.HorizontalAlignment = HorizontalAlignment.Center;
+        body.Children.Add(versionText);
+        var description = Ui.Subtle("See where your space went. Nothing leaves your PC.", 12);
+        description.HorizontalAlignment = HorizontalAlignment.Center;
+        description.Margin = new Thickness(0, 12, 0, 8);
+        body.Children.Add(description);
+        var promise = Ui.MonoLabel("LOCAL  ·  FAST  ·  PRIVATE");
+        promise.HorizontalAlignment = HorizontalAlignment.Center;
+        body.Children.Add(promise);
+        new Window
+        {
+            Title = "About freedisk.space",
+            Owner = this,
+            Content = body,
+            Width = 360,
+            Height = 390,
+            ResizeMode = ResizeMode.NoResize,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+        }.ShowDialog();
     }
 
     /// <summary>Appearance switch — palette + Fluent theme + rebuild cached pages.</summary>
@@ -643,7 +684,7 @@ public partial class MainWindow : Window
             SidebarBorder.Visibility = Visibility.Visible;
             SidebarColumn.Width = new GridLength(212 * Math.Max(1, _textScale));
         }
-        MenuButton.Content = compact ? "☰" : "☰  DiskMap";
+        MenuButton.Content = compact ? "☰" : "☰  freedisk.space";
         if (_topSearchBox is not null) _topSearchBox.Width = compact ? 260 : 460;
         if (compactChanged && _topSearchBox is not null) RefreshScanButton();
     }
@@ -868,9 +909,11 @@ public partial class MainWindow : Window
         {
             ScanBanner.Visibility = Visibility.Collapsed;
             ScanTopLevels.ItemsSource = null;
+            ScanDustyHost.Content = null;
             return;
         }
         ScanBanner.Visibility = Visibility.Visible;
+        ScanDustyHost.Content = AppSettings.Load().ShowDusty ? Ui.BrandIcon(40) : null;
         if (_model.ScanPhase == "summarizing")
         {
             ScanBannerText.Text = "Summarizing scan — rolling up sizes…";
@@ -949,7 +992,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Scan failed: {ex.Message}", "DiskMap",
+            MessageBox.Show($"Scan failed: {ex.Message}", "freedisk.space",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
@@ -968,7 +1011,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Rescan failed: {ex.Message}", "DiskMap",
+            MessageBox.Show($"Rescan failed: {ex.Message}", "freedisk.space",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }

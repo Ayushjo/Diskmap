@@ -1,11 +1,13 @@
-# DiskMap for Windows
+# freedisk.space for Windows
 
-A native Windows port of DiskMap — the open-source disk-space analyzer —
+A native Windows port of freedisk.space — the open-source disk-space analyzer —
 keeping the same UI concepts and feature set as the macOS app: one scan
 feeding a treemap plus six other views, content-based duplicate detection,
 a staged cleanup queue that only ever moves things to the Recycle Bin,
 snapshots, Quick Wins, and fully offline operation (no telemetry, no
 network calls).
+
+The solution and assembly names still use `DiskMap` internally; the window title and product metadata use the new public name.
 
 ## Layout
 

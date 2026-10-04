@@ -36,7 +36,8 @@ public sealed class InspectorPanel : UserControl
         if (Model.Tree is not { } tree || Model.Totals.Length != tree.Count)
         {
             _root.Children.Add(Ui.EmptyState(Icons.Folder, "Nothing to inspect",
-                "Scan a folder, then select items to see details, safety and actions here."));
+                "Scan a folder, then select items to see details, safety and actions here.",
+                allowDusty: false));
             return;
         }
         int id = Model.InspectedNode;
@@ -289,7 +290,7 @@ public sealed class InspectorPanel : UserControl
         if (path.StartsWith(windows, StringComparison.OrdinalIgnoreCase))
         {
             return ("Protected — don't remove",
-                "This is Windows system data. DiskMap never offers it for cleanup.",
+                "This is Windows system data. freedisk.space never offers it for cleanup.",
                 false);
         }
         if (tree.IsDirectory[id] && id == 0)

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 550 140" role="img" aria-labelledby="title desc">
+  <title id="title">makefree.space — integrated M wordmark</title>
+  <desc id="desc">The mapped M symbol replaces the first letter of makefree.space.</desc>
+  <g transform="translate(0 32) scale(.62)">
+    <rect x="5" y="28" width="22" height="83" rx="10" fill="#252B31"/>
+    <path d="M19 43C19 24 34 15 51 15c13 0 24 7 29 18 7-12 18-18 31-18 18 0 29 13 29 32v64h-23V50c0-9-5-15-14-15-10 0-16 7-16 17v59H64V50c0-9-5-15-14-15-10 0-16 7-16 17v59H19Z" fill="#252B31"/>
+    <path d="M80 33c7-12 18-18 31-18 18 0 29 13 29 32v9h-23v-6c0-9-5-15-14-15-10 0-16 7-16 17v4H64v-6c0-7-2-12-7-14 10-2 18-3 23-3Z" fill="#7966DA"/>
+  </g>
+  <text x="90" y="101" fill="#252B31" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif" font-size="67" font-weight="730" letter-spacing="-3">akefree</text>
+  <text x="310" y="101" fill="#7966DA" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif" font-size="67" font-weight="730" letter-spacing="-3">.space</text>
+</svg>

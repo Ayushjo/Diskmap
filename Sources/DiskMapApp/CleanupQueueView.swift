@@ -8,18 +8,35 @@ struct CleanupQueueView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingTrash = false
     @State private var showReceipt = false
+    /// The entry just removed, so it can be put back (Undo) for a few seconds.
+    @State private var lastRemoved: CleanupQueue.StagedItem?
+    /// What this sheet just moved to the Trash: the success moment shows until
+    /// it's dismissed, put back, or something new is added.
+    @State private var justMoved: CleanupRecord?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Hairline()
-            if model.stagedItems.isEmpty {
+            if model.stagedItems.isEmpty, let moved = justMoved, model.lastCleanup == moved {
+                CleanupSuccessView(
+                    count: moved.items.count,
+                    freedLine: model.lastCommitLines.last { $0.hasSuffix("when you empty the Trash.") } ?? "",
+                    details: model.lastCommitLines.filter { !$0.hasSuffix("when you empty the Trash.") },
+                    onPutBack: { Task { await model.putBackLastCleanup(); justMoved = nil } },
+                    onDone: { dismiss() }
+                )
+                .transition(.opacity)
+            } else if model.stagedItems.isEmpty {
                 DiskMapEmptyState(symbol: "tray", title: "Nothing in Cleanup",
                                   message: "Add files from any page with Add to Cleanup (⌘⌫). Nothing moves to the Trash until you confirm here.")
             } else {
                 list
             }
-            lastCleanup
+            undoRow
+            if justMoved == nil || model.lastCleanup != justMoved || !model.stagedItems.isEmpty {
+                lastCleanup
+            }
         }
         .background(DiskMapTheme.canvas)
         .frame(minWidth: 640, minHeight: 480)
@@ -30,7 +47,13 @@ struct CleanupQueueView: View {
             titleVisibility: .visible
         ) {
             Button("Move to Trash", role: .destructive) {
-                Task { await model.commitCleanup() }
+                Task {
+                    await model.commitCleanup()
+                    // Only after the move succeeded: never during the confirmation.
+                    if let record = model.lastCleanup, !record.items.isEmpty, record.date.timeIntervalSinceNow > -30 {
+                        withAnimation(.easeOut(duration: 0.2)) { justMoved = record }
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -94,11 +117,48 @@ struct CleanupQueueView: View {
         CleanupRow(item: item, caption: rowCaption(for: item), detail: Self.detail(of: item.reason)) {
             QuickLookPresenter.shared.present(item.url)
         } onRemove: {
-            let name = item.url.lastPathComponent
             Task {
                 await model.unstageFromCleanup(item)
-                model.showToast("Removed “\(name)” from Cleanup — it stays on disk")
+                withAnimation(.easeOut(duration: 0.15)) { lastRemoved = item }
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                if lastRemoved?.id == item.id { withAnimation(.easeOut(duration: 0.15)) { lastRemoved = nil } }
             }
+        }
+    }
+
+    /// Shown inside the sheet (a toast would sit under it): the last removed
+    /// entry, with Undo putting it back exactly as it was staged.
+    @ViewBuilder
+    private var undoRow: some View {
+        if let item = lastRemoved {
+            HStack(spacing: 8) {
+                Text("Removed “\(item.url.lastPathComponent)” — it stays on disk")
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button("Undo") { undoRemove(item) }
+                    .buttonStyle(LinkButtonStyle())
+                    .font(DiskMapType.secondary)
+                    .keyboardShortcut("z", modifiers: .command)
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .frame(height: 40)
+            .overlay(alignment: .top) { Hairline() }
+            .transition(.opacity)
+            .accessibilityElement(children: .combine)
+            .accessibilityAction(named: "Undo") { undoRemove(item) }
+        }
+    }
+
+    private func undoRemove(_ item: CleanupQueue.StagedItem) {
+        lastRemoved = nil
+        Task {
+            _ = await model.stageForCleanup([CleanupStageRequest(
+                url: item.url, size: item.size, reason: item.reason,
+                sharesStorageGroup: item.sharesStorageGroup, groupCopyCount: item.groupCopyCount
+            )])
         }
     }
 

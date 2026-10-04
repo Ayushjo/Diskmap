@@ -13,14 +13,14 @@ if [ -z "${DEVELOPER_ID:-}" ] || [ -z "${NOTARY_PROFILE:-}" ]; then
   exit 3
 fi
 VERSION="$(tr -d '[:space:]' < VERSION)"
-APP=dist/DiskMap.app
-DMG="dist/DiskMap-${VERSION}.dmg"
+APP=dist/freedisk.space.app
+DMG="dist/freedisk.space-${VERSION}.dmg"
 codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP/Contents/Frameworks/Sparkle.framework"
 codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP"
 codesign --verify --deep --strict "$APP"
 rm -f "$DMG"
 STAGE="$(mktemp -d)"; cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "DiskMap ${VERSION}" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+hdiutil create -volname "freedisk.space ${VERSION}" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 codesign --force --timestamp --sign "$DEVELOPER_ID" "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 xcrun stapler staple "$DMG"

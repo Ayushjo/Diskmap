@@ -230,6 +230,13 @@ public sealed class VisualizePage : ListPage
     private void RefreshColoringBar()
     {
         if (_coloringRow is null) return;
+        bool ageMap = Model.VisualizeMode == "Age Map";
+        _coloringRow.Visibility = ageMap ? Visibility.Collapsed : Visibility.Visible;
+        if (ageMap)
+        {
+            if (Model.ColoringMode != "age") Model.ColoringMode = "age";
+            return;
+        }
         _coloringRow.Children.Clear();
         _coloringRow.Children.Add(Ui.Subtle("Color by ", 11.5));
         foreach (var (id, label) in new[] { ("type", "Type"), ("folder", "Folder"), ("age", "Age") })

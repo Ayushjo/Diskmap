@@ -15,10 +15,9 @@ public sealed record ChartSlice(
     int HiddenCount = 0);
 
 /// <summary>
-/// One level of <paramref name="node"/>'s children, plus at most one more
-/// level for the children that are large enough to draw. Anything smaller
-/// than 0.5% of its parent collapses into a single Other slice so a home
-/// scan cannot draw every descendant.
+/// <c>levels</c> levels of <paramref name="node"/>'s descendants (two by
+/// default), each only for items large enough to draw. Anything smaller than
+/// 0.5% of its parent collapses into a single Other slice.
 /// </summary>
 public static class ChartLayout
 {
@@ -31,12 +30,13 @@ public static class ChartLayout
     /// show). The UI slider maps to this.
     /// </summary>
     public static List<ChartSlice> SlicesOf(
-        int node, FileTree tree, long[] totals, double otherFraction = OtherFraction)
+        int node, FileTree tree, long[] totals, double otherFraction = OtherFraction,
+        int levels = 2)
     {
-        if (node < 0 || node >= tree.Count || totals.Length != tree.Count)
+        if (node < 0 || node >= tree.Count || totals.Length != tree.Count || levels < 1)
             return [];
         return Collapse(tree.ChildrenOf(node, totals), totals[node], tree, totals,
-            includeChildren: true, idPrefix: node.ToString(), otherFraction);
+            depth: levels - 1, idPrefix: node.ToString(), otherFraction);
     }
 
     private static List<ChartSlice> Collapse(
@@ -44,7 +44,7 @@ public static class ChartLayout
         long parentSize,
         FileTree tree,
         long[] totals,
-        bool includeChildren,
+        int depth,
         string idPrefix,
         double otherFraction)
     {
@@ -63,11 +63,11 @@ public static class ChartLayout
         var slices = visible.Select(item =>
         {
             List<ChartSlice> nested = [];
-            if (includeChildren && tree.IsDirectory[item.Id])
+            if (depth > 0 && tree.IsDirectory[item.Id])
             {
                 nested = Collapse(
                     tree.ChildrenOf(item.Id, totals), item.Size, tree, totals,
-                    includeChildren: false, idPrefix: $"{idPrefix}.{item.Id}", otherFraction);
+                    depth: depth - 1, idPrefix: $"{idPrefix}.{item.Id}", otherFraction);
             }
             return new ChartSlice(
                 Id: $"{idPrefix}.{item.Id}",

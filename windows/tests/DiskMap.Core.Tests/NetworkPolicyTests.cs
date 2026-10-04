@@ -101,4 +101,20 @@ public class NetworkPolicyTests
         Assert.Contains("Assets\\Fonts\\MaterialSymbolsRounded.ttf",
             File.ReadAllText(Path.Combine(appRoot, "DiskMap.App.csproj")));
     }
+
+    [Fact]
+    public void FreediskBrandAndDustyPreferenceStayWired()
+    {
+        string windows = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        string appRoot = Path.Combine(windows, "app", "DiskMap.App");
+        string project = File.ReadAllText(Path.Combine(appRoot, "DiskMap.App.csproj"));
+        string window = File.ReadAllText(Path.Combine(appRoot, "MainWindow.xaml"));
+        string settings = File.ReadAllText(Path.Combine(appRoot, "Settings.cs"));
+        Assert.Contains("<AssemblyTitle>freedisk.space</AssemblyTitle>", project);
+        Assert.Contains("<Resource Include=\"app.ico\" />", project);
+        Assert.Contains("Title=\"freedisk.space\"", window);
+        Assert.Contains("Text=\"freedisk.space\"", window);
+        Assert.Contains("showDusty", settings, StringComparison.OrdinalIgnoreCase);
+    }
 }

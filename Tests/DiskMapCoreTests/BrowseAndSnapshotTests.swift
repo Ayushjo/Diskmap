@@ -59,6 +59,22 @@ struct ChartLayoutTests {
         #expect(slices.contains { $0.label == "big" && $0.drillable })
         #expect(slices.contains { $0.nodeID == nil && $0.drillable == false && $0.label.contains("Other") })
     }
+
+    /// The flame chart asks for four levels; everything else keeps two.
+    @Test func levelsControlsHowDeepSlicesGo() {
+        var tree = FileTree()
+        let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        var parent = root
+        for name in ["a", "b", "c", "d"] {
+            parent = tree.addNode(name: name, parent: parent, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        }
+        _ = tree.addNode(name: "file", parent: parent, isDirectory: false, logicalSize: 1_000, allocatedSize: 1_000, modifiedDaysSinceEpoch: 0)
+        let totals = tree.rollUpSizes()
+        func depth(_ list: [ChartSlice]) -> Int { list.isEmpty ? 0 : 1 + (list.map { depth($0.children) }.max() ?? 0) }
+        #expect(depth(ChartLayout.slices(of: root, in: tree, totals: totals)) == 2)
+        #expect(depth(ChartLayout.slices(of: root, in: tree, totals: totals, levels: 4)) == 4)
+        #expect(ChartLayout.slices(of: root, in: tree, totals: totals, levels: 0).isEmpty)
+    }
 }
 
 struct CirclePackTests {

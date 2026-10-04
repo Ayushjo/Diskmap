@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using DiskMap.Core;
 
 namespace DiskMap.App;
@@ -123,6 +124,31 @@ public static class Ui
                 VerticalAlignment = VerticalAlignment.Center,
             },
         };
+    }
+
+    private static ImageSource? _brandIconSource;
+
+    public static FrameworkElement BrandIcon(double size)
+    {
+        try
+        {
+            _brandIconSource ??= BitmapDecoder.Create(
+                    new Uri("pack://application:,,,/app.ico", UriKind.Absolute),
+                    BitmapCreateOptions.PreservePixelFormat,
+                    BitmapCacheOption.OnLoad)
+                .Frames.OrderByDescending(frame => frame.PixelWidth).First();
+            return new Image
+            {
+                Source = _brandIconSource,
+                Width = size, Height = size,
+                Stretch = Stretch.Uniform,
+                SnapsToDevicePixels = true,
+            };
+        }
+        catch
+        {
+            return BrandMark(size);
+        }
     }
 
     public static FrameworkElement BrandMark(double height)
@@ -379,7 +405,7 @@ public static class Ui
         icon.Margin = new Thickness(0, 0, 8, 0);
         DockPanel.SetDock(icon, Dock.Left);
         row.Children.Add(icon);
-        var clear = T("×", 14, FontWeights.Medium, Brush("AppFaint"));
+        var clear = Glyph(Icons.Cancel, 15, Brush("AppFaint"));
         clear.Visibility = Visibility.Collapsed;
         clear.Cursor = Cursors.Hand;
         clear.Margin = new Thickness(8, 0, 0, 0);
@@ -393,9 +419,9 @@ public static class Ui
             Background = Brush("AppField"),
             BorderBrush = Brush("AppCardBorder"),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(9, 0, 9, 0),
-            Height = 30,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(11, 0, 11, 0),
+            Height = 32,
             Width = width,
             Child = row,
         };
@@ -404,8 +430,20 @@ public static class Ui
             hint.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
             clear.Visibility = input.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         };
-        input.GotKeyboardFocus += (_, _) => box.BorderBrush = WithOpacity("AppAccent", 0.6);
-        input.LostKeyboardFocus += (_, _) => box.BorderBrush = Brush("AppCardBorder");
+        bool focused = false, hovering = false;
+        void PaintBorder() => box.BorderBrush = focused
+            ? WithOpacity("AppAccent", 0.75)
+            : hovering ? WithOpacity("AppFaint", 0.55) : Brush("AppCardBorder");
+        input.GotKeyboardFocus += (_, _) => { focused = true; PaintBorder(); };
+        input.LostKeyboardFocus += (_, _) => { focused = false; PaintBorder(); };
+        input.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape || input.Text.Length == 0) return;
+            input.Clear();
+            e.Handled = true;
+        };
+        box.MouseEnter += (_, _) => { hovering = true; PaintBorder(); };
+        box.MouseLeave += (_, _) => { hovering = false; PaintBorder(); };
         box.MouseLeftButtonDown += (_, _) => input.Focus();
         return (box, input);
     }
@@ -648,10 +686,12 @@ public static class Ui
 
     /// <summary>Empty-state block: big glyph, title, gray body, optional action.</summary>
     public static StackPanel EmptyState(string glyph, string title, string body,
-        System.Windows.Controls.Button? action = null)
+        System.Windows.Controls.Button? action = null, bool allowDusty = true)
     {
         var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 60, 0, 0) };
-        var icon = Glyph(glyph, 34, Brush("AppFaint"));
+        var icon = allowDusty && AppSettings.Load().ShowDusty
+            ? BrandIcon(72)
+            : Glyph(glyph, 34, Brush("AppFaint"));
         icon.HorizontalAlignment = HorizontalAlignment.Center;
         var t = T(title, 15, FontWeights.SemiBold);
         t.HorizontalAlignment = HorizontalAlignment.Center;

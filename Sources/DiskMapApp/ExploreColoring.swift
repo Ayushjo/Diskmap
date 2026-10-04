@@ -7,11 +7,12 @@ enum ExploreColoring {
         for id: Int32,
         in tree: FileTree,
         mode: ExploreColorMode,
-        categories: [FileTypeCategory]
+        categories: [FileTypeCategory],
+        folderTypeHex: [Int32: String] = [:]
     ) -> Color {
         switch mode {
         case .folder: return folderColor(id: id, tree: tree)
-        case .type: return typeColor(id: id, tree: tree, categories: categories)
+        case .type: return typeColor(id: id, tree: tree, categories: categories, folderTypeHex: folderTypeHex)
         case .age: return ageColor(id: id, tree: tree)
         }
     }
@@ -41,9 +42,13 @@ enum ExploreColoring {
         return d
     }
 
-    private static func typeColor(id: Int32, tree: FileTree, categories: [FileTypeCategory]) -> Color {
+    private static func typeColor(id: Int32, tree: FileTree, categories: [FileTypeCategory],
+                                  folderTypeHex: [Int32: String]) -> Color {
         if tree.isDirectory[Int(id)] {
-            return DiskMapTheme.wash(DiskMapTheme.folderPastels[Int(id) % DiskMapTheme.folderPastels.count], strength: 0.85)
+            // A folder takes the colour of the type that fills most of it;
+            // stone until that is known (it used to cycle colours by index).
+            if let hex = folderTypeHex[id] { return DiskMapTheme.hex(hex) }
+            return DiskMapTheme.wash(DiskMapTheme.data(6), strength: 0.85)
         }
         let ext = (tree.name(of: id) as NSString).pathExtension.lowercased()
         if let cat = categories.first(where: { $0.extensions.contains(ext) }) {
@@ -55,5 +60,23 @@ enum ExploreColoring {
     private static func ageColor(id: Int32, tree: FileTree) -> Color {
         let today = AgeMap.today()
         return DiskMapTheme.ageColor(AgeMap.bucket(modifiedDay: tree.modifiedDay[Int(id)], today: today))
+    }
+
+    /// For "By type": each folder's dominant category colour, by bytes.
+    /// Walks every folder's subtree, so call it off the main thread, for the
+    /// folders on screen only.
+    nonisolated static func dominantTypeHex(
+        for ids: [Int32],
+        in tree: FileTree,
+        totals: [Int64],
+        categories: [FileTypeCategory]
+    ) -> [Int32: String] {
+        var out: [Int32: String] = [:]
+        for id in ids where id >= 0 && Int(id) < tree.count && tree.isDirectory[Int(id)] {
+            if Task.isCancelled { break }
+            let parts = FileTypeCatalog.totals(under: id, in: tree, sizes: totals, categories: categories)
+            if let top = parts.max(by: { $0.bytes < $1.bytes }), top.bytes > 0 { out[id] = top.colorHex }
+        }
+        return out
     }
 }

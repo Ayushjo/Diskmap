@@ -640,7 +640,7 @@ public sealed class ApplicationsPage : ListPage
                     ByteFormat.Format(leftoverBytes), "Potentially removable",
                     $"{withLeftovers.Count} apps have leftovers")));
             _body.Children.Add(Ui.InfoCard("Leftovers only",
-                "DiskMap never uninstalls apps — it stages their caches, logs and support files for your review. The list comes from the Windows uninstall registry."));
+                "freedisk.space never uninstalls apps — it stages their caches, logs and support files for your review. The list comes from the Windows uninstall registry."));
 
             // App table: checkbox | # | app | size | leftovers | status | ⋯
             var table = new StackPanel();
@@ -701,7 +701,7 @@ public sealed class ApplicationsPage : ListPage
                         menu.Items.Add(reveal);
                     }
                     // The registry's own uninstall command — copied, never
-                    // executed: DiskMap never uninstalls apps itself.
+                    // executed: freedisk.space never uninstalls apps itself.
                     if (uninstallByKey is not null
                         && uninstallByKey.TryGetValue(captured.AppId ?? captured.AppName, out var cmd)
                         && !string.IsNullOrWhiteSpace(cmd))
@@ -822,16 +822,36 @@ public sealed class SnapshotsPage : ListPage
         head.Children.Insert(0, actions);
         Root.Children.Add(head);
 
-        // Two columns: snapshot list | compare.
+        // Two columns when there is room; one stack at large text / narrow windows.
         var columns = new Grid();
-        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(340) });
-        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
-        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        columns.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        columns.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _list.Children.Clear();
-        Grid.SetColumn(_list, 0);
-        Grid.SetColumn(_compareHost, 2);
         columns.Children.Add(_list);
         columns.Children.Add(_compareHost);
+        void LayoutColumns(double width)
+        {
+            bool compact = width > 0 && width < 720;
+            columns.ColumnDefinitions.Clear();
+            if (compact)
+            {
+                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                Grid.SetColumn(_list, 0); Grid.SetRow(_list, 0);
+                Grid.SetColumn(_compareHost, 0); Grid.SetRow(_compareHost, 1);
+                _compareHost.Margin = new Thickness(0, Ui.ZoneGap, 0, 0);
+            }
+            else
+            {
+                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
+                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Ui.GroupGap) });
+                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                Grid.SetColumn(_list, 0); Grid.SetRow(_list, 0);
+                Grid.SetColumn(_compareHost, 2); Grid.SetRow(_compareHost, 0);
+                _compareHost.Margin = new Thickness(0);
+            }
+        }
+        columns.SizeChanged += (_, e) => LayoutColumns(e.NewSize.Width);
+        LayoutColumns(ActualWidth);
         Root.Children.Add(columns);
         RefreshList();
         RefreshCompare();
@@ -863,7 +883,7 @@ public sealed class SnapshotsPage : ListPage
         catch (Exception ex)
         {
             MessageBox.Show($"Couldn't write the export: {ex.Message}",
-                "DiskMap", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "freedisk.space", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -951,7 +971,11 @@ public sealed class SnapshotsPage : ListPage
 
     private static ComboBox SnapshotPicker(List<(string Path, SnapshotHeader Header)> files, string? selected)
     {
-        var box = new ComboBox { Width = 150 };
+        var box = new ComboBox
+        {
+            MinWidth = 120, MaxWidth = 180, Width = 150,
+            Height = 32, FontSize = Ui.Scaled(12),
+        };
         foreach (var (path, header) in files)
         {
             var item = new ComboBoxItem
@@ -1119,7 +1143,7 @@ public sealed class SnapshotsPage : ListPage
 
     private async void LoadDialog()
     {
-        var dlg = new OpenFileDialog { Filter = "DiskMap snapshots (*.snapshot)|*.snapshot" };
+        var dlg = new OpenFileDialog { Filter = "freedisk.space snapshots (*.snapshot)|*.snapshot" };
         if (dlg.ShowDialog() == true) await LoadAsync(dlg.FileName);
     }
 
@@ -1146,6 +1170,11 @@ public sealed class SnapshotsPage : ListPage
 /// </summary>
 public sealed class CleanupQueuePage : ListPage
 {
+    private CleanupQueue.StagedItem? _lastRemoved;
+    private System.Windows.Threading.DispatcherTimer? _removeUndoTimer;
+    private CommitSuccess? _success;
+    private sealed record CommitSuccess(int Count, long FreedBytes, bool IsLowerBound, List<string> Paths);
+
     protected override void Refresh()
     {
         Root.Children.Clear();
@@ -1153,6 +1182,11 @@ public sealed class CleanupQueuePage : ListPage
             "Everything you've added, waiting for review. Nothing moves to the Recycle Bin until you confirm.",
             glyph: Icons.Cleanup, iconBg: Ui.Brush("AppDangerBg"), iconFg: Ui.Brush("AppDanger")));
         var items = Model.Cleanup.AllItems();
+        if (_success is { } success)
+        {
+            Root.Children.Add(SuccessView(success));
+            return;
+        }
 
         // WIN-012: the last commit's items can come back from the Recycle
         // Bin — even after a relaunch, since the record is on disk.
@@ -1175,6 +1209,8 @@ public sealed class CleanupQueuePage : ListPage
             Root.Children.Add(Ui.HeadedCard(Icons.Back, Ui.Brush("AppSuccessBg"), Ui.Brush("AppSuccess"),
                 "Undo the last cleanup", "Moves items back out of the Recycle Bin", undo));
         }
+        if (_lastRemoved is { } removed)
+            Root.Children.Add(RemoveUndoRow(removed));
 
         if (items.Count == 0)
         {
@@ -1224,7 +1260,7 @@ public sealed class CleanupQueuePage : ListPage
                 var remove = Ui.T("Remove from Cleanup", 11.5, FontWeights.Medium, Ui.Brush("AppAccent"));
                 remove.Cursor = System.Windows.Input.Cursors.Hand;
                 remove.VerticalAlignment = VerticalAlignment.Center;
-                remove.MouseLeftButtonDown += (_, _) => { Model.Unstage(captured.Id); Refresh(); };
+                remove.MouseLeftButtonDown += (_, _) => RemoveWithUndo(captured);
                 Ui.Cell(row, remove, 3, right: true);
                 body.Children.Add(row);
             }
@@ -1240,6 +1276,107 @@ public sealed class CleanupQueuePage : ListPage
         commit.IsEnabled = !estimate.IsCalculating;
         commit.Margin = new Thickness(0, 12, 0, 0);
         Root.Children.Add(commit);
+    }
+
+    private FrameworkElement RemoveUndoRow(CleanupQueue.StagedItem item)
+    {
+        var row = new DockPanel { MinHeight = 40 };
+        var undo = Ui.LinkText("Undo", () => UndoRemove(item), 12);
+        DockPanel.SetDock(undo, Dock.Right);
+        row.Children.Add(undo);
+        var text = Ui.Subtle($"Removed “{Path.GetFileName(item.Path)}” — it stays on disk", 12);
+        text.TextTrimming = TextTrimming.CharacterEllipsis;
+        row.Children.Add(text);
+        return new Border
+        {
+            BorderBrush = Ui.Brush("AppBorder"), BorderThickness = new Thickness(0, 1, 0, 1),
+            Padding = new Thickness(10, 0, 10, 0), Margin = new Thickness(0, 0, 0, Ui.GroupGap),
+            Child = row,
+        };
+    }
+
+    private void RemoveWithUndo(CleanupQueue.StagedItem item)
+    {
+        Model.Unstage(item.Id);
+        _lastRemoved = item;
+        _removeUndoTimer?.Stop();
+        _removeUndoTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(6),
+        };
+        _removeUndoTimer.Tick += (_, _) =>
+        {
+            _removeUndoTimer?.Stop();
+            _lastRemoved = null;
+            Refresh();
+        };
+        _removeUndoTimer.Start();
+        Refresh();
+    }
+
+    private void UndoRemove(CleanupQueue.StagedItem item)
+    {
+        _removeUndoTimer?.Stop();
+        _lastRemoved = null;
+        Model.Cleanup.Stage(item.Path, item.Size, item.Reason,
+            item.SharesStorageGroup, item.GroupCopyCount);
+        Model.RefreshStaged();
+        Refresh();
+    }
+
+    private FrameworkElement SuccessView(CommitSuccess success)
+    {
+        var stack = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 24, 0, 0),
+            MaxWidth = 520,
+        };
+        var icon = AppSettings.Load().ShowDusty
+            ? Ui.BrandIcon(104)
+            : Ui.Glyph(Icons.Check, 28, Ui.Brush("AppAccent"));
+        icon.HorizontalAlignment = HorizontalAlignment.Center;
+        stack.Children.Add(icon);
+        var title = Ui.T($"{success.Count:N0} {(success.Count == 1 ? "item" : "items")} moved to the Recycle Bin",
+            15, FontWeights.SemiBold);
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        title.Margin = new Thickness(0, 12, 0, 6);
+        stack.Children.Add(title);
+        var freed = Ui.Mono(
+            $"{(success.IsLowerBound ? "At least " : "")}{ByteFormat.Format(success.FreedBytes)} is freed when you empty it.",
+            12, null, Ui.Brush("AppSubtle"));
+        freed.HorizontalAlignment = HorizontalAlignment.Center;
+        stack.Children.Add(freed);
+        var note = Ui.Faint("Changed your mind? Put Back returns the items exactly where they were.", 12);
+        note.TextAlignment = TextAlignment.Center;
+        note.Margin = new Thickness(0, 8, 0, 14);
+        stack.Children.Add(note);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+        var record = CleanupRecord.Load();
+        var putBack = Ui.Button("Put Back", Icons.Back, Ui.ButtonStyle.Outline, () =>
+        {
+            _success = null;
+            if (record is { Items.Count: > 0 }) PutBackNow(record);
+        });
+        putBack.IsEnabled = record is { Items.Count: > 0 };
+        actions.Children.Add(putBack);
+        var done = Ui.Button("Done", null, Ui.ButtonStyle.Primary, () => { _success = null; Refresh(); });
+        done.Margin = new Thickness(Ui.InlineGap, 0, 0, 0);
+        actions.Children.Add(done);
+        stack.Children.Add(actions);
+        if (success.Paths.Count > 0)
+        {
+            var details = Ui.Mono(string.Join(Environment.NewLine, success.Paths), 11, null, Ui.Brush("AppSubtle"));
+            details.TextWrapping = TextWrapping.Wrap;
+            details.MaxWidth = 500;
+            stack.Children.Add(new Expander
+            {
+                Header = "Show what moved",
+                Content = details,
+                Margin = new Thickness(0, 14, 0, 0),
+            });
+        }
+        return stack;
     }
 
     private static string ReasonLabel(string reason) => reason switch
@@ -1267,21 +1404,23 @@ public sealed class CleanupQueuePage : ListPage
         // the folder" instead of failing. Failures stay staged for retry.
         var report = await Task.Run(() => Model.Cleanup.Commit());
         Model.RefreshStaged();
+        var moved = report.Entries.Where(entry => entry.Error is null).ToList();
+        if (moved.Count == 0)
+        {
+            Refresh();
+            MessageBox.Show("Nothing could be moved. The items may be in use.",
+                "Cleanup", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        _success = new CommitSuccess(
+            moved.Count,
+            report.FreedWhenEmptied,
+            report.IsLowerBound,
+            moved.Select(entry => entry.Item.Path).ToList());
         Refresh();
-        Model.Toast($"Moved {report.Entries.Count(e => e.Error is null)} items to the Recycle Bin — " +
-            $"{(report.IsLowerBound ? "at least " : "")}{ByteFormat.Format(report.FreedWhenEmptied)} freed when emptied");
-        var moved = report.Entries.Where(e => e.Error is null).ToList();
-        int withFolder = moved.Count(e => e.MovedWithFolder);
-        string notes = "";
-        if (report.Entries.Count - moved.Count > 0)
-            notes += $"\n{report.Entries.Count - moved.Count} item(s) couldn't be moved — they may be in use.";
-        if (withFolder > 0)
-            notes += $"\n{withFolder} item(s) moved inside a recycled folder.";
-        MessageBox.Show(
-            $"Moved {moved.Count} items to the Recycle Bin — " +
-            $"{(report.IsLowerBound ? "at least " : "")}{ByteFormat.Format(report.FreedWhenEmptied)} " +
-            $"freed when you empty it.{notes}",
-            "Cleanup complete", MessageBoxButton.OK, MessageBoxImage.Information);
+        int failed = report.Entries.Count - moved.Count;
+        Model.Toast($"Moved {moved.Count} items to the Recycle Bin" +
+            (failed > 0 ? $" · {failed} couldn't be moved" : ""));
     }
 
     private async void PutBackNow(CleanupRecord record)

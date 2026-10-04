@@ -17,6 +17,7 @@ public sealed class AppSettings
     [JsonPropertyName("keepHistory")] public bool KeepHistory { get; set; } = true;
     /// <summary>WIN-066: after each scan on a ReFS volume, map extents and count block clones once.</summary>
     [JsonPropertyName("cloneAccounting")] public bool CloneAccounting { get; set; }
+    [JsonPropertyName("showDusty")] public bool ShowDusty { get; set; } = true;
 
     private static string Path0 => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

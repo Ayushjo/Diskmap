@@ -35,6 +35,49 @@ public static class NodeColors
     public static Brush BrushFor(int nodeId) =>
         HueBrushes[unchecked((uint)((ulong)nodeId * 2654435761UL) % 360)];
 
+    public static Brush BrushFor(int nodeId, ScanModel model)
+    {
+        var tree = model.Tree;
+        if (tree is null || model.Totals.Length != tree.Count || nodeId < 0 || nodeId >= tree.Count)
+            return BrushFor(nodeId);
+        return model.ColoringMode switch
+        {
+            "type" => Ui.Hex(FileTypes.TileColorOf(FileTypes.DominantKind(tree, model.Totals, nodeId))),
+            "age" => DominantAgeBrush(tree, model.Totals, nodeId),
+            "folder" => FolderBrush(tree.NameOf(nodeId)),
+            _ => BrushFor(nodeId),
+        };
+    }
+
+    private static Brush FolderBrush(string name)
+    {
+        int hash = 0;
+        foreach (char c in name) hash = unchecked(hash * 31 + char.ToLowerInvariant(c));
+        return Ui.Data((int)((uint)hash % Ui.DataPalette.Length));
+    }
+
+    private static Brush DominantAgeBrush(FileTree tree, long[] totals, int node)
+    {
+        var buckets = new Dictionary<AgeBucket, long>();
+        var stack = new Stack<int>([node]);
+        while (stack.TryPop(out int id))
+        {
+            if (tree.IsDirectory[id])
+            {
+                int child = tree.FirstChild[id];
+                while (child != -1) { stack.Push(child); child = tree.NextSibling[child]; }
+            }
+            else
+            {
+                var bucket = Core.AgeMap.Bucket(tree.ModifiedDay[id], Core.AgeMap.Today());
+                buckets[bucket] = buckets.GetValueOrDefault(bucket) + totals[id];
+            }
+        }
+        return buckets.Count == 0
+            ? OtherBrush
+            : AgeBucket(buckets.OrderByDescending(pair => pair.Value).First().Key);
+    }
+
     private static Color Hsv(double h, double s, double v)
     {
         double c = v * s;

@@ -25,6 +25,8 @@ struct LayoutChartView: View {
     var onAddToSelection: (Int32) -> Void = { _ in }
     @State private var preparedSlices: [ChartSlice] = []
     @State private var isPreparing = true
+    /// "By type" colours for the folders drawn, worked out with the slices.
+    @State private var folderTypeHex: [Int32: String] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -67,7 +69,7 @@ struct LayoutChartView: View {
 
     private var preparationID: String {
         let size = currentNode >= 0 && Int(currentNode) < totals.count ? totals[Int(currentNode)] : 0
-        return "\(currentNode):\(totals.count):\(size):\(otherFraction):\(kind.rawValue)"
+        return "\(currentNode):\(totals.count):\(size):\(otherFraction):\(kind.rawValue):\(colorMode.rawValue)"
     }
 
     @MainActor
@@ -85,11 +87,21 @@ struct LayoutChartView: View {
         // slider's heavier collapsing (up to 4% → a handful of cards) only
         // hides branches; it shows everything ≥ 0.5% of the folder.
         let fraction = kind == .mindMap ? min(otherFraction, ChartLayout.otherFraction) : otherFraction
-        let result = await Task.detached(priority: .userInitiated) {
-            ChartLayout.slices(of: node, in: sourceTree, totals: sourceTotals, otherFraction: fraction)
+        let byType = colorMode == .type
+        let sourceCategories = categories
+        let levels = kind == .flame ? 4 : 2
+        let (result, typeHex) = await Task.detached(priority: .userInitiated) { () -> ([ChartSlice], [Int32: String]) in
+            // The flame chart is an icicle: up to four levels, top to bottom.
+            let slices = ChartLayout.slices(of: node, in: sourceTree, totals: sourceTotals, otherFraction: fraction,
+                                            levels: levels)
+            guard byType else { return (slices, [:]) }
+            func ids(_ list: [ChartSlice]) -> [Int32] { list.flatMap { ($0.nodeID.map { [$0] } ?? []) + ids($0.children) } }
+            return (slices, ExploreColoring.dominantTypeHex(for: ids(slices), in: sourceTree, totals: sourceTotals,
+                                                            categories: sourceCategories))
         }.value
         guard !Task.isCancelled, currentNode == node else { return }
         preparedSlices = result
+        folderTypeHex = typeHex
         isPreparing = false
     }
 
@@ -116,7 +128,7 @@ struct LayoutChartView: View {
 
     private func color(_ id: Int32?) -> Color {
         guard let id, id >= 0, Int(id) < tree.count else { return DiskMapTheme.ink2.opacity(0.4) }
-        return ExploreColoring.color(for: id, in: tree, mode: colorMode, categories: categories)
+        return ExploreColoring.color(for: id, in: tree, mode: colorMode, categories: categories, folderTypeHex: folderTypeHex)
     }
 
     private func select(_ id: Int32?) {
@@ -666,32 +678,32 @@ private func hit(_ wedges: [Wedge], at point: CGPoint) -> Int32? {
     return nil
 }
 
+/// An icicle: each level is a row, each item as wide as its share of its
+/// parent, children directly under their parent. Rows split the height by
+/// the deepest level present (up to four).
 private func flameBars(_ slices: [ChartSlice], in size: CGSize) -> [FlameBar] {
-    let ordered = slices.sorted { $0.size > $1.size }
-    let total = ordered.reduce(Int64(0)) { $0 + $1.size }
+    let total = slices.reduce(Int64(0)) { $0 + $1.size }
     guard total > 0, size.width > 0, size.height > 0 else { return [] }
-    let row = size.height / 2
-    var x: CGFloat = 0
-    var bars: [FlameBar] = []
-    for slice in ordered {
-        let width = size.width * CGFloat(slice.size) / CGFloat(total)
-        bars.append(FlameBar(nodeID: slice.nodeID, label: slice.label, rect: CGRect(x: x, y: 0, width: max(width - 1, 0), height: row - 2)))
-        let nested = slice.children.sorted { $0.size > $1.size }
-        let nestedTotal = nested.reduce(Int64(0)) { $0 + $1.size }
-        if nestedTotal > 0, width > 1 {
-            var childX = x
-            for child in nested {
-                let childWidth = width * CGFloat(child.size) / CGFloat(nestedTotal)
-                bars.append(FlameBar(
-                    nodeID: child.nodeID,
-                    label: child.label,
-                    rect: CGRect(x: childX, y: row, width: max(childWidth - 1, 0), height: row - 2)
-                ))
-                childX += childWidth
-            }
-        }
-        x += width
+    func depth(_ list: [ChartSlice]) -> Int {
+        list.isEmpty ? 0 : 1 + (list.map { depth($0.children) }.max() ?? 0)
     }
+    let rows = max(1, depth(slices))
+    let row = size.height / CGFloat(rows)
+    var bars: [FlameBar] = []
+    func place(_ list: [ChartSlice], x: CGFloat, width: CGFloat, level: Int) {
+        let ordered = list.sorted { $0.size > $1.size }
+        let sum = ordered.reduce(Int64(0)) { $0 + $1.size }
+        guard sum > 0, width > 1 else { return }
+        var cursor = x
+        for slice in ordered {
+            let w = width * CGFloat(slice.size) / CGFloat(sum)
+            bars.append(FlameBar(nodeID: slice.nodeID, label: slice.label,
+                                 rect: CGRect(x: cursor, y: CGFloat(level) * row, width: max(w - 1, 0), height: row - 2)))
+            place(slice.children, x: cursor, width: w, level: level + 1)
+            cursor += w
+        }
+    }
+    place(slices, x: 0, width: size.width, level: 0)
     return bars
 }
 

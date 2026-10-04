@@ -103,7 +103,7 @@ public abstract class ListPage : UserControl
     protected UIElement NeedsScan(string what)
     {
         return Ui.EmptyState(Icons.Folder, "Scan a folder to begin",
-            $"{what} Once you pick a folder, DiskMap maps it in seconds.",
+            $"{what} Once you pick a folder, freedisk.space maps it in seconds.",
             Ui.Button("Scan Folder…", Icons.Add, Ui.ButtonStyle.Primary, () => Model.RequestScan()));
     }
 }
@@ -324,7 +324,12 @@ public abstract class FileListPage : ListPage
             row.Children.Add(pill);
         }
 
-        var sort = new ComboBox { Width = 130, Margin = new Thickness(4, 0, 0, 4), VerticalAlignment = VerticalAlignment.Center };
+        var sort = new ComboBox
+        {
+            Width = 130, Height = 28, FontSize = Ui.Scaled(12),
+            Margin = new Thickness(4, 0, 0, 4),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         foreach (var (id, label) in new[]
         {
             ("largest", "Sort: Largest"), ("smallest", "Sort: Smallest"),
@@ -930,21 +935,17 @@ public sealed class FileBrowserPage : FileListPage
         var crumbs = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
         var chain = new List<int>();
         for (int id = zoom; id >= 0 && id != tree.Parent[id]; id = tree.Parent[id]) chain.Insert(0, id);
+        if (chain.Count > 0) chain.RemoveAt(chain.Count - 1);
         foreach (var (id, i) in chain.Select((c, i) => (c, i)))
         {
             if (i > 0) crumbs.Children.Add(Ui.Faint("  ›  "));
-            bool last = id == zoom;
             string label = id == 0 && Model.RootPath is { } rp
                 ? rp.TrimEnd('\\', '/')
                 : tree.NameOf(id);
-            var t = Ui.T(label, 12.5, last ? FontWeights.SemiBold : FontWeights.Normal,
-                last ? Ui.Brush("AppForeground") : Ui.Brush("AppSubtle"));
-            if (!last)
-            {
-                int captured = id;
-                t.Cursor = System.Windows.Input.Cursors.Hand;
-                t.MouseLeftButtonDown += (_, _) => { Model.DrillTo(captured); };
-            }
+            var t = Ui.T(label, 12.5, FontWeights.Normal, Ui.Brush("AppSubtle"));
+            int captured = id;
+            t.Cursor = System.Windows.Input.Cursors.Hand;
+            t.MouseLeftButtonDown += (_, _) => { Model.DrillTo(captured); };
             crumbs.Children.Add(t);
         }
         var crumbRow = new DockPanel();
@@ -1092,7 +1093,7 @@ public sealed class SearchPage : FileListPage
         save.VerticalAlignment = VerticalAlignment.Center;
         var sort = new ComboBox
         {
-            Width = 125, Height = 28,
+            Width = 125, Height = 28, FontSize = Ui.Scaled(12),
             Margin = new Thickness(Ui.InlineGap, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -1292,7 +1293,7 @@ public sealed class OverviewPage : ListPage
             var notice = Ui.Notice(
                 $"{denied.Count} folder{(denied.Count == 1 ? "" : "s")} couldn't be scanned",
                 "Access was denied — the figures above are missing what's inside. " +
-                "Run DiskMap as administrator to include everything." +
+                "Run freedisk.space as administrator to include everything." +
                 (examples.Count > 0 ? "\n" + string.Join("\n", examples.Select(e => "  " + e)) +
                     (denied.Count > examples.Count ? $"\n  …and {denied.Count - examples.Count} more" : "") : ""));
             notice.Margin = new Thickness(0, 0, 0, 32);
@@ -1779,6 +1780,15 @@ public sealed class OverviewPage : ListPage
         Tile(0, 2, 2, Ui.Data(3));   // sage
         Tile(1, 0, 1, Ui.Data(1));   // violet
         Tile(1, 1, 1, Ui.Data(4));   // sand
+        if (AppSettings.Load().ShowDusty)
+        {
+            var dusty = Ui.BrandIcon(78);
+            dusty.HorizontalAlignment = HorizontalAlignment.Right;
+            dusty.VerticalAlignment = VerticalAlignment.Top;
+            dusty.Margin = new Thickness(0, -52, 18, 0);
+            mark.Children.Add(dusty);
+            mark.Margin = new Thickness(0, 52, 0, 0);
+        }
         hero.Children.Add(mark);
 
         var eyebrow = Ui.MonoLabel("LOCAL · FAST · PRIVATE");
@@ -1791,7 +1801,7 @@ public sealed class OverviewPage : ListPage
         hero.Children.Add(headline);
 
         var paragraph = Ui.Subtle(
-            "DiskMap reads your disk's own map — a full scan takes seconds, not minutes. " +
+            "freedisk.space reads your disk's own map — a full scan takes seconds, not minutes. " +
             "Then it shows what's using the space, what's safe to remove, and what to do next.", 13);
         paragraph.TextAlignment = TextAlignment.Center;
         paragraph.TextWrapping = TextWrapping.Wrap;

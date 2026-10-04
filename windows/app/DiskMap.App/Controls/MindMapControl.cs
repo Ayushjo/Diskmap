@@ -66,7 +66,7 @@ public sealed class MindMapControl : FrameworkElement
 
         double cy = ActualHeight / 2;
         var rootRect = new Rect(20, cy - NodeHeight / 2, ColumnWidth, NodeHeight);
-        dc.DrawRectangle(NodeColors.BrushFor(model.ZoomedNode), NodeColors.StrokePen, rootRect);
+        dc.DrawRectangle(NodeColors.BrushFor(model.ZoomedNode, model), NodeColors.StrokePen, rootRect);
         DrawLabel(dc, rootRect, tree.NameOf(model.ZoomedNode), model.Totals[model.ZoomedNode]);
         _hit.Add((model.ZoomedNode, rootRect));
 
@@ -85,7 +85,7 @@ public sealed class MindMapControl : FrameworkElement
         {
             double h = Math.Max(NodeHeight, usable * slice.Size / Math.Max(1, total) - VGap);
             var rect = new Rect(x, y, ColumnWidth, Math.Min(h, NodeHeight * 1.5));
-            var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id) : NodeColors.OtherBrush;
+            var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id, model) : NodeColors.OtherBrush;
             dc.DrawRectangle(fill, NodeColors.StrokePen, rect);
             // Selection outlines — multi in accent, focused cell in white.
             if (slice.NodeID is { } sid)

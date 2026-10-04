@@ -371,6 +371,8 @@ struct InspectorHeader<Icon: View>: View {
                 Text(size)
                     .font(DiskMapType.display)
                     .foregroundStyle(DiskMapTheme.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                     .contentTransition(.numericText())
             }
             if let detail {
@@ -549,4 +551,59 @@ func relativeParent(of absolutePath: String, root: URL) -> String {
         return String(parent.dropFirst(rootPath.count + 1)) + "/"
     }
     return CanonicalPath.parentDisplay(of: absolutePath)
+}
+
+// MARK: - Wrapping
+
+/// Lays items out in a row and wraps to the next line when the row is full,
+/// so a legend or a chip row never makes a page wider than its window (a
+/// six-category legend on one HStack pushed Developer Storage's inspector
+/// off-screen). Use for legends, chip rows and tab-like bars.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 14
+    var lineSpacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(subviews, width: proposal.width ?? .infinity)
+        let width = rows.map(\.width).max() ?? 0
+        let height = rows.reduce(CGFloat(0)) { $0 + $1.height } + lineSpacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: min(width, proposal.width ?? width), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(subviews, width: bounds.width) {
+            var x = bounds.minX
+            for (index, size) in row.items {
+                subviews[index].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2),
+                                      proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + lineSpacing
+        }
+    }
+
+    private struct Row {
+        var items: [(Int, CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(_ subviews: Subviews, width maxWidth: CGFloat) -> [Row] {
+        var rows: [Row] = [Row()]
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            if size.width == 0 && size.height == 0 { continue }
+            let needed = rows[rows.count - 1].items.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
+            if !rows[rows.count - 1].items.isEmpty && needed > maxWidth {
+                rows.append(Row())
+            }
+            var row = rows[rows.count - 1]
+            row.width = row.items.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.items.append((index, size))
+            rows[rows.count - 1] = row
+        }
+        return rows.filter { !$0.items.isEmpty }
+    }
 }

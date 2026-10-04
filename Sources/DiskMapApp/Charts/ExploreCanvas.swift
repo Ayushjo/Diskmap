@@ -84,6 +84,8 @@ struct ExploreTreemapView: View {
     @State private var layoutTask: Task<Void, Never>?
     @State private var isPreparingLayout = false
     @State private var hoveredID: Int32?
+    /// "By type" colours for the folders on screen, worked out with the layout.
+    @State private var folderTypeHex: [Int32: String] = [:]
 
 
     var body: some View {
@@ -207,6 +209,7 @@ struct ExploreTreemapView: View {
             )
         }
         .onChange(of: currentNode) { _, _ in cacheLayout() }
+        .onChange(of: colorMode) { _, _ in cacheLayout() }
         .onChange(of: totals.count) { _, _ in cacheLayout() }
         .onDisappear { layoutTask?.cancel() }
     }
@@ -228,6 +231,8 @@ struct ExploreTreemapView: View {
         let sourceTotals = totals
         layoutTask?.cancel()
         isPreparingLayout = true
+        let byType = colorMode == .type
+        let sourceCategories = categories
         layoutTask = Task.detached(priority: .userInitiated) {
             let items = sourceTree.children(of: node, totals: sourceTotals).filter { $0.size > 0 }
             guard !Task.isCancelled else { return }
@@ -236,15 +241,20 @@ struct ExploreTreemapView: View {
                 in: CGRect(origin: .zero, size: targetSize)
             )
             guard !Task.isCancelled else { return }
+            let typeHex = byType
+                ? ExploreColoring.dominantTypeHex(for: rects.map(\.id), in: sourceTree, totals: sourceTotals, categories: sourceCategories)
+                : [:]
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard currentNode == node, canvasSize == targetSize else { return }
                 layoutRects = rects
+                folderTypeHex = typeHex
                 isPreparingLayout = false
             }
         }
     }
 
     private func colorFor(id: Int32) -> Color {
-        ExploreColoring.color(for: id, in: tree, mode: colorMode, categories: categories)
+        ExploreColoring.color(for: id, in: tree, mode: colorMode, categories: categories, folderTypeHex: folderTypeHex)
     }
 }

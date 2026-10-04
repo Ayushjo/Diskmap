@@ -58,7 +58,7 @@ public sealed class SunburstControl : FrameworkElement
         double ringWidth = (radius - centerRadius) / 2;
 
         // Center = current node; click to zoom out.
-        dc.DrawEllipse(NodeColors.BrushFor(model.ZoomedNode),
+        dc.DrawEllipse(NodeColors.BrushFor(model.ZoomedNode, model),
             NodeColors.StrokePen, new Point(cx, cy), centerRadius, centerRadius);
 
         var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals, model.ChartDepth);
@@ -77,7 +77,7 @@ public sealed class SunburstControl : FrameworkElement
             double sweep = 2 * Math.PI * slice.Size / total;
             if (sweep < 0.002) { angle += sweep; continue; }
             var geom = Arc(cx, cy, r0, r1, angle, angle + sweep);
-            var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id) : NodeColors.OtherBrush;
+            var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id, model) : NodeColors.OtherBrush;
             dc.DrawGeometry(fill, NodeColors.StrokePen, geom);
             _hit.Add((slice.NodeID, geom));
             // Selection rings — multi in accent, focused cell in white.

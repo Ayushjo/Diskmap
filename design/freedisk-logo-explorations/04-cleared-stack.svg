@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 180" role="img" aria-labelledby="title desc">
+<title id="title">freedisk.space — Cleared stack</title><desc id="desc">A shrinking stack leaves room beside each layer.</desc>
+<rect x="42" y="42" width="106" height="22" rx="11" fill="#252B31"/><rect x="42" y="77" width="82" height="22" rx="11" fill="#6D7782"/><rect x="42" y="112" width="53" height="22" rx="11" fill="#7966DA"/><path d="M133 88h15M105 123h43" stroke="#7966DA" stroke-width="4" stroke-linecap="round" opacity=".5"/>
+<text x="175" y="116" fill="#252B31" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif" font-size="66" font-weight="730" letter-spacing="-3">freedisk</text>
+<text x="424" y="116" fill="#7966DA" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif" font-size="66" font-weight="730" letter-spacing="-3">.space</text>
+</svg>

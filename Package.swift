@@ -21,9 +21,10 @@ let package = Package(
     ],
     targets: [
         .target(name: "DiskMapCore", resources: [.process("quick-wins-patterns.json"), .process("file-type-categories.json"), .process("developer-rules.json"), .process("cleanup-recipes.json")]),
+        .target(name: "DiskMapBrand", resources: [.copy("Resources/dusty-peek-mark.svg")]),
         .executableTarget(
             name: "DiskMapApp",
-            dependencies: ["DiskMapCore", .product(name: "Sparkle", package: "Sparkle")],
+            dependencies: ["DiskMapCore", "DiskMapBrand", .product(name: "Sparkle", package: "Sparkle")],
             linkerSettings: [.linkedFramework("Quartz"), .linkedFramework("QuickLookThumbnailing")]
         ),
         .testTarget(name: "DiskMapCoreTests", dependencies: ["DiskMapCore"]),
@@ -36,7 +37,7 @@ let package = Package(
         // Visual regression check for scripts/render-all.sh (TASK-084).
         .executableTarget(name: "ImageDiff"),
         // Draws the app icon (TASK-083): swift run IconRender 1 build/AppIcon.iconset
-        .executableTarget(name: "IconRender"),
+        .executableTarget(name: "IconRender", dependencies: ["DiskMapBrand"]),
         .executableTarget(name: "diskmap", dependencies: ["DiskMapCore"]),
     ]
 )

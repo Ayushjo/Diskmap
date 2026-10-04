@@ -160,7 +160,8 @@ struct FileBrowserView: View {
                 .keyboardShortcut("]", modifiers: .command)
                 .disabled(!canGoForward)
                 .help("Forward")
-            BreadcrumbBar(tree: tree, currentNode: currentID) { jumpTo($0, recordHistory: true) }
+            // The current folder is the page title just below, so the path stops at its parent.
+            BreadcrumbBar(tree: tree, currentNode: currentID, jump: { jumpTo($0, recordHistory: true) }, includeCurrent: false)
                 .padding(.leading, 6)
             Spacer(minLength: 6)
             Button {
@@ -183,7 +184,7 @@ struct FileBrowserView: View {
             VStack(alignment: .leading, spacing: 8) {
                 SegmentedStorageBar(segments: parts.map { (DiskMapTheme.hex($0.colorHex), Double($0.bytes) / Double(total)) })
                     .accessibilityHidden(true)
-                HStack(spacing: 14) {
+                FlowLayout(spacing: 14) {
                     ForEach(parts.prefix(5), id: \.categoryID) { part in
                         HStack(spacing: 5) {
                             Circle().fill(DiskMapTheme.hex(part.colorHex)).frame(width: 6, height: 6)
@@ -197,7 +198,6 @@ struct FileBrowserView: View {
                         .fixedSize()
                         .accessibilityElement(children: .combine)
                     }
-                    Spacer(minLength: 0)
                 }
             }
         } else {

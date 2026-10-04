@@ -161,7 +161,7 @@ struct LargeMediaView: View {
                 DiskMapMenu(label: "Size", options: MediaSizeFilter.allCases, selection: $sizeFilter, title: { $0.title })
                 DiskMapMenu(label: "Sort", options: MediaSort.allCases, selection: $sort, title: { $0.title })
             }
-            HStack(spacing: 2) {
+            FlowLayout(spacing: 2) {
                 ForEach(MediaTypeFilter.allCases) { type in
                     let count = MediaCatalog.filter(catalog.candidates, type: type, size: sizeFilter, age: ageFilter,
                                                     location: locationFilter, query: "").count

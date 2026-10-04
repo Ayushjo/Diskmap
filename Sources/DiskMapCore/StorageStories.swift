@@ -86,7 +86,7 @@ public enum StorageNarrator {
             out.append(StorageStory(
                 id: "quickwins",
                 title: "Known regenerable data",
-                detail: "About \(format(snap.quickWinBytes)) sits in caches and build artifacts DiskMap recognizes.",
+                detail: "About \(format(snap.quickWinBytes)) sits in caches and build artifacts freedisk.space recognizes.",
                 bytes: snap.quickWinBytes,
                 kind: .quickWin
             ))
@@ -149,7 +149,7 @@ public enum StorageNarrator {
             out.append(StorageRecommendation(
                 id: "rec-quickwins",
                 title: "Review regenerable caches",
-                detail: "High confidence — known package/build caches DiskMap can explain.",
+                detail: "High confidence — known package/build caches freedisk.space can explain.",
                 bytes: snap.quickWinBytes,
                 confidence: .high,
                 safety: .safe

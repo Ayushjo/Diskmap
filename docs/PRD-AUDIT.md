@@ -14,7 +14,7 @@ Method: `swift test` (42/42 green) + code-path inspection + prior `docs/PERF.md`
 | Flame graph view | **Working** | Same chart pipeline; Flame tab wired in `ContentView`. | Same as sunburst. |
 | Bubbles view | **Working** | `CirclePackTests` green; Bubbles tab wired. | Same. |
 | Mind map view | **Working** | Mind Map tab → `LayoutChartView` mind-map mode. | Same. |
-| Top Sizes view | **Working** | `BrowseQueryTests.topSizesSkipsRootAndCaps`; `TopSizesView` wired. | None. |
+| Top Sizes view | **Working** | `BrowseQueryTests.topSizesSkipsRootAndCaps`; the ranking (`TopSizes.rankedFiles`) powers Biggest Files — the separate Top Sizes view was folded in by the calm UI. | None. |
 | Age Map view | **Working** | `BrowseQueryTests.ageBucketsAndUntouchedUseAFixedToday`; `AgeMapView` wired. | None. |
 | Folders (browsable) | **Working** | `FoldersView` drills `currentNode` on existing tree. | None. |
 | Duplicate detection | **Working** | `DuplicateFinderTests` (incl. clone skip + independent copy hash) green; Duplicates tab wired. | Memory-at-scale still TASK-028. |
