@@ -1,0 +1,7 @@
+DiskMap scan: items=1796684 elapsed=9.808s rss_during_walk_peak=258113536 rss_after_enumerator_release=302104576 not_downloaded=17
+run=1/3 label=confirm-defaults items=1796684 nodes=1763545 scan=9.808s rollup=0.029s walk_rss=258113536 after_rss=302104576 names=684841 name_utf8=26328789
+DiskMap scan: items=1796412 elapsed=9.542s rss_during_walk_peak=251199488 rss_after_enumerator_release=309706752 not_downloaded=17
+run=2/3 label=confirm-defaults items=1796412 nodes=1763273 scan=9.542s rollup=0.028s walk_rss=251199488 after_rss=309706752 names=684580 name_utf8=26317970
+DiskMap scan: items=1796704 elapsed=5.840s rss_during_walk_peak=309772288 rss_after_enumerator_release=316276736 not_downloaded=17
+run=3/3 label=confirm-defaults items=1796704 nodes=1763565 scan=5.840s rollup=0.022s walk_rss=309772288 after_rss=316276736 names=684856 name_utf8=26329308
+summary label=confirm-defaults n=3 scan_min=5.840 scan_median=9.542 scan_max=9.808 walk_rss_median=258113536

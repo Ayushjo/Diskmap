@@ -17,14 +17,29 @@ import Foundation
 public struct FileTree: Sendable {
 
     // MARK: Name interning
+    //
+    // Unique names live in one packed UTF-8 blob with parallel offset/length
+    // tables. That drops ~MemoryLayout<String> × uniqueNames of separate
+    // String headers (~685k on a home scan) while keeping scan-hot intern
+    // hits as raw UTF-8 compares with no String allocation.
 
-    public private(set) var nameTable: [String] = []
-    private var nameLookup: [String: Int32] = [:]
+    private var nameBlob: [UInt8] = []
+    private var nameOffset: [Int32] = []
+    private var nameLength: [UInt16] = []
     /// Open-addressed intern table for the scan hot path. A hit compares
     /// raw UTF-8 and does not allocate a `String`. Empty slots use `-1`.
     private var internSlotHash: [UInt64] = []
     private var internSlotIndex: [Int32] = []
     private var internCount = 0
+
+    /// Count of unique interned names.
+    public var uniqueNameCount: Int { nameOffset.count }
+
+    /// Materialized String table for Snapshot encode and tests. Prefer
+    /// `nameString(at:)` / `name(of:)` on hot paths.
+    public var nameTable: [String] {
+        (0..<uniqueNameCount).map { nameString(at: Int32($0)) }
+    }
 
     // MARK: Struct-of-arrays node storage, indexed by node id (Int32)
 
@@ -35,18 +50,61 @@ public struct FileTree: Sendable {
     public private(set) var logicalSize: [Int64] = []   // st_size
     public private(set) var allocatedSize: [Int64] = [] // size-on-disk (reflects APFS compression)
     public private(set) var modifiedDay: [Int32] = []   // days since epoch, not a full Date (8 bytes -> 4)
+    public private(set) var createdDay: [Int32] = []    // birthtime days since epoch; 0 = unknown
     public private(set) var isDirectory: [Bool] = []
     public private(set) var flags: [UInt8] = []         // see NodeFlags
+    /// ATTR_CMN_FILEID (inode). Unique per volume — the walk does not cross
+    /// mount points by default, so it is unique across one scan. 0 = unknown
+    /// (a v1/v2 snapshot, or a node built by a test helper).
+    public private(set) var fileID: [UInt64] = []
+
+    /// APFS sharing facts for the few files that share blocks (TASK-077).
+    /// Sparse — one row per clone or partly-shared file, never per node —
+    /// so the per-node layout above stays as it is.
+    public private(set) var sharing = SharingTable()
+    /// Which sharing facts the scan read (APFS only; `.off` otherwise). With
+    /// any of them, an empty table means "no clones here", not "unknown";
+    /// only `.full` also knows edited clones (partly shared files).
+    public internal(set) var sharingMode: SharingMode = .off
+    public var hasSharingInfo: Bool { sharingMode != .off }
 
     public var count: Int { nameIndex.count }
+
+    /// Avoid amortized realloc traffic during a multi-million-node scan.
+    public mutating func reserveNodeCapacity(_ capacity: Int, uniqueNames: Int = 0) {
+        guard capacity > 0 else { return }
+        nameIndex.reserveCapacity(capacity)
+        parent.reserveCapacity(capacity)
+        firstChild.reserveCapacity(capacity)
+        nextSibling.reserveCapacity(capacity)
+        logicalSize.reserveCapacity(capacity)
+        allocatedSize.reserveCapacity(capacity)
+        modifiedDay.reserveCapacity(capacity)
+        createdDay.reserveCapacity(capacity)
+        isDirectory.reserveCapacity(capacity)
+        flags.reserveCapacity(capacity)
+        fileID.reserveCapacity(capacity)
+        if uniqueNames > 0 {
+            nameOffset.reserveCapacity(uniqueNames)
+            nameLength.reserveCapacity(uniqueNames)
+            // Typical short filename; blob grows as needed.
+            nameBlob.reserveCapacity(uniqueNames * 16)
+            // Power-of-two open-address table sized for <50% load.
+            var slots = 1024
+            while slots < uniqueNames * 2 { slots *= 2 }
+            if internSlotHash.count < slots { growIntern(to: slots) }
+        }
+    }
+
 
     /// Bytes per node of the packed arrays only: index, parent links,
     /// sizes, day, directory bit, flags. No spare capacity, no interned
     /// string heap. Built from `MemoryLayout` so the number tracks the
     /// stored types instead of a handwritten guess.
     public static var packedNodeStride: Int {
-        MemoryLayout<Int32>.stride * 5
+        MemoryLayout<Int32>.stride * 6
             + MemoryLayout<Int64>.stride * 2
+            + MemoryLayout<UInt64>.stride
             + MemoryLayout<Bool>.stride
             + MemoryLayout<UInt8>.stride
     }
@@ -64,9 +122,10 @@ public struct FileTree: Sendable {
         public var packedNodeBytesExact: Int
         /// `MemoryLayout` × each array's current capacity. What is reserved now.
         public var packedNodeBytesReserved: Int
-        /// `MemoryLayout<String>` × unique names. The string headers, not the characters.
+        /// Offset + length table bytes for the packed name intern (`Int32` + `UInt16` per name).
+        /// Formerly `MemoryLayout<String>` × unique names when names were `[String]`.
         public var nameTableHeaderBytes: Int
-        /// Sum of UTF-8 byte counts of interned names. Measured, not a layout formula.
+        /// Sum of UTF-8 byte counts of interned names (size of `nameBlob` content).
         public var nameUTF8Bytes: Int
     }
 
@@ -76,18 +135,20 @@ public struct FileTree: Sendable {
             + firstChild.capacity * MemoryLayout<Int32>.stride
             + nextSibling.capacity * MemoryLayout<Int32>.stride
             + modifiedDay.capacity * MemoryLayout<Int32>.stride
+            + createdDay.capacity * MemoryLayout<Int32>.stride
             + logicalSize.capacity * MemoryLayout<Int64>.stride
             + allocatedSize.capacity * MemoryLayout<Int64>.stride
             + isDirectory.capacity * MemoryLayout<Bool>.stride
             + flags.capacity * MemoryLayout<UInt8>.stride
-        let utf8 = nameTable.reduce(0) { $0 + $1.utf8.count }
+            + fileID.capacity * MemoryLayout<UInt64>.stride
+            + sharing.reservedBytes
         return StorageFootprint(
             nodeCount: count,
-            uniqueNameCount: nameTable.count,
+            uniqueNameCount: uniqueNameCount,
             packedNodeBytesExact: Self.packedNodeBytesExact(nodeCount: count),
             packedNodeBytesReserved: reserved,
-            nameTableHeaderBytes: nameTable.count * MemoryLayout<String>.stride,
-            nameUTF8Bytes: utf8
+            nameTableHeaderBytes: uniqueNameCount * (MemoryLayout<Int32>.stride + MemoryLayout<UInt16>.stride),
+            nameUTF8Bytes: nameBlob.count
         )
     }
 
@@ -105,9 +166,14 @@ public struct FileTree: Sendable {
         logicalSize = Self.exactCopy(logicalSize)
         allocatedSize = Self.exactCopy(allocatedSize)
         modifiedDay = Self.exactCopy(modifiedDay)
+        createdDay = Self.exactCopy(createdDay)
         isDirectory = Self.exactCopy(isDirectory)
         flags = Self.exactCopy(flags)
-        nameTable = Self.exactCopy(nameTable)
+        fileID = Self.exactCopy(fileID)
+        sharing.compact()
+        nameBlob = Self.exactCopy(nameBlob)
+        nameOffset = Self.exactCopy(nameOffset)
+        nameLength = Self.exactCopy(nameLength)
     }
 
     private static func exactCopy<T>(_ source: [T]) -> [T] {
@@ -129,7 +195,9 @@ public struct FileTree: Sendable {
         logicalSize: Int64,
         allocatedSize: Int64,
         modifiedDaysSinceEpoch: Int32,
-        flags: UInt8 = 0
+        createdDaysSinceEpoch: Int32 = 0,
+        flags: UInt8 = 0,
+        fileID: UInt64 = 0
     ) -> Int32 {
         appendNode(
             nameID: internName(name),
@@ -138,7 +206,9 @@ public struct FileTree: Sendable {
             logicalSize: logicalSize,
             allocatedSize: allocatedSize,
             modifiedDaysSinceEpoch: modifiedDaysSinceEpoch,
-            flags: flags
+            createdDaysSinceEpoch: createdDaysSinceEpoch,
+            flags: flags,
+            fileID: fileID
         )
     }
 
@@ -152,7 +222,9 @@ public struct FileTree: Sendable {
         logicalSize: Int64,
         allocatedSize: Int64,
         modifiedDaysSinceEpoch: Int32,
-        flags: UInt8 = 0
+        createdDaysSinceEpoch: Int32 = 0,
+        flags: UInt8 = 0,
+        fileID: UInt64 = 0
     ) -> Int32 {
         let nid = internUTF8(nameBytes)
         return appendNode(
@@ -162,7 +234,9 @@ public struct FileTree: Sendable {
             logicalSize: logicalSize,
             allocatedSize: allocatedSize,
             modifiedDaysSinceEpoch: modifiedDaysSinceEpoch,
-            flags: flags
+            createdDaysSinceEpoch: createdDaysSinceEpoch,
+            flags: flags,
+            fileID: fileID
         )
     }
 
@@ -173,7 +247,9 @@ public struct FileTree: Sendable {
         logicalSize: Int64,
         allocatedSize: Int64,
         modifiedDaysSinceEpoch: Int32,
-        flags: UInt8
+        createdDaysSinceEpoch: Int32,
+        flags: UInt8,
+        fileID: UInt64
     ) -> Int32 {
         let id = Int32(nameIndex.count)
         nameIndex.append(nid)
@@ -183,8 +259,10 @@ public struct FileTree: Sendable {
         self.logicalSize.append(logicalSize)
         self.allocatedSize.append(allocatedSize)
         modifiedDay.append(modifiedDaysSinceEpoch)
+        createdDay.append(createdDaysSinceEpoch)
         self.isDirectory.append(isDirectory)
         self.flags.append(flags)
+        self.fileID.append(fileID)
         if parentID >= 0 {
             // Prepend to the parent's child list — O(1) insert. Child
             // order doesn't matter for a treemap since layout algorithms
@@ -196,18 +274,86 @@ public struct FileTree: Sendable {
         return id
     }
 
+    /// A tree with this tree's name table and no nodes, so nodes can be
+    /// copied across by name id (incremental rescans, TASK-061).
+    func emptiedKeepingNames() -> FileTree {
+        var copy = self
+        copy.nameIndex = []
+        copy.parent = []
+        copy.firstChild = []
+        copy.nextSibling = []
+        copy.logicalSize = []
+        copy.allocatedSize = []
+        copy.modifiedDay = []
+        copy.createdDay = []
+        copy.isDirectory = []
+        copy.flags = []
+        copy.fileID = []
+        copy.sharing = SharingTable()
+        copy.reserveNodeCapacity(count)
+        return copy
+    }
+
+    /// Records sharing facts for `node`, which must be the newest node with
+    /// facts (the table stays sorted by id). Marks the node `apfsClone`.
+    mutating func appendSharing(node: Int32, cloneID: UInt64, privateBytes: Int64, refcount: UInt32) {
+        guard node >= 0, Int(node) < count, sharing.node.last.map({ $0 < node }) ?? true else { return }
+        sharing.node.append(node)
+        sharing.cloneID.append(cloneID)
+        sharing.privateBytes.append(privateBytes)
+        sharing.refcount.append(refcount)
+        flags[Int(node)] |= NodeFlags.apfsClone
+    }
+
+    /// Replaces the side table wholesale (snapshot load). Rows must be sorted
+    /// by node id and in range; anything else is rejected.
+    @discardableResult
+    mutating func replaceSharing(_ table: SharingTable, mode: SharingMode) -> Bool {
+        guard table.isWellFormed(nodeCount: count) else { return false }
+        sharing = table
+        sharingMode = mode
+        for node in table.node { flags[Int(node)] |= NodeFlags.apfsClone }
+        return true
+    }
+
+    /// Appends a node whose name is already in this tree's table (from
+    /// `emptiedKeepingNames`, or interned earlier).
+    @discardableResult
+    mutating func appendNodeReusingName(
+        _ nameID: Int32,
+        parent parentID: Int32,
+        isDirectory: Bool,
+        logicalSize: Int64,
+        allocatedSize: Int64,
+        modifiedDaysSinceEpoch: Int32,
+        createdDaysSinceEpoch: Int32,
+        flags: UInt8,
+        fileID: UInt64
+    ) -> Int32 {
+        appendNode(nameID: nameID, parent: parentID, isDirectory: isDirectory, logicalSize: logicalSize,
+                   allocatedSize: allocatedSize, modifiedDaysSinceEpoch: modifiedDaysSinceEpoch,
+                   createdDaysSinceEpoch: createdDaysSinceEpoch, flags: flags, fileID: fileID)
+    }
+
+    /// Interns a name without adding a node.
+    mutating func nameID(forUTF8 bytes: UnsafeBufferPointer<UInt8>) -> Int32 {
+        internUTF8(bytes)
+    }
+
     private mutating func internUTF8(_ bytes: UnsafeBufferPointer<UInt8>) -> Int32 {
         if internSlotHash.isEmpty { growIntern(to: 1024) }
         let hash = fnv1a(bytes)
         if let existing = findIntern(hash: hash, bytes: bytes) { return existing }
         if (internCount + 1) * 2 >= internSlotHash.count {
-            growIntern(to: internSlotHash.count * 2)
+            growIntern(to: max(internSlotHash.count * 2, 1024))
         }
-        let name = String(decoding: bytes, as: UTF8.self)
-        if let existing = nameLookup[name] { return existing }
-        let id = Int32(nameTable.count)
-        nameTable.append(name)
-        nameLookup[name] = id
+        // Miss: append raw UTF-8 into the blob — no String allocation.
+        precondition(bytes.count <= Int(UInt16.max), "file name longer than UInt16.max")
+        let id = Int32(nameOffset.count)
+        let start = Int32(nameBlob.count)
+        nameBlob.append(contentsOf: bytes)
+        nameOffset.append(start)
+        nameLength.append(UInt16(bytes.count))
         insertIntern(hash: hash, id: id)
         return id
     }
@@ -218,13 +364,27 @@ public struct FileTree: Sendable {
         var slot = Int(truncatingIfNeeded: hash) & mask
         var probes = 0
         while internSlotIndex[slot] != -1, probes < internSlotHash.count {
-            if internSlotHash[slot] == hash, nameTable[Int(internSlotIndex[slot])].utf8.elementsEqual(bytes) {
-                return internSlotIndex[slot]
+            let id = internSlotIndex[slot]
+            if internSlotHash[slot] == hash, nameBytesEqual(id, bytes) {
+                return id
             }
             slot = (slot + 1) & mask
             probes += 1
         }
         return nil
+    }
+
+    private func nameBytesEqual(_ id: Int32, _ bytes: UnsafeBufferPointer<UInt8>) -> Bool {
+        let index = Int(id)
+        let length = Int(nameLength[index])
+        guard length == bytes.count else { return false }
+        let start = Int(nameOffset[index])
+        return nameBlob.withUnsafeBufferPointer { blob in
+            guard let base = blob.baseAddress, let other = bytes.baseAddress else {
+                return length == 0
+            }
+            return memcmp(base.advanced(by: start), other, length) == 0
+        }
     }
 
     private mutating func insertIntern(hash: UInt64, id: Int32) {
@@ -239,13 +399,23 @@ public struct FileTree: Sendable {
     }
 
     private mutating func growIntern(to count: Int) {
-        let size = max(count, 1024)
+        // Power of two (the probe masks with size - 1), and at least twice
+        // the names already present: a tree decoded from a snapshot starts
+        // with an empty table and hundreds of thousands of names, and a
+        // table smaller than that would never find a free slot.
+        var size = max(count, 1024)
+        while size < (nameOffset.count + 1) * 2 { size *= 2 }
         internSlotHash = Array(repeating: 0, count: size)
         internSlotIndex = Array(repeating: -1, count: size)
         internCount = 0
-        for (offset, name) in nameTable.enumerated() {
-            let hash = name.utf8.withContiguousStorageIfAvailable { fnv1a($0) } ?? fnv1a(Array(name.utf8))
-            insertIntern(hash: hash, id: Int32(offset))
+        nameBlob.withUnsafeBufferPointer { blob in
+            guard let base = blob.baseAddress else { return }
+            for id in 0..<nameOffset.count {
+                let start = Int(nameOffset[id])
+                let length = Int(nameLength[id])
+                let slice = UnsafeBufferPointer(start: base.advanced(by: start), count: length)
+                insertIntern(hash: fnv1a(slice), id: Int32(id))
+            }
         }
     }
 
@@ -263,15 +433,31 @@ public struct FileTree: Sendable {
     }
 
     private mutating func internName(_ name: String) -> Int32 {
-        if let existing = nameLookup[name] { return existing }
-        let idx = Int32(nameTable.count)
-        nameTable.append(name)
-        nameLookup[name] = idx
-        return idx
+        if let id = name.utf8.withContiguousStorageIfAvailable({ internUTF8($0) }) {
+            return id
+        }
+        let bytes = Array(name.utf8)
+        return bytes.withUnsafeBufferPointer { internUTF8($0) }
+    }
+
+    public func nameString(at nameID: Int32) -> String {
+        let index = Int(nameID)
+        let start = Int(nameOffset[index])
+        let length = Int(nameLength[index])
+        return String(decoding: nameBlob[start..<(start + length)], as: UTF8.self)
     }
 
     public func name(of id: Int32) -> String {
-        nameTable[Int(nameIndex[Int(id)])]
+        nameString(at: nameIndex[Int(id)])
+    }
+
+    /// The name's raw UTF-8, without building a String — for tests that
+    /// run over every distinct name (FileQuery).
+    public func withNameUTF8<R>(at nameID: Int32, _ body: (UnsafeBufferPointer<UInt8>) throws -> R) rethrows -> R {
+        let index = Int(nameID)
+        let start = Int(nameOffset[index])
+        let length = Int(nameLength[index])
+        return try nameBlob.withUnsafeBufferPointer { try body(UnsafeBufferPointer(rebasing: $0[start..<(start + length)])) }
     }
 
     public func flags(of id: Int32) -> UInt8 {
@@ -325,27 +511,348 @@ public struct FileTree: Sendable {
     public func rollUpSizes(basis: SizeBasis = .allocated) -> [Int64] {
         var totals = [Int64](repeating: 0, count: count)
         guard count > 0 else { return totals }
+        let suppressed = suppressedHardLinkNames()
+        let cloneCharge = basis == .allocated ? cloneCharges() : nil
 
-        func sum(_ id: Int32) -> Int64 {
-            var total = ownSize(id, basis: basis)
-            var child = firstChild[Int(id)]
+        // Iterative post-order: same totals as the old recursive walk, but
+        // no per-node call frame (deep trees and multi-million node scans).
+        var stack: [(id: Int32, expanded: Bool)] = [(0, false)]
+        stack.reserveCapacity(64)
+        while let frame = stack.popLast() {
+            if !frame.expanded {
+                stack.append((frame.id, true))
+                var child = firstChild[Int(frame.id)]
+                while child != -1 {
+                    stack.append((child, false))
+                    child = nextSibling[Int(child)]
+                }
+                continue
+            }
+            var total = ownSize(frame.id, basis: basis, suppressed: suppressed, cloneCharge: cloneCharge)
+            var child = firstChild[Int(frame.id)]
             while child != -1 {
-                total += sum(child)
+                total += totals[Int(child)]
                 child = nextSibling[Int(child)]
             }
-            totals[Int(id)] = total
-            return total
+            totals[Int(frame.id)] = total
         }
-        _ = sum(0)
         return totals
     }
 
-    private func ownSize(_ id: Int32, basis: SizeBasis) -> Int64 {
+
+    /// One post-order walk filling logical and allocated totals. Prefer this
+    /// over two `rollUpSizes` calls after a scan — same arithmetic, half the
+    /// pointer chasing.
+    public func rollUpBoth() -> (logical: [Int64], allocated: [Int64]) {
+        var logical = [Int64](repeating: 0, count: count)
+        var allocated = [Int64](repeating: 0, count: count)
+        guard count > 0 else { return (logical, allocated) }
+        let suppressed = suppressedHardLinkNames()
+        let cloneCharge = cloneCharges()
+
+        var stack: [(id: Int32, expanded: Bool)] = [(0, false)]
+        stack.reserveCapacity(64)
+        while let frame = stack.popLast() {
+            if !frame.expanded {
+                stack.append((frame.id, true))
+                var child = firstChild[Int(frame.id)]
+                while child != -1 {
+                    stack.append((child, false))
+                    child = nextSibling[Int(child)]
+                }
+                continue
+            }
+            let index = Int(frame.id)
+            var logicalTotal = ownSize(frame.id, basis: .logical, suppressed: suppressed)
+            var allocatedTotal = ownSize(frame.id, basis: .allocated, suppressed: suppressed, cloneCharge: cloneCharge)
+            var child = firstChild[index]
+            while child != -1 {
+                let childIndex = Int(child)
+                logicalTotal += logical[childIndex]
+                allocatedTotal += allocated[childIndex]
+                child = nextSibling[childIndex]
+            }
+            logical[index] = logicalTotal
+            allocated[index] = allocatedTotal
+        }
+        return (logical, allocated)
+    }
+
+    /// Files and folders under each node (inclusive for files on file nodes;
+    /// folder count excludes the node itself). One post-order walk — call
+    /// once after scan, never from the Inspector on every selection.
+    public func rollUpDescendantCounts() -> (files: [Int], folders: [Int]) {
+        var files = [Int](repeating: 0, count: count)
+        var folders = [Int](repeating: 0, count: count)
+        guard count > 0 else { return (files, folders) }
+
+        var stack: [(id: Int32, expanded: Bool)] = [(0, false)]
+        stack.reserveCapacity(64)
+        while let frame = stack.popLast() {
+            if !frame.expanded {
+                stack.append((frame.id, true))
+                var child = firstChild[Int(frame.id)]
+                while child != -1 {
+                    stack.append((child, false))
+                    child = nextSibling[Int(child)]
+                }
+                continue
+            }
+            let index = Int(frame.id)
+            var fileTotal = isDirectory[index] ? 0 : 1
+            var folderTotal = 0
+            var child = firstChild[index]
+            while child != -1 {
+                let childIndex = Int(child)
+                fileTotal += files[childIndex]
+                folderTotal += folders[childIndex]
+                if isDirectory[childIndex] { folderTotal += 1 }
+                child = nextSibling[childIndex]
+            }
+            files[index] = fileTotal
+            folders[index] = folderTotal
+        }
+        return (files, folders)
+    }
+
+    /// For every node: true when the node itself (if a folder) or any folder
+    /// above it has a name satisfying `matches`; `rootMatches` stands in for
+    /// the scan root's own path components. Files inherit their parent's
+    /// value — callers test a file's own name if it matters.
+    ///
+    /// Replaces "build the full path, then substring-search it" for any test
+    /// of the form `path.contains("/<prefix>")`: a needle starting with "/"
+    /// can only match at the start of a component, so it is exactly "some
+    /// component starts with <prefix>". Nodes are appended after their parent
+    /// (`parent[i] < i`), so one forward pass settles every node, testing
+    /// folder names only (~10% of a real tree) and building no paths.
+    public func folderChainFlags(rootMatches: Bool, _ matches: (String) -> Bool) -> [Bool] {
+        var flags = [Bool](repeating: false, count: count)
+        guard count > 0 else { return flags }
+        flags[0] = rootMatches
+        for index in 1..<count {
+            let parentID = Int(parent[index])
+            let inherited: Bool
+            if parentID >= 0 && parentID < index {
+                inherited = flags[parentID]
+            } else {
+                // Not produced by the scanner or the snapshot codec; fall back
+                // to walking the chain rather than trusting a later index.
+                inherited = rootMatches || ancestorIDs(of: Int32(index)).dropLast().dropFirst()
+                    .contains { isDirectory[Int($0)] && matches(name(of: $0)) }
+            }
+            flags[index] = inherited || (isDirectory[index] && matches(name(of: Int32(index))))
+        }
+        return flags
+    }
+
+    /// What hard-link de-duplication removed from the totals, so a caller can
+    /// explain the difference instead of silently reporting less than the sum
+    /// of the parts.
+    public struct HardLinkCorrection: Sendable, Equatable {
+        /// Inodes reachable under more than one name inside this tree.
+        public var inodeCount: Int
+        /// Names beyond the first for those inodes — the ones charged 0.
+        public var duplicateNameCount: Int
+        public var logicalBytes: Int64
+        public var allocatedBytes: Int64
+
+        public static let none = HardLinkCorrection(
+            inodeCount: 0, duplicateNameCount: 0, logicalBytes: 0, allocatedBytes: 0
+        )
+        public var isEmpty: Bool { duplicateNameCount == 0 }
+    }
+
+    /// Bytes that would have been counted more than once without the
+    /// de-duplication the rollups now apply.
+    public func hardLinkCorrection() -> HardLinkCorrection {
+        guard let groups = hardLinkGroups() else { return .none }
+        var correction = HardLinkCorrection.none
+        for (_, ids) in groups {
+            correction.inodeCount += 1
+            let keeper = electedName(among: ids)
+            for id in ids where id != keeper {
+                correction.duplicateNameCount += 1
+                correction.logicalBytes += logicalSize[Int(id)]
+                correction.allocatedBytes += allocatedSize[Int(id)]
+            }
+        }
+        return correction
+    }
+
+    /// Multiply-linked inodes that have more than one name *inside this tree*.
+    /// A file with `st_nlink == 2` whose other name lives outside the scan
+    /// root is not double-counted here, so it is deliberately not a group.
+    private func hardLinkGroups() -> [UInt64: [Int32]]? {
+        var flagged: [Int32] = []
+        for index in 0..<count
+        where flags[index] & NodeFlags.hardLink != 0 && fileID[index] != 0 && !isDirectory[index] {
+            flagged.append(Int32(index))
+        }
+        guard flagged.count > 1 else { return nil }
+        var byInode: [UInt64: [Int32]] = [:]
+        byInode.reserveCapacity(flagged.count)
+        for id in flagged { byInode[fileID[Int(id)], default: []].append(id) }
+        byInode = byInode.filter { $0.value.count > 1 }
+        return byInode.isEmpty ? nil : byInode
+    }
+
+    /// The one name that carries the bytes. Elected by lowest path, NOT by
+    /// node id: ids and sibling order both fall out of how the scan's worker
+    /// threads interleaved, so neither is stable between two scans of the same
+    /// disk — and an unstable choice would make snapshot diffs show a file
+    /// moving from one folder to another when nothing changed.
+    private func electedName(among ids: [Int32]) -> Int32 {
+        var keeper = ids[0]
+        var keeperKey = pathKey(of: keeper)
+        for id in ids.dropFirst() {
+            let key = pathKey(of: id)
+            if key < keeperKey {
+                keeper = id
+                keeperKey = key
+            }
+        }
+        return keeper
+    }
+
+    /// Root-relative "a/b/c". Built only for hard-linked nodes (a fraction of
+    /// a percent of a real tree), never on the rollup hot path.
+    private func pathKey(of id: Int32) -> String {
+        var parts: [String] = []
+        var current = id
+        while current > 0 {
+            parts.append(name(of: current))
+            current = parent[Int(current)]
+        }
+        return parts.reversed().joined(separator: "/")
+    }
+
+    /// `true` at every node whose bytes another name already accounts for.
+    /// `nil` — the overwhelmingly common case — means nothing to suppress and
+    /// costs one linear pass over the flags byte array, no allocation.
+    private func suppressedHardLinkNames() -> [Bool]? {
+        guard let groups = hardLinkGroups() else { return nil }
+        var mask = [Bool](repeating: false, count: count)
+        for (_, ids) in groups {
+            let keeper = electedName(among: ids)
+            for id in ids where id != keeper { mask[Int(id)] = true }
+        }
+        return mask
+    }
+
+    private func ownSize(_ id: Int32, basis: SizeBasis, suppressed: [Bool]? = nil,
+                         cloneCharge: [Int64]? = nil) -> Int64 {
         let index = Int(id)
+        // A second name for an inode already charged elsewhere in this tree
+        // contributes nothing: the blocks are the same blocks. Deleting this
+        // name frees nothing until the last name goes (see CleanupQueue).
+        if let suppressed, suppressed[index] { return 0 }
+        // A clone whose family's shared blocks another member carries: only
+        // its private bytes are its own (TASK-077). Allocated basis only.
+        if let cloneCharge, cloneCharge[index] >= 0 { return cloneCharge[index] }
         let selected = basis == .logical ? logicalSize[index] : allocatedSize[index]
         if !isDirectory[index] { return selected }
         let evictedWithoutChildren = flags[index] & NodeFlags.notDownloaded != 0 && firstChild[index] == -1
         return evictedWithoutChildren ? selected : 0
+    }
+
+    // MARK: - APFS clones (TASK-077)
+
+    /// What counting each clone family once removed from the allocated
+    /// totals, and what stays counted in full because the other copies are
+    /// unknown — so Overview can explain both.
+    public struct SharingCorrection: Sendable, Equatable {
+        /// Families with more than one member (inode) inside this tree.
+        public var familyCount: Int
+        /// Members charged only their private bytes.
+        public var cloneCount: Int
+        /// Allocated bytes no longer counted more than once.
+        public var bytes: Int64
+        /// Files sharing blocks with copies the volume no longer names (an
+        /// edited clone): counted in full, since who shares them is unknown.
+        public var partialCount: Int
+        public var partialSharedBytes: Int64
+
+        public static let none = SharingCorrection(familyCount: 0, cloneCount: 0, bytes: 0,
+                                                   partialCount: 0, partialSharedBytes: 0)
+        public var isEmpty: Bool { cloneCount == 0 && partialCount == 0 }
+    }
+
+    public func sharingCorrection() -> SharingCorrection {
+        cloneGrouping(charges: false).correction
+    }
+
+    /// For a file in a clone family: the bytes it shares and how many other
+    /// files on the volume share them (refcount − 1). Nil when it shares
+    /// nothing known.
+    public func sharingInfo(of id: Int32) -> (sharedBytes: Int64, otherCopies: Int)? {
+        guard Int(id) < count, flags[Int(id)] & NodeFlags.apfsClone != 0, let row = sharing.row(of: id) else { return nil }
+        let shared = allocatedSize[Int(id)] - max(0, sharing.privateBytes[row])
+        guard shared > 0 else { return nil }
+        return (shared, max(0, Int(sharing.refcount[row]) - 1))
+    }
+
+    /// Clone families present in this tree, in one sort: rows with
+    /// refcount > 1 ordered by (clone id, inode). Consecutive rows with the
+    /// same inode are one member (hard-linked names); the first member of
+    /// each family — lowest inode — carries the family's blocks. Lowest
+    /// inode, because it is stable between scans (node ids are not) and
+    /// free to compare, where electing by path, as hard links must since
+    /// their names share one inode, would build ~900k paths on a real home.
+    /// Dictionaries keyed by clone id and inode took 0.8 s for 884k rows;
+    /// the sort takes a fraction of that.
+    private func cloneGrouping(charges wantCharges: Bool) -> (charges: [Int64]?, correction: SharingCorrection) {
+        guard !sharing.isEmpty else { return (nil, .none) }
+        var correction = SharingCorrection.none
+        var rows: [(clone: UInt64, inode: UInt64, row: Int32)] = []
+        rows.reserveCapacity(sharing.count)
+        for row in 0..<sharing.count where sharing.refcount[row] > 1 {
+            let index = Int(sharing.node[row])
+            let inode = fileID[index] != 0 ? fileID[index] : UInt64(UInt32(bitPattern: sharing.node[row])) | (1 << 63)
+            rows.append((sharing.cloneID[row], inode, Int32(row)))
+        }
+        rows.sort { $0.clone != $1.clone ? $0.clone < $1.clone : ($0.inode != $1.inode ? $0.inode < $1.inode : $0.row < $1.row) }
+        var charges: [Int64]? = wantCharges ? [Int64](repeating: -1, count: count) : nil
+        var start = 0
+        while start < rows.count {
+            var end = start
+            while end < rows.count && rows[end].clone == rows[start].clone { end += 1 }
+            let electedInode = rows[start].inode
+            var members = 0
+            var previousInode: UInt64?
+            for position in start..<end {
+                let entry = rows[position]
+                let isNewMember = entry.inode != previousInode
+                if isNewMember { members += 1; previousInode = entry.inode }
+                guard entry.inode != electedInode else { continue }
+                let row = Int(entry.row)
+                let index = Int(sharing.node[row])
+                // A pure clone shares every block (measured: none of 884k
+                // members on a real home had private bytes); use what the
+                // volume reported where it did.
+                let privateBytes = min(max(0, sharing.privateBytes[row]), allocatedSize[index])
+                charges?[index] = privateBytes
+                if isNewMember {
+                    correction.cloneCount += 1
+                    correction.bytes += allocatedSize[index] - privateBytes
+                }
+            }
+            if members > 1 { correction.familyCount += 1 }
+            start = end
+        }
+        for row in 0..<sharing.count where sharing.refcount[row] <= 1 {
+            let shared = allocatedSize[Int(sharing.node[row])] - max(0, sharing.privateBytes[row])
+            guard shared > 0 else { continue }
+            correction.partialCount += 1
+            correction.partialSharedBytes += shared
+        }
+        return (correction.cloneCount > 0 ? charges : nil, correction)
+    }
+
+    /// Allocated charge per node for non-elected family members (their
+    /// private bytes), -1 elsewhere. Nil when nothing is charged differently.
+    private func cloneCharges() -> [Int64]? {
+        cloneGrouping(charges: true).charges
     }
 
     /// Replaces packed storage after a snapshot load and rebuilds the
@@ -360,21 +867,34 @@ public struct FileTree: Sendable {
         logicalSize: [Int64],
         allocatedSize: [Int64],
         modifiedDay: [Int32],
+        createdDay: [Int32],
         isDirectory: [Bool],
-        flags: [UInt8]
+        flags: [UInt8],
+        fileID: [UInt64] = []
     ) -> Bool {
         let n = nameIndex.count
         guard parent.count == n, firstChild.count == n, nextSibling.count == n,
               logicalSize.count == n, allocatedSize.count == n, modifiedDay.count == n,
-              isDirectory.count == n, flags.count == n else { return false }
+              createdDay.count == n, isDirectory.count == n, flags.count == n,
+              fileID.isEmpty || fileID.count == n else { return false }
         for index in nameIndex where index < 0 || index >= nameTable.count { return false }
-        self.nameTable = nameTable
-        var lookup: [String: Int32] = [:]
-        lookup.reserveCapacity(nameTable.count)
-        for (offset, name) in nameTable.enumerated() {
-            if lookup[name] == nil { lookup[name] = Int32(offset) }
+        // Snapshot still ships length-prefixed Strings; rebuild the packed blob once.
+        var blob: [UInt8] = []
+        var offsets: [Int32] = []
+        var lengths: [UInt16] = []
+        offsets.reserveCapacity(nameTable.count)
+        lengths.reserveCapacity(nameTable.count)
+        blob.reserveCapacity(nameTable.reduce(0) { $0 + $1.utf8.count })
+        for name in nameTable {
+            let utf8 = Array(name.utf8)
+            precondition(utf8.count <= Int(UInt16.max), "file name longer than UInt16.max")
+            offsets.append(Int32(blob.count))
+            lengths.append(UInt16(utf8.count))
+            blob.append(contentsOf: utf8)
         }
-        nameLookup = lookup
+        nameBlob = blob
+        nameOffset = offsets
+        nameLength = lengths
         internSlotHash = []
         internSlotIndex = []
         internCount = 0
@@ -385,8 +905,12 @@ public struct FileTree: Sendable {
         self.logicalSize = logicalSize
         self.allocatedSize = allocatedSize
         self.modifiedDay = modifiedDay
+        self.createdDay = createdDay
         self.isDirectory = isDirectory
         self.flags = flags
+        // A v1/v2 snapshot carries no identity; 0 reads as "unknown" and the
+        // hard-link pass simply finds nothing to correct.
+        self.fileID = fileID.isEmpty ? [UInt64](repeating: 0, count: n) : fileID
         return true
     }
 
@@ -400,5 +924,63 @@ public struct FileTree: Sendable {
             child = nextSibling[Int(child)]
         }
         return result
+    }
+}
+
+/// Sparse, sorted-by-node APFS sharing facts (TASK-077). Rows exist only for
+/// files that share blocks: clone-family members (`refcount > 1`) and files
+/// whose private bytes are fewer than their allocated bytes (an edited clone
+/// still sharing blocks with copies the volume no longer names).
+public struct SharingTable: Sendable, Equatable {
+    public internal(set) var node: [Int32] = []
+    public internal(set) var cloneID: [UInt64] = []
+    public internal(set) var privateBytes: [Int64] = []
+    public internal(set) var refcount: [UInt32] = []
+
+    public init() {}
+
+    public init?(node: [Int32], cloneID: [UInt64], privateBytes: [Int64], refcount: [UInt32]) {
+        guard cloneID.count == node.count, privateBytes.count == node.count, refcount.count == node.count else { return nil }
+        self.node = node
+        self.cloneID = cloneID
+        self.privateBytes = privateBytes
+        self.refcount = refcount
+    }
+
+    public var count: Int { node.count }
+    public var isEmpty: Bool { node.isEmpty }
+
+    /// Row index for `id`, by binary search.
+    public func row(of id: Int32) -> Int? {
+        var low = 0, high = node.count - 1
+        while low <= high {
+            let mid = (low + high) / 2
+            if node[mid] == id { return mid }
+            if node[mid] < id { low = mid + 1 } else { high = mid - 1 }
+        }
+        return nil
+    }
+
+    func isWellFormed(nodeCount: Int) -> Bool {
+        guard cloneID.count == node.count, privateBytes.count == node.count, refcount.count == node.count else { return false }
+        var previous: Int32 = -1
+        for id in node {
+            guard id > previous, Int(id) < nodeCount else { return false }
+            previous = id
+        }
+        return true
+    }
+
+    var reservedBytes: Int {
+        node.capacity * MemoryLayout<Int32>.stride + cloneID.capacity * MemoryLayout<UInt64>.stride
+            + privateBytes.capacity * MemoryLayout<Int64>.stride + refcount.capacity * MemoryLayout<UInt32>.stride
+    }
+
+    /// Fresh buffers sized to the row count (`Array(x)` would share x's).
+    mutating func compact() {
+        node = node.withUnsafeBufferPointer { Array($0) }
+        cloneID = cloneID.withUnsafeBufferPointer { Array($0) }
+        privateBytes = privateBytes.withUnsafeBufferPointer { Array($0) }
+        refcount = refcount.withUnsafeBufferPointer { Array($0) }
     }
 }

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 180" role="img" aria-labelledby="title desc">
+<title id="title">freedisk.space — Free corner</title><desc id="desc">The missing tile is the point of the map.</desc>
+<rect x="43" y="34" width="105" height="105" rx="23" fill="#252B31"/><path d="M61 52h34v34H61z" fill="#F8F7F4"/><path d="M101 52h29v34h-29z" fill="#7966DA"/><path d="M61 92h34v29H61z" fill="#9CA9B5"/><path d="M101 92h29v29h-29z" fill="#F8F7F4"/><path d="M127 88h22v31c0 12-7 20-19 20h-31v-19h21c5 0 7-2 7-7z" fill="#F8F7F4"/>
+<text x="175" y="116" fill="#252B31" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif" font-size="66" font-weight="730" letter-spacing="-3">freedisk</text>
+<text x="424" y="116" fill="#7966DA" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif" font-size="66" font-weight="730" letter-spacing="-3">.space</text>
+</svg>

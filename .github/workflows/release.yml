@@ -1,0 +1,56 @@
+name: Release
+
+# DISABLED until the project has an Apple Developer account (TASK-083).
+# Manual only; it fails fast without the secrets below. When they exist:
+#   DEVELOPER_ID_P12 / DEVELOPER_ID_P12_PASSWORD  – signing certificate
+#   DEVELOPER_ID                                  – "Developer ID Application: …"
+#   NOTARY_APPLE_ID / NOTARY_TEAM_ID / NOTARY_PASSWORD – notarytool credentials
+#   SPARKLE_PRIVATE_KEY                           – EdDSA key for sign_update
+#   DISKMAP_SPARKLE_PUBLIC_KEY / DISKMAP_FEED_URL – baked into Info.plist
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - name: Require secrets
+        env:
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+        run: |
+          if [ -z "$DEVELOPER_ID" ]; then
+            echo "Release signing is not set up (no Apple Developer account yet)."; exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+      - name: Import certificate
+        env:
+          P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          echo "$P12" | base64 --decode > cert.p12
+          security create-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security list-keychains -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+      - name: Build
+        env:
+          DISKMAP_FEED_URL: ${{ secrets.DISKMAP_FEED_URL }}
+          DISKMAP_SPARKLE_PUBLIC_KEY: ${{ secrets.DISKMAP_SPARKLE_PUBLIC_KEY }}
+        run: scripts/build-adhoc.sh
+      - name: Sign and notarize
+        env:
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+          NOTARY_PROFILE: diskmap
+        run: |
+          xcrun notarytool store-credentials diskmap --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
+            --team-id "${{ secrets.NOTARY_TEAM_ID }}" --password "${{ secrets.NOTARY_PASSWORD }}"
+          scripts/notarize.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg
+          path: dist/*.dmg

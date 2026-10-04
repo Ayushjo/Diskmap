@@ -17,12 +17,25 @@ public struct SnapshotChange: Sendable, Equatable {
     public var before: Int64
     public var after: Int64
 
+    public init(path: String, before: Int64, after: Int64) {
+        self.path = path
+        self.before = before
+        self.after = after
+    }
+
     public var delta: Int64 { after - before }
 }
 
 enum SnapshotCodec {
     static let magic = Data("DMAP".utf8)
-    static let version: UInt32 = 1
+    /// v3 adds the per-node fileID array (TASK-036). v1 and v2 stay
+    /// readable; their nodes decode with fileID 0 ("unknown"), which the
+    /// hard-link correction treats as "nothing to correct".
+    /// v4 (TASK-077) appends the APFS sharing table after the fileIDs: one
+    /// byte for the sharing mode read (0 off, 1 refcount, 2 full), a row count, then node ids, clone ids,
+    /// private bytes and refcounts. v1–v3 decode with an empty table and
+    /// `hasSharingInfo == false` ("not known", not "no clones").
+    static let version: UInt32 = 4
 
     static func encode(_ snapshot: DiskSnapshot) -> Data {
         var writer = Writer()
@@ -32,7 +45,7 @@ enum SnapshotCodec {
         writer.string(snapshot.rootPath)
         let tree = snapshot.tree
         writer.i32(Int32(tree.count))
-        writer.i32(Int32(tree.nameTable.count))
+        writer.i32(Int32(tree.uniqueNameCount))
         writer.i32s(tree.nameIndex)
         writer.i32s(tree.parent)
         writer.i32s(tree.firstChild)
@@ -40,8 +53,17 @@ enum SnapshotCodec {
         writer.i64s(tree.logicalSize)
         writer.i64s(tree.allocatedSize)
         writer.i32s(tree.modifiedDay)
+        writer.i32s(tree.createdDay)
         writer.flags(tree.isDirectory.map { $0 ? UInt8(1) : 0 })
         writer.flags(tree.flags)
+        writer.u64s(tree.fileID)
+        writer.flags([tree.sharingMode == .full ? 2 : tree.sharingMode == .refcount ? 1 : 0])
+        let sharing = tree.sharing
+        writer.i32(Int32(sharing.count))
+        writer.i32s(sharing.node)
+        writer.u64s(sharing.cloneID)
+        writer.i64s(sharing.privateBytes)
+        writer.i32s(sharing.refcount.map { Int32(bitPattern: $0) })
         for name in tree.nameTable { writer.string(name) }
         return writer.data
     }
@@ -50,7 +72,8 @@ enum SnapshotCodec {
         var reader = Reader(data)
         let magic = try reader.bytes(4)
         guard magic == self.magic else { throw SnapshotError.badMagic }
-        guard try reader.u32() == version else { throw SnapshotError.badVersion }
+        let fileVersion = try reader.u32()
+        guard fileVersion >= 1, fileVersion <= version else { throw SnapshotError.badVersion }
         let capturedAt = Date(timeIntervalSince1970: TimeInterval(try reader.i64()))
         let rootPath = try reader.string()
         let count = Int(try reader.i32())
@@ -65,8 +88,38 @@ enum SnapshotCodec {
         let logicalSize = try reader.i64s(count)
         let allocatedSize = try reader.i64s(count)
         let modifiedDay = try reader.i32s(count)
+        let createdDay: [Int32]
+        if fileVersion >= 2 {
+            createdDay = try reader.i32s(count)
+        } else {
+            createdDay = Array(repeating: 0, count: count)
+        }
         let isDirectory = try reader.flags(count).map { $0 != 0 }
         let flags = try reader.flags(count)
+        let fileID: [UInt64]
+        if fileVersion >= 3 {
+            fileID = try reader.u64s(count)
+        } else {
+            fileID = []   // replacePacked fills zeros
+        }
+        var sharing = SharingTable()
+        var sharingMode = SharingMode.off
+        if fileVersion >= 4 {
+            switch try reader.flags(1).first {
+            case 1: sharingMode = .refcount
+            case 2: sharingMode = .full
+            default: sharingMode = .off
+            }
+            let rows = Int(try reader.i32())
+            guard rows >= 0, rows <= count else { throw SnapshotError.corrupt }
+            guard let table = SharingTable(
+                node: try reader.i32s(rows),
+                cloneID: try reader.u64s(rows),
+                privateBytes: try reader.i64s(rows),
+                refcount: try reader.i32s(rows).map { UInt32(bitPattern: $0) }
+            ) else { throw SnapshotError.corrupt }
+            sharing = table
+        }
         var nameTable: [String] = []
         nameTable.reserveCapacity(nameCount)
         for _ in 0..<nameCount { nameTable.append(try reader.string()) }
@@ -80,9 +133,12 @@ enum SnapshotCodec {
             logicalSize: logicalSize,
             allocatedSize: allocatedSize,
             modifiedDay: modifiedDay,
+            createdDay: createdDay,
             isDirectory: isDirectory,
-            flags: flags
+            flags: flags,
+            fileID: fileID
         ) else { throw SnapshotError.corrupt }
+        guard tree.replaceSharing(sharing, mode: sharingMode) else { throw SnapshotError.corrupt }
         return DiskSnapshot(rootPath: rootPath, capturedAt: capturedAt, tree: tree)
     }
 }
@@ -90,6 +146,11 @@ enum SnapshotCodec {
 public struct SnapshotHeader: Sendable, Equatable {
     public var rootPath: String
     public var capturedAt: Date
+
+    public init(rootPath: String, capturedAt: Date) {
+        self.rootPath = rootPath
+        self.capturedAt = capturedAt
+    }
 }
 
 public enum SnapshotStore {
@@ -120,7 +181,8 @@ public enum SnapshotStore {
         var reader = Reader(data)
         let magic = try reader.bytes(4)
         guard magic == SnapshotCodec.magic else { throw SnapshotError.badMagic }
-        guard try reader.u32() == SnapshotCodec.version else { throw SnapshotError.badVersion }
+        let hv = try reader.u32()
+        guard hv >= 1, hv <= SnapshotCodec.version else { throw SnapshotError.badVersion }
         let capturedAt = Date(timeIntervalSince1970: TimeInterval(try reader.i64()))
         let rootPath = try reader.string()
         return SnapshotHeader(rootPath: rootPath, capturedAt: capturedAt)
@@ -135,6 +197,50 @@ public enum SnapshotStore {
                 return (url, header)
             }
             .sorted { $0.1.capturedAt < $1.1.capturedAt }
+    }
+
+
+    public static func metaURL(for snapshotURL: URL) -> URL {
+        snapshotURL.deletingPathExtension().appendingPathExtension("meta.json")
+    }
+
+    public static func loadMeta(for snapshotURL: URL) -> SnapshotMeta {
+        let url = metaURL(for: snapshotURL)
+        guard let data = try? Data(contentsOf: url),
+              let meta = try? JSONDecoder().decode(SnapshotMeta.self, from: data) else {
+            if let header = try? readHeader(from: snapshotURL) {
+                return SnapshotMeta(name: SnapshotMeta.defaultName(for: header.capturedAt))
+            }
+            return SnapshotMeta(name: "Snapshot")
+        }
+        return meta
+    }
+
+    public static func saveMeta(_ meta: SnapshotMeta, for snapshotURL: URL) throws {
+        let data = try JSONEncoder().encode(meta)
+        try data.write(to: metaURL(for: snapshotURL), options: .atomic)
+    }
+
+    public static func save(
+        _ snapshot: DiskSnapshot,
+        meta: SnapshotMeta,
+        in directory: URL
+    ) throws -> URL {
+        let url = try save(snapshot, in: directory)
+        try saveMeta(meta, for: url)
+        return url
+    }
+
+    public static func records(in directory: URL, rootPath: String) -> [SnapshotRecord] {
+        summaries(in: directory, rootPath: rootPath).map { pair in
+            SnapshotRecord(
+                url: pair.url,
+                header: pair.header,
+                meta: loadMeta(for: pair.url),
+                isCurrent: false
+            )
+        }
+        .sorted { $0.header.capturedAt > $1.header.capturedAt }
     }
 
     public static func list(in directory: URL, rootPath: String) -> [URL] {
@@ -165,7 +271,8 @@ public enum SnapshotDiff {
         var sizes: [String: Int64] = [:]
         guard snapshot.tree.count == totals.count else { return sizes }
         for id in 0..<Int32(snapshot.tree.count) where snapshot.tree.isDirectory[Int(id)] {
-            sizes[snapshot.tree.path(of: id, root: root).standardizedFileURL.path] = totals[Int(id)]
+            let absolute = snapshot.tree.path(of: id, root: root).standardizedFileURL.path
+            sizes[CanonicalPath.displayPath(absolutePath: absolute)] = totals[Int(id)]
         }
         return sizes
     }
@@ -186,6 +293,8 @@ private struct Writer {
     mutating func i64(_ value: Int64) { append(value.littleEndian) }
     mutating func i32s(_ values: [Int32]) { values.forEach { i32($0) } }
     mutating func i64s(_ values: [Int64]) { values.forEach { i64($0) } }
+    mutating func u64(_ value: UInt64) { append(value.littleEndian) }
+    mutating func u64s(_ values: [UInt64]) { values.forEach { u64($0) } }
     mutating func flags(_ values: [UInt8]) { data.append(contentsOf: values) }
     mutating func string(_ value: String) {
         let bytes = Data(value.utf8)
@@ -222,6 +331,12 @@ private struct Reader {
 
     mutating func i64s(_ count: Int) throws -> [Int64] {
         try (0..<count).map { _ in try i64() }
+    }
+
+    mutating func u64() throws -> UInt64 { UInt64(littleEndian: try read()) }
+
+    mutating func u64s(_ count: Int) throws -> [UInt64] {
+        try (0..<count).map { _ in try u64() }
     }
 
     mutating func flags(_ count: Int) throws -> [UInt8] {

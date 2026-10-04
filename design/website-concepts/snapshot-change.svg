@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 440" role="img" aria-labelledby="title desc">
+  <title id="title">See what changed</title>
+  <desc id="desc">Two storage maps side by side show how a folder grew between scans.</desc>
+  <defs><clipPath id="a"><rect x="37" y="107" width="286" height="259" rx="13"/></clipPath><clipPath id="b"><rect x="377" y="107" width="286" height="259" rx="13"/></clipPath></defs>
+  <rect x="8" y="8" width="684" height="424" rx="27" fill="#FFFFFF" stroke="#E2E5E9"/>
+  <g font-family="-apple-system,Arial,sans-serif"><text x="37" y="59" fill="#252B31" font-size="22" font-weight="700">What changed since last time?</text><text x="37" y="83" fill="#75808B" font-size="14">Compare two scans. Follow the growth.</text><text x="37" y="396" fill="#78818D" font-size="13">EARLIER</text><text x="377" y="396" fill="#78818D" font-size="13">NOW</text></g>
+  <g clip-path="url(#a)"><rect x="37" y="107" width="286" height="259" fill="#E9EAF0"/><rect x="37" y="107" width="161" height="151" fill="#AA99E9"/><rect x="203" y="107" width="120" height="94" fill="#D8A3B4"/><rect x="203" y="206" width="120" height="52" fill="#D6D8DF"/><rect x="37" y="263" width="105" height="103" fill="#A5BBD2"/><rect x="147" y="263" width="176" height="103" fill="#B8CCBF"/><path d="M200 107v259M37 260h286M145 260v106M200 203h123" stroke="#FFF" stroke-width="5"/></g>
+  <g clip-path="url(#b)"><rect x="377" y="107" width="286" height="259" fill="#E9EAF0"/><rect x="377" y="107" width="161" height="151" fill="#AA99E9"/><rect x="543" y="107" width="120" height="151" fill="#C97891"/><rect x="377" y="263" width="105" height="103" fill="#A5BBD2"/><rect x="487" y="263" width="176" height="103" fill="#B8CCBF"/><path d="M540 107v259M377 260h286M485 260v106" stroke="#FFF" stroke-width="5"/></g>
+  <rect x="542" y="108" width="120" height="149" rx="5" fill="none" stroke="#A34765" stroke-width="3"/>
+  <rect x="563" y="188" width="84" height="38" rx="19" fill="#FFFFFF"/><text x="605" y="213" text-anchor="middle" fill="#A34765" font-family="-apple-system,Arial,sans-serif" font-size="17" font-weight="700">+18 GB</text>
+  <path d="M337 226h26m-10-9 10 9-10 9" fill="none" stroke="#7966DA" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

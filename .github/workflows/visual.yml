@@ -1,0 +1,37 @@
+name: Visual
+
+# Renders every screen from a fixed fixture and compares with
+# docs/visual-baseline (scripts/render-all.sh, TASK-084). Baselines come from
+# this job, not from a laptop: fonts and antialiasing differ between
+# machines. To (re)create them, run the workflow with "update" checked,
+# download the "visual" artifact and commit its PNGs to docs/visual-baseline.
+on:
+  pull_request:
+    paths: ['Sources/DiskMapApp/**', 'scripts/render-all.sh', 'scripts/make-visual-fixture.sh', 'docs/visual-baseline/**']
+  workflow_dispatch:
+    inputs:
+      update:
+        description: Render new baselines instead of comparing
+        type: boolean
+        default: false
+
+jobs:
+  visual:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+
+      - name: Render and compare
+        run: scripts/render-all.sh ${{ inputs.update && '--update' || '' }}
+
+      - name: Upload renders and diffs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual
+          path: |
+            build/visual
+            docs/visual-baseline

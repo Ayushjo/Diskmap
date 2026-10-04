@@ -1,0 +1,80 @@
+# TASK-086 — walk-time tail on ~ (~2.68M nodes, 950k names), release, Apple M4 / 24 GB, 2026-10-03
+# Hypothesis: the fixed reservation (1M nodes / 400k names) makes the arrays and intern table regrow mid-walk.
+# Change tested: reserve from the last scan's counts × 1.1 (ScanCapacityHint).
+
+## Verdict: no improvement — not shipped. The tail follows outside load.
+Alternating pairs (plain, hint), 12 rounds: paired hint/plain median 1.073 (0.78–1.47).
+plain: min 11.28 median 16.24 p95 17.67 max 17.76 · hint: min 13.50 median 16.71 p95 20.20 max 21.67
+Load average during the pairs: 6.5–10.4; a Virtualization.framework VM (Docker) at ~0–100% CPU, swinging run to run.
+
+## 1. Sequential baseline, DiskMapScanBench --repeat 20 --phases ~ (walk seconds)
+run=1/20	walk=16.330
+run=2/20	walk=14.944
+run=3/20	walk=17.599
+run=4/20	walk=23.466
+run=5/20	walk=25.985
+run=6/20	walk=21.319
+run=7/20	walk=23.957
+run=8/20	walk=13.977
+run=9/20	walk=19.807
+run=10/20	walk=17.698
+run=11/20	walk=17.457
+run=12/20	walk=14.908
+run=13/20	walk=14.864
+run=14/20	walk=14.403
+run=15/20	walk=13.996
+run=16/20	walk=14.391
+run=17/20	walk=14.145
+run=18/20	walk=14.595
+run=19/20	walk=14.114
+run=20/20	walk=16.094
+min 13.98 median 15.52 p95 24.06 max 25.98 (p95/median 1.55); slow runs clustered (runs 4-7)
+
+## 2. Sequential with --hint (20 runs right after) — slower, but sequential blocks are confounded
+run=1/20	walk=14.641
+run=2/20	walk=15.578
+run=3/20	walk=24.999
+run=4/20	walk=40.474
+run=5/20	walk=22.146
+run=6/20	walk=28.213
+run=7/20	walk=20.692
+run=8/20	walk=18.902
+run=9/20	walk=32.387
+run=10/20	walk=22.465
+run=11/20	walk=20.184
+run=12/20	walk=19.893
+run=13/20	walk=20.678
+run=14/20	walk=20.681
+run=15/20	walk=18.851
+run=16/20	walk=21.825
+run=17/20	walk=20.471
+run=18/20	walk=15.924
+run=19/20	walk=15.152
+run=20/20	walk=17.058
+min 14.64 median 20.57 p95 32.79 max 40.47 (p95/median 1.59)
+
+## 3. Alternating A/B (the one that counts), with load and VM CPU per run
+mode=plain run=1 load=6.47 vmcpu=99.9 items=2724692 walk=11.275s
+mode=hint run=1 load=6.45 vmcpu=101 items=2724691 walk=14.734s
+mode=plain run=2 load=6.59 vmcpu=95.4 items=2724710 walk=15.421s
+mode=hint run=2 load=7.23 vmcpu=96.7 items=2724671 walk=16.736s
+mode=plain run=3 load=7.14 vmcpu=100.9 items=2724621 walk=16.802s
+mode=hint run=3 load=7.11 vmcpu=87 items=2724674 walk=13.894s
+mode=plain run=4 load=6.85 vmcpu=0.9 items=2724720 walk=14.442s
+mode=hint run=4 load=7.69 vmcpu=5.5 items=2724721 walk=14.516s
+mode=plain run=5 load=7.89 vmcpu=13.1 items=2724716 walk=16.480s
+mode=hint run=5 load=7.46 vmcpu=1.2 items=2724656 walk=17.593s
+mode=plain run=6 load=7.70 vmcpu=1.9 items=2724616 walk=15.884s
+mode=hint run=6 load=7.32 vmcpu=0.8 items=2724508 walk=18.779s
+mode=plain run=7 load=7.46 vmcpu=1 items=2724726 walk=15.991s
+mode=hint run=7 load=7.54 vmcpu=87.2 items=2724730 walk=18.026s
+mode=plain run=8 load=9.80 vmcpu=94 items=2724945 walk=17.758s
+mode=hint run=8 load=9.60 vmcpu=86.9 items=2724938 walk=16.680s
+mode=plain run=9 load=10.23 vmcpu=1.8 items=2725235 walk=14.717s
+mode=hint run=9 load=9.54 vmcpu=1.6 items=2752144 walk=21.666s
+mode=plain run=10 load=10.41 vmcpu=91.2 items=2758809 walk=17.603s
+mode=hint run=10 load=9.80 vmcpu=86.4 items=2758785 walk=18.993s
+mode=plain run=11 load=9.07 vmcpu=97.5 items=2758895 walk=16.817s
+mode=hint run=11 load=9.20 vmcpu=0.6 items=2758835 walk=14.645s
+mode=plain run=12 load=9.16 vmcpu=2.1 items=2758899 walk=17.219s
+mode=hint run=12 load=8.06 vmcpu=1.9 items=2758900 walk=13.501s

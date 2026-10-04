@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 310" role="img" aria-labelledby="title desc">
+  <title id="title">From scan to review</title>
+  <desc id="desc">Three connected illustrations show a local scan, inspection of storage, and a cleanup queue awaiting review.</desc>
+  <defs>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#B4A5ED"/><stop offset="1" stop-color="#7966DA"/></linearGradient>
+  </defs>
+  <path d="M300 155h480" stroke="#D9D4EC" stroke-width="2" stroke-dasharray="5 7"/>
+  <circle cx="540" cy="155" r="13" fill="#F8F7F4" stroke="#D9D4EC" stroke-width="2"/><path d="m536 150 6 5-6 5" fill="none" stroke="#7966DA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <g font-family="-apple-system,Arial,sans-serif">
+    <rect x="18" y="26" width="306" height="258" rx="24" fill="#FFFFFF" stroke="#E3E5E9"/>
+    <text x="42" y="64" fill="#80758E" font-size="13" font-weight="700" letter-spacing="2">01 / SCAN</text>
+    <circle cx="171" cy="154" r="60" fill="#F1EDFC"/>
+    <circle cx="171" cy="154" r="38" fill="none" stroke="#BDB3E7" stroke-width="10"/>
+    <path d="M171 116a38 38 0 0 1 38 38" fill="none" stroke="#7966DA" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="171" cy="154" r="8" fill="#7966DA"/>
+    <text x="171" y="247" text-anchor="middle" fill="#252B31" font-size="17" font-weight="700">Understand the whole disk</text>
+    <rect x="387" y="26" width="306" height="258" rx="24" fill="#FFFFFF" stroke="#E3E5E9"/>
+    <text x="411" y="64" fill="#80758E" font-size="13" font-weight="700" letter-spacing="2">02 / INSPECT</text>
+    <rect x="460" y="99" width="160" height="112" rx="14" fill="#F7F6FB"/>
+    <path d="M470 110h80v50h-80z" fill="url(#violet)"/><path d="M554 110h56v31h-56z" fill="#D7A2B3"/><path d="M554 145h56v58h-56z" fill="#9FB5D0"/><path d="M470 164h80v39h-80z" fill="#B2CABD"/>
+    <path d="M552 110v93M470 162h82M552 143h58" stroke="#FFFFFF" stroke-width="4"/>
+    <text x="540" y="247" text-anchor="middle" fill="#252B31" font-size="17" font-weight="700">See what takes space</text>
+    <rect x="756" y="26" width="306" height="258" rx="24" fill="#FFFFFF" stroke="#E3E5E9"/>
+    <text x="780" y="64" fill="#80758E" font-size="13" font-weight="700" letter-spacing="2">03 / REVIEW</text>
+    <rect x="808" y="94" width="202" height="124" rx="14" fill="#F6F7F8" stroke="#E3E5E9"/>
+    <rect x="824" y="113" width="18" height="18" rx="5" fill="#FFFFFF" stroke="#9CA4AE"/><path d="m828 121 4 4 7-9" fill="none" stroke="#7966DA" stroke-width="2" stroke-linecap="round"/>
+    <rect x="852" y="117" width="100" height="7" rx="3.5" fill="#747E89"/>
+    <rect x="824" y="151" width="18" height="18" rx="5" fill="#FFFFFF" stroke="#9CA4AE"/>
+    <rect x="852" y="155" width="122" height="7" rx="3.5" fill="#AEB6BF"/>
+    <rect x="824" y="189" width="18" height="18" rx="5" fill="#FFFFFF" stroke="#9CA4AE"/>
+    <rect x="852" y="193" width="78" height="7" rx="3.5" fill="#AEB6BF"/>
+    <text x="909" y="247" text-anchor="middle" fill="#252B31" font-size="17" font-weight="700">You decide what moves</text>
+  </g>
+</svg>

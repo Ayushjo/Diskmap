@@ -11,7 +11,8 @@ Hard rules, repeated here because they matter most:
 - Never delete files directly. Everything routes through
   `CleanupQueue.commit()` (moves to Trash via `FileManager.trashItem`).
 - No networking, anywhere. This app is offline-only by design.
-- Run `swift test` after every change. Don't report a task as done with
+- Run `scripts/test.sh` after every change (bare `swift test` fails on
+  Command Line Tools 26.6+). Don't report a task as done with
   failing or unrun tests.
 - `CloneDetector.swift` is verified (TASK-005). `SquarifiedTreemap.swift`
   is verified (TASK-001). Don't build on a file that still says

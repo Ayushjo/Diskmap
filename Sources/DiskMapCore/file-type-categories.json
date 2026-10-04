@@ -1,0 +1,40 @@
+{
+  "categories": [
+    {
+      "id": "video",
+      "label": "Video",
+      "color": "#C78797",
+      "extensions": ["mp4","mov","m4v","avi","mkv","wmv","flv","webm","mpeg","mpg","m2ts","ts"]
+    },
+    {
+      "id": "audio",
+      "label": "Audio",
+      "color": "#A795C7",
+      "extensions": ["mp3","aac","m4a","wav","flac","aiff","aif","ogg","wma","alac"]
+    },
+    {
+      "id": "image",
+      "label": "Image",
+      "color": "#8FACC0",
+      "extensions": ["png","jpg","jpeg","gif","webp","heic","heif","tif","tiff","bmp","svg","ico","raw","cr2","nef","dng"]
+    },
+    {
+      "id": "document",
+      "label": "Document",
+      "color": "#7BA89C",
+      "extensions": ["pdf","doc","docx","xls","xlsx","ppt","pptx","txt","rtf","md","pages","numbers","key","csv","epub"]
+    },
+    {
+      "id": "developer",
+      "label": "Developer",
+      "color": "#849BB8",
+      "extensions": ["swift","m","h","c","cpp","cc","hpp","js","ts","jsx","tsx","py","rb","go","rs","java","kt","cs","json","yml","yaml","toml","xml","html","css","scss","lock","gradle","podspec","pbxproj","xcconfig","wasm","o","a","dylib"]
+    },
+    {
+      "id": "archive",
+      "label": "Archive",
+      "color": "#B9A071",
+      "extensions": ["zip","dmg","pkg","tar","gz","tgz","bz2","xz","7z","rar","iso","ipa","app"]
+    }
+  ]
+}

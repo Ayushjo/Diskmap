@@ -1,0 +1,18 @@
+# diskmap export, release build, warm home (26.5.2, Mac16,13), 2026-09-28
+# wall seconds include the full walk; output written to a file on the same volume
+ncdu run1 wall=13.16 bytes=175706115
+ncdu run2 wall=12.22 bytes=175715422
+ncdu run3 wall=15.80 bytes=175622623
+ndjson run1 wall=14.23 bytes=468125399
+ndjson run2 wall=17.72 bytes=468118841
+ndjson run3 wall=16.61 bytes=468125260
+csv run1 wall=16.83 bytes=325466216
+csv run2 wall=12.06 bytes=325479809
+csv run3 wall=16.15 bytes=325476105
+json run1 wall=11.69 bytes=239833789
+json run2 wall=12.91 bytes=239833098
+json run3 wall=12.70 bytes=239833651
+items 2254322
+scan-only run1 wall=8.59
+scan-only run2 wall=11.03
+scan-only run3 wall=10.17

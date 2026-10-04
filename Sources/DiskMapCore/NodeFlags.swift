@@ -18,4 +18,8 @@ public enum NodeFlags {
     /// file). Set so a later view can tell "in the cloud" from "empty"
     /// without opening the file.
     public static let notDownloaded: UInt8 = 1 << 3
+    /// The volume reported 0 allocated bytes for a non-empty file, and the
+    /// scan used the logical size instead (TASK-082). A figure built from
+    /// the tree must ask the volume about these files rather than trust it.
+    public static let allocatedEstimated: UInt8 = 1 << 4
 }

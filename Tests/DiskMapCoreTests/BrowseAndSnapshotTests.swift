@@ -8,6 +8,18 @@ struct BrowseQueryTests {
         #expect(TopSizes.ranked(totals: totals, limit: 2) == [4, 2])
     }
 
+    @Test func boundedRankingMatchesReferenceWithTies() {
+        let totals: [Int64] = [999999] + (0..<10000).map { Int64(($0 * 7919) % 997) }
+        let nonzero: [Int] = (1..<totals.count).filter { totals[$0] > 0 }
+        let ordered: [Int] = nonzero.sorted { lhs, rhs in
+            if totals[lhs] == totals[rhs] { return lhs < rhs }
+            return totals[lhs] > totals[rhs]
+        }
+        let expected: [Int32] = ordered.prefix(200).map { Int32($0) }
+        #expect(TopSizes.ranked(totals: totals, limit: 200) == expected)
+        #expect(TopSizes.ranked(totals: totals, limit: 0).isEmpty)
+    }
+
     @Test func ageBucketsAndUntouchedUseAFixedToday() {
         let today: Int32 = 20_000
         #expect(AgeMap.bucket(modifiedDay: 0, today: today) == .unknown)
@@ -16,6 +28,10 @@ struct BrowseQueryTests {
         #expect(AgeMap.bucket(modifiedDay: today - 200, today: today) == .days90to365)
         #expect(AgeMap.bucket(modifiedDay: today - 400, today: today) == .oneToTwoYears)
         #expect(AgeMap.bucket(modifiedDay: today - 800, today: today) == .overTwoYears)
+        #expect(AgeBucket.oneToTwoYears.shortTitle == "1–2y")
+        #expect(AgeBucket.overTwoYears.shortTitle == "2y+")
+        #expect(AgeBucket.unknown.shortTitle == "No date")
+        #expect(AgeBucket.unknown.title == "No date")
 
         var tree = FileTree()
         let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
@@ -42,6 +58,22 @@ struct ChartLayoutTests {
         let slices = ChartLayout.slices(of: root, in: tree, totals: totals)
         #expect(slices.contains { $0.label == "big" && $0.drillable })
         #expect(slices.contains { $0.nodeID == nil && $0.drillable == false && $0.label.contains("Other") })
+    }
+
+    /// The flame chart asks for four levels; everything else keeps two.
+    @Test func levelsControlsHowDeepSlicesGo() {
+        var tree = FileTree()
+        let root = tree.addNode(name: "root", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        var parent = root
+        for name in ["a", "b", "c", "d"] {
+            parent = tree.addNode(name: name, parent: parent, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        }
+        _ = tree.addNode(name: "file", parent: parent, isDirectory: false, logicalSize: 1_000, allocatedSize: 1_000, modifiedDaysSinceEpoch: 0)
+        let totals = tree.rollUpSizes()
+        func depth(_ list: [ChartSlice]) -> Int { list.isEmpty ? 0 : 1 + (list.map { depth($0.children) }.max() ?? 0) }
+        #expect(depth(ChartLayout.slices(of: root, in: tree, totals: totals)) == 2)
+        #expect(depth(ChartLayout.slices(of: root, in: tree, totals: totals, levels: 4)) == 4)
+        #expect(ChartLayout.slices(of: root, in: tree, totals: totals, levels: 0).isEmpty)
     }
 }
 

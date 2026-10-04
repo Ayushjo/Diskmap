@@ -1,0 +1,10 @@
+run=1/3 label=task037-hardlinks items=2054736 nodes=2019556 scan=10.520s rollup=0.051s walk_rss=362774528 after_rss=415678464 names=837403 name_utf8=31723114
+DiskMap scan: items=2054740 elapsed=6.915s rss_during_walk_peak=420708352 rss_after_enumerator_release=384942080 not_downloaded=17 hard_links=14953 cross_mount_skips=0
+hardlinks label=task037-hardlinks flagged=14953 inodes=4525 duplicate_names=10428 allocated_not_double_counted=766058496 logical_not_double_counted=745790079 cross_mount_skips=0
+run=2/3 label=task037-hardlinks items=2054740 nodes=2019560 scan=6.915s rollup=0.042s walk_rss=420708352 after_rss=384942080 names=837407 name_utf8=31723267
+DiskMap scan: items=2054739 elapsed=10.065s rss_during_walk_peak=406241280 rss_after_enumerator_release=392118272 not_downloaded=17 hard_links=14953 cross_mount_skips=0
+hardlinks label=task037-hardlinks flagged=14953 inodes=4525 duplicate_names=10428 allocated_not_double_counted=766058496 logical_not_double_counted=745790079 cross_mount_skips=0
+run=3/3 label=task037-hardlinks items=2054739 nodes=2019560 scan=10.065s rollup=0.053s walk_rss=406241280 after_rss=392118272 names=837407 name_utf8=31723275
+summary label=task037-hardlinks n=3 scan_min=6.915 scan_median=10.065 scan_max=10.520 walk_rss_median=406241280
+
+[exited with code 0]

@@ -1,0 +1,105 @@
+{
+  "_comment": "Tool-native cleanup commands (TASK-055). freedisk.space SHOWS these and never runs them — CleanupQueue.commit() stays the only way freedisk.space removes anything. trashIsUnsafe: moving the folder to the Trash damages the tool's state, so the app should steer to the command instead. Matching: a path matches if its last component is in `names`, it ends with an entry in `pathSuffixes`, or it contains an entry in `pathContains`.",
+  "recipes": [
+    {
+      "id": "docker",
+      "names": ["com.docker.docker", "Docker.raw"],
+      "pathSuffixes": [],
+      "pathContains": ["/Library/Containers/com.docker.docker/"],
+      "title": "Prune Docker instead",
+      "command": "docker system prune -a",
+      "why": "Docker keeps every image, container and volume inside one disk image. Moving it to the Trash deletes all of them at once. Pruning frees space inside it and keeps what is still in use.",
+      "trashIsUnsafe": true
+    },
+    {
+      "id": "simulators",
+      "names": ["CoreSimulator"],
+      "pathSuffixes": ["/Library/Developer/CoreSimulator"],
+      "pathContains": [],
+      "title": "Delete simulators with simctl",
+      "command": "xcrun simctl delete unavailable",
+      "why": "Simulators are tracked in simctl’s own database. Deleting folders underneath it leaves Xcode listing devices that no longer exist. This removes simulators for runtimes you no longer have.",
+      "trashIsUnsafe": true
+    },
+    {
+      "id": "homebrew",
+      "names": [],
+      "pathSuffixes": ["/Library/Caches/Homebrew"],
+      "pathContains": [],
+      "title": "Let Homebrew clean its cache",
+      "command": "brew cleanup --prune=all",
+      "why": "Homebrew knows which downloads installed formulae still need.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "npm",
+      "names": [".npm"],
+      "pathSuffixes": [],
+      "pathContains": [],
+      "title": "Clear the npm cache",
+      "command": "npm cache clean --force",
+      "why": "npm verifies and rebuilds its cache index itself.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "pnpm",
+      "names": [".pnpm-store"],
+      "pathSuffixes": ["/Library/pnpm/store"],
+      "pathContains": [],
+      "title": "Prune the pnpm store",
+      "command": "pnpm store prune",
+      "why": "Every pnpm project hard-links into this store. Pruning removes only packages no project references; trashing the store forces every project to reinstall.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "yarn",
+      "names": [],
+      "pathSuffixes": ["/Library/Caches/Yarn"],
+      "pathContains": [],
+      "title": "Clear the Yarn cache",
+      "command": "yarn cache clean",
+      "why": "Yarn keeps its cache index consistent when it cleans itself.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "go-modules",
+      "names": [],
+      "pathSuffixes": ["/go/pkg/mod"],
+      "pathContains": [],
+      "title": "Clear Go's module cache",
+      "command": "go clean -modcache",
+      "why": "Go marks module cache files read-only, so moving them to the Trash can fail partway. go clean removes them properly.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "pip",
+      "names": [],
+      "pathSuffixes": ["/Library/Caches/pip"],
+      "pathContains": [],
+      "title": "Purge pip’s cache",
+      "command": "pip cache purge",
+      "why": "pip manages its own HTTP and wheel caches.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "uv",
+      "names": [],
+      "pathSuffixes": ["/.cache/uv"],
+      "pathContains": [],
+      "title": "Clean uv’s cache",
+      "command": "uv cache clean",
+      "why": "uv’s cache is shared by every project; the command removes it safely while no uv process is running.",
+      "trashIsUnsafe": false
+    },
+    {
+      "id": "cocoapods",
+      "names": [".cocoapods"],
+      "pathSuffixes": ["/Library/Caches/CocoaPods"],
+      "pathContains": [],
+      "title": "Clear the CocoaPods cache",
+      "command": "pod cache clean --all",
+      "why": "CocoaPods re-downloads specs and pods on the next install.",
+      "trashIsUnsafe": false
+    }
+  ]
+}

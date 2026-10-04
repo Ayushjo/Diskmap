@@ -6,6 +6,11 @@ repo. Read this before making changes. Read `docs/PRD.md` and
 
 ## What this is
 
+The public product and website name is **freedisk.space** (`https://freedisk.space`).
+Existing `DiskMap` source targets, bundle identifier, cache/snapshot directories,
+and preference keys remain for compatibility. Use freedisk.space in new
+user-facing copy; do not rename persisted paths as part of a visual rebrand.
+
 DiskMap: an open-source, native macOS disk-space analyzer. The target is
 feature parity with — and eventually better than — DiskBuddy, a closed-source
 $9–49 one-time-purchase app. Full feature target: `docs/PRD.md`. Design
@@ -19,10 +24,16 @@ in order, with acceptance criteria: `TASKS.md`.
    Trash) — never `unlink` or `FileManager.removeItem`. If you're building a
    new cleanup feature, route it through `CleanupQueue`; don't add a second
    deletion path.
-2. **Nothing calls the network.** Grep for outbound `URLSession`/networking
-   before merging anything. Fully offline is a stated product promise and a
-   differentiator over closed competitors — don't regress it by accident
-   (e.g. adding a crash reporter or analytics SDK).
+2. **Nothing calls the network — with one exception.** Grep for outbound
+   `URLSession`/networking before merging anything. Fully offline is a stated
+   product promise and a differentiator over closed competitors — don't
+   regress it by accident (e.g. adding a crash reporter or analytics SDK).
+   **Single exception (TASK-083, chosen by the maintainer):** Sparkle update
+   checks, confined to `Sources/DiskMapApp/Updates.swift`, off by default,
+   made only when the user turns on "Check for updates automatically" or
+   chooses Check for Updates…, and impossible in builds without a feed URL and
+   public key. `NetworkPolicyTests` fails if networking appears in any other
+   file. Scans, cleanup, history and everything else stay offline.
 3. **The excluded-paths list in `CleanupQueue.swift` is the last line of
    defense** against staging something like `/System`. Any change to it
    needs to be called out explicitly in your summary of the change, not
@@ -36,11 +47,16 @@ in order, with acceptance criteria: `TASKS.md`.
 
 ```bash
 swift build
-swift test
+scripts/test.sh        # not bare `swift test` — see below
 swift run DiskMapApp
 ```
 
-Run `swift test` after every change before calling a task done. If there's
+Run `scripts/test.sh` after every change before calling a task done. It is
+`swift test` plus the framework search path and rpaths that Command Line Tools
+26.6+ needs: that release ships Swift Testing as `Testing.framework`, SwiftPM
+passes its directory with `-I` instead of `-F`, and bare `swift test` fails
+with `no such module 'Testing'`. Arguments pass through
+(`scripts/test.sh --filter ScanIdentityTests`). If there's
 no test covering what you just changed, write one — see
 `Tests/DiskMapCoreTests` for the pattern (Swift Testing, not XCTest —
 Command Line Tools don't ship XCTest, so `import XCTest` fails `swift test`
@@ -83,3 +99,13 @@ available and are flagged `UNVERIFIED` in comments. When you touch one:
   preference here — see the memory-layout rationale in
   `docs/ARCHITECTURE.md` for why per-node object overhead is the specific
   bug this project exists partly to avoid repeating.
+
+## Windows port (`windows/`)
+
+A sibling C#/.NET 10 port lives under `windows/` (`src/DiskMap.Core`,
+`app/DiskMap.App` WPF, `tests/DiskMap.Core.Tests` xUnit). Same rules apply:
+no direct deletion (Recycle Bin via `SHFileOperation(FOF_ALLOWUNDO)` only,
+in `CleanupQueue`), no networking, `windows/src/DiskMap.Core/CleanupQueue.cs`
+holds the Windows excluded-paths list — changes to it get called out.
+Files marked `UNVERIFIED` follow the same verify-then-unflag rule.
+Build/test: `dotnet build windows\DiskMap.Win.slnx`, `dotnet test windows\DiskMap.Win.slnx`.
