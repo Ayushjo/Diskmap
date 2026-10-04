@@ -15,7 +15,24 @@ namespace DiskMap.App.Controls;
 public sealed class SunburstControl : FrameworkElement
 {
     private readonly List<(int? NodeId, PathGeometry Geometry)> _hit = [];
+    private List<(ChartSlice Slice, ChartSlice? Parent)> _nav = [];
     private ToolTip? _tooltip;
+    private Pen? _multiPen;
+
+    /// <summary>WIN-061: announces itself + its biggest slices to UIA.</summary>
+    protected override System.Windows.Automation.Peers.AutomationPeer OnCreateAutomationPeer() =>
+        new ChartPeer(this, "Sunburst", () => ChartNavigation.AccessibleIds(_nav, ScanModel.Shared));
+
+    /// <summary>WIN-061: arrow keys move the selection (siblings/parent/child); Enter drills.</summary>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (ChartNavigation.OnKey(e, _nav, ScanModel.Shared))
+        {
+            e.Handled = true;
+            InvalidateVisual();
+        }
+        base.OnKeyDown(e);
+    }
 
     public SunburstControl()
     {
@@ -24,6 +41,7 @@ public sealed class SunburstControl : FrameworkElement
         MouseMove += OnMove;
         MouseLeave += (_, _) => { if (_tooltip is not null) _tooltip.IsOpen = false; };
         MouseRightButtonDown += OnRightClick;
+        Focusable = true;   // WIN-061: arrow-key chart navigation
     }
 
     protected override void OnRender(DrawingContext dc)
@@ -31,7 +49,8 @@ public sealed class SunburstControl : FrameworkElement
         _hit.Clear();
         var model = ScanModel.Shared;
         var tree = model.Tree;
-        if (tree is null || model.Totals.Length == 0) return;
+        if (tree is null || model.Totals.Length == 0) { _nav = []; return; }
+        _multiPen = model.MultiSelection.Count > 0 ? NodeColors.MultiPen() : null;
 
         double cx = ActualWidth / 2, cy = ActualHeight / 2;
         double radius = Math.Min(cx, cy);
@@ -43,6 +62,7 @@ public sealed class SunburstControl : FrameworkElement
             NodeColors.StrokePen, new Point(cx, cy), centerRadius, centerRadius);
 
         var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals, model.ChartDepth);
+        _nav = ChartNavigation.Flatten(slices);
         long total = Math.Max(1, model.Totals[model.ZoomedNode]);
         DrawRing(dc, slices, total, 0, centerRadius, centerRadius + ringWidth, cx, cy, tree);
     }
@@ -50,6 +70,7 @@ public sealed class SunburstControl : FrameworkElement
     private void DrawRing(DrawingContext dc, List<ChartSlice> slices, long total,
         double startAngle, double r0, double r1, double cx, double cy, FileTree tree)
     {
+        var model = ScanModel.Shared;
         double angle = startAngle;
         foreach (var slice in slices)
         {
@@ -59,6 +80,14 @@ public sealed class SunburstControl : FrameworkElement
             var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id) : NodeColors.OtherBrush;
             dc.DrawGeometry(fill, NodeColors.StrokePen, geom);
             _hit.Add((slice.NodeID, geom));
+            // Selection rings — multi in accent, focused cell in white.
+            if (slice.NodeID is { } sid)
+            {
+                if (sid == model.SelectedNode)
+                    dc.DrawGeometry(null, NodeColors.SelectionPen, geom);
+                else if (_multiPen is { } mp && model.MultiSelection.Contains(sid))
+                    dc.DrawGeometry(null, mp, geom);
+            }
             if (slice.Children.Count > 0)
                 DrawRing(dc, slice.Children, Math.Max(1, slice.Size), angle, r1, r1 + (r1 - r0), cx, cy, tree);
             angle += sweep;
@@ -98,8 +127,21 @@ public sealed class SunburstControl : FrameworkElement
                 model.DrillToAncestor(tree.Parent[model.ZoomedNode]);
             return;
         }
-        if (HitAt(pos) is { } id && model.Tree?.IsDirectory[id] == true)
-            model.DrillTo(id);
+        if (HitAt(pos) is not { } id) return;
+        if (e.ClickCount >= 2)
+        {
+            if (model.Tree?.IsDirectory[id] == true) model.DrillTo(id);
+            return;
+        }
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            model.ToggleMulti(id);
+            InvalidateVisual();
+            return;
+        }
+        model.ClearMulti();
+        model.Select(id);
+        InvalidateVisual();
     }
 
     private void OnMove(object sender, MouseEventArgs e)

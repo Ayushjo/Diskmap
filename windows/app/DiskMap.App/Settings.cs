@@ -13,6 +13,10 @@ public sealed class AppSettings
 {
     [JsonPropertyName("appearance")] public string Appearance { get; set; } = "system"; // system|light|dark
     [JsonPropertyName("textScale")] public double TextScale { get; set; } = 1.0;        // 0.9 / 1.0 / 1.1 / 1.2
+    /// <summary>Record a history entry after each scan (the "what grew" comparisons).</summary>
+    [JsonPropertyName("keepHistory")] public bool KeepHistory { get; set; } = true;
+    /// <summary>WIN-066: after each scan on a ReFS volume, map extents and count block clones once.</summary>
+    [JsonPropertyName("cloneAccounting")] public bool CloneAccounting { get; set; }
 
     private static string Path0 => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

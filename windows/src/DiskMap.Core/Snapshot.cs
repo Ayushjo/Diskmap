@@ -23,9 +23,11 @@ public readonly record struct SnapshotChange(string Path, long Before, long Afte
 ///       modifiedDay/isDirectory/flags
 ///   v2: + createdDay (Int32 per node)
 ///   v3: + fileID (UInt64 per node)
-///   v4: + sharing-mode byte + sharing table (APFS clone rows). Windows
-///       writes mode 0 and zero rows — block-clone accounting (ReFS) is
-///       opt-in — but reads real v4 files.
+///   v4: + sharing-mode byte + sharing table (clone rows: node ids,
+///       clone ids, private bytes, refcounts). Windows writes the same
+///       layout when the opt-in ReFS block-clone pass ran (mode 2), and
+///       decodes rows from either platform — the row semantics are
+///       identical.
 /// Older files decode with createdDay/fileID 0 ("unknown"); the hard-link
 /// correction treats unknown as "nothing to correct".
 /// </summary>
@@ -55,9 +57,16 @@ public static class SnapshotCodec
         writer.Bytes(tree.IsDirectory.Select(b => (byte)(b ? 1 : 0)).ToArray());
         writer.Bytes(tree.Flags);
         writer.I64s(tree.FileId);
-        // v4 sharing table: Windows has no APFS clone facts — mode 0, no rows.
-        writer.Write([0]);
-        writer.I32(0);
+        // v4 sharing table: the mode byte records whether the block-clone
+        // pass measured this tree (2 = full extent facts), not whether it
+        // found clones — a profiled zero-clone scan still writes mode 2.
+        var sharing = tree.Sharing;
+        writer.Write([(byte)tree.SharingMode]);
+        writer.I32(sharing.Count);
+        writer.I32s(sharing.Node);
+        writer.I64s(sharing.CloneId);
+        writer.I64s(sharing.PrivateBytes);
+        writer.I32s(sharing.RefCount);
         foreach (var name in tree.NameTable) writer.String(name);
         return writer.ToArray();
     }
@@ -85,18 +94,22 @@ public static class SnapshotCodec
         bool[] isDirectory = reader.U8s(count).Select(b => b != 0).ToArray();
         byte[] flags = reader.U8s(count);
         long[] fileId = fileVersion >= 3 ? reader.I64s(count) : new long[count];
+        var sharing = new FileTree.SharingTable();
+        var sharingMode = FileTree.CloneSharingMode.Off;
         if (fileVersion >= 4)
         {
-            // APFS sharing table: read and discard — on Windows the only
-            // block clones are ReFS, which macOS never writes. The hard-
-            // link flags/fileIDs survive either way.
-            _ = reader.U8s(1)[0];
+            sharingMode = reader.U8s(1)[0] switch
+            {
+                1 => FileTree.CloneSharingMode.Refcount,
+                2 => FileTree.CloneSharingMode.Full,
+                _ => FileTree.CloneSharingMode.Off,
+            };
             int rows = reader.I32();
             if (rows < 0 || rows > count) throw new SnapshotException(SnapshotError.Corrupt);
-            _ = reader.I32s(rows);   // node ids
-            _ = reader.I64s(rows);   // clone ids
-            _ = reader.I64s(rows);   // private bytes
-            _ = reader.I32s(rows);   // refcounts
+            sharing.Node = reader.I32s(rows);
+            sharing.CloneId = reader.I64s(rows);
+            sharing.PrivateBytes = reader.I64s(rows);
+            sharing.RefCount = reader.I32s(rows);
         }
         var nameTable = new List<string>(nameCount);
         for (int i = 0; i < nameCount; i++) nameTable.Add(reader.String());
@@ -107,6 +120,12 @@ public static class SnapshotCodec
         {
             throw new SnapshotException(SnapshotError.Corrupt);
         }
+        // Rows carry macOS-APFS or Windows-ReFS facts identically — either
+        // way the rollup's family math applies unchanged. Mode 0 means
+        // "not measured": phantom rows under it are dropped, not trusted.
+        if (sharingMode == FileTree.CloneSharingMode.Off) sharing = new FileTree.SharingTable();
+        if (!tree.ReplaceSharing(sharing, sharingMode))
+            throw new SnapshotException(SnapshotError.Corrupt);
         return new DiskSnapshot(rootPath, capturedAt, tree);
     }
 

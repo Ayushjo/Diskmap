@@ -51,32 +51,38 @@ public abstract class ListPage : UserControl
 
     protected static TextBlock Working(string text) => new() { Text = text, Foreground = Subtle };
 
-    /// <summary>Page header: icon tile + title + subtitle left, optional stat right.</summary>
+    /// <summary>
+    /// Page header (§17 anatomy): a mono eyebrow for the nav group, the
+    /// 20 pt semibold title, the subtitle, an optional mono stat right.
+    /// The legacy icon params are accepted and ignored — no icon tiles.
+    /// </summary>
     protected DockPanel Header(string title, string subtitle, string? rightStat = null,
         string? glyph = null, Brush? iconBg = null, Brush? iconFg = null)
     {
         var header = new DockPanel { Margin = new Thickness(0, 0, 0, 14) };
         if (rightStat is not null)
         {
-            var stat = Ui.Subtle(rightStat, 12);
-            stat.VerticalAlignment = VerticalAlignment.Center;
+            var stat = Ui.Mono(rightStat, 11, null, Ui.Brush("AppFaint"));
+            stat.VerticalAlignment = VerticalAlignment.Bottom;
             DockPanel.SetDock(stat, Dock.Right);
             header.Children.Add(stat);
         }
-        if (glyph is not null)
-        {
-            var tile = Ui.IconTile(glyph, 44, iconBg ?? Ui.Brush("AppAccentSoft"),
-                iconFg ?? Ui.Brush("AppAccent"), 10);
-            DockPanel.SetDock(tile, Dock.Left);
-            tile.Margin = new Thickness(0, 0, 12, 0);
-            header.Children.Add(tile);
-        }
         var titles = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        titles.Children.Add(Ui.MonoLabel(EyebrowFor(title), Ui.Brush("AppSubtle")));
         titles.Children.Add(Ui.PageTitle(title));
         titles.Children.Add(Ui.PageSubtitle(subtitle));
         header.Children.Add(titles);
         return header;
     }
+
+    private static string EyebrowFor(string title) => title switch
+    {
+        "Overview" => "MAIN",
+        "Biggest Files" or "Biggest Folders" or "Forgotten Files" or "Duplicates" => "FIND",
+        "Safe to Review" or "Caches" or "Old Downloads" or "Large Media" or "Cleanup" => "CLEAN",
+        "File Browser" or "Visualize" or "Developer Storage" or "Applications" or "Snapshots" => "EXPLORE",
+        _ => title,
+    };
 
     protected UIElement NeedsScan(string what)
     {
@@ -251,7 +257,7 @@ public abstract class FileListPage : ListPage
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                Ui.T($"{_filtered.Count:N0} {Noun} · {ByteFormat.Format(allBytes)}", 12, null, Ui.Brush("AppSubtle")),
+                Ui.Mono($"{_filtered.Count:N0} {Noun} · {ByteFormat.Format(allBytes)}", 11, null, Ui.Brush("AppSubtle")),
                 new Border { Width = 14 },
                 RescanLink(),
             },
@@ -271,7 +277,7 @@ public abstract class FileListPage : ListPage
         }
 
         _bottomHost.Content = Ui.BottomBar(
-            Ui.T($"{selected.Count} selected · {ByteFormat.Format(selBytes)}", 12.5, FontWeights.Medium),
+            Ui.Mono($"{selected.Count} selected · {ByteFormat.Format(selBytes)}", 12, FontWeights.Medium),
             right,
             Ui.Button("Add to Cleanup Review", Icons.Cleanup, Ui.ButtonStyle.Dark,
                 () =>
@@ -402,23 +408,25 @@ public abstract class FileListPage : ListPage
             PaintBottomBar();
         };
         Ui.Cell(headerRow, selectAll, 0);
-        Ui.Cell(headerRow, Ui.Faint("#"), 1);
+        Ui.Cell(headerRow, Ui.Mono("#", 10, null, Ui.Brush("AppFaint")), 1);
         Ui.Cell(headerRow, Ui.TableHead("Name"), 2);
         Ui.Cell(headerRow, Ui.TableHead("Type"), 3);
         Ui.Cell(headerRow, Ui.TableHead("Modified"), 4);
         Ui.Cell(headerRow, Ui.TableHead("Size"), 5, right: true);
         table.Children.Add(headerRow);
+        table.Children.Add(Ui.Hairline());
 
         _rowsHost = new StackPanel();
         for (int i = 0; i < ids.Count; i++)
         {
+            if (i > 0) _rowsHost.Children.Add(Ui.Hairline());
             _rowsHost.Children.Add(FileRow(tree, totals, ids[i], i + 1, rootPath));
         }
         if (ids.Count == 0)
             _rowsHost.Children.Add(Ui.Subtle("Nothing matches these filters."));
         _rowsHost.Tag = (tree, ids, rootPath);
         table.Children.Add(_rowsHost);
-        return Ui.Card(table, 12);
+        return table;
     }
 
     private StackPanel? _rowsHost;
@@ -430,7 +438,10 @@ public abstract class FileListPage : ListPage
         var totals = Model.Totals;
         _rowsHost.Children.Clear();
         for (int i = 0; i < ids.Count; i++)
+        {
+            if (i > 0) _rowsHost.Children.Add(Ui.Hairline());
             _rowsHost.Children.Add(FileRow(tree, totals, ids[i], i + 1, rootPath));
+        }
     }
 
     private UIElement FileRow(FileTree tree, long[] totals, int id, int rank, string rootPath)
@@ -453,7 +464,7 @@ public abstract class FileListPage : ListPage
         check.Checked += (_, _) => { _checked.Add(id); PaintBottomBar(); };
         check.Unchecked += (_, _) => { _checked.Remove(id); PaintBottomBar(); };
         Ui.Cell(row, check, 0);
-        Ui.Cell(row, Ui.Faint(rank.ToString()), 1);
+        Ui.Cell(row, Ui.Mono(rank.ToString(), 10, null, Ui.Brush("AppFaint")), 1);
         // WIN-046: cloud-only rows get the glyph — the bytes sit online,
         // and Reveal would recall the content.
         bool cloud = (tree.Flags[id] & NodeFlags.NotDownloaded) != 0;
@@ -469,8 +480,8 @@ public abstract class FileListPage : ListPage
                 : Model.DisplayPath(id), 26);
         Ui.Cell(row, nameCell, 2);
         Ui.Cell(row, Ui.KindBadge(kind), 3);
-        Ui.Cell(row, Ui.Subtle(Ui.RelativeDay(tree.ModifiedDay[id]), 11.5), 4);
-        Ui.Cell(row, Ui.T(ByteFormat.Format(totals[id]), 12), 5, right: true);
+        Ui.Cell(row, Ui.Mono(Ui.RelativeDay(tree.ModifiedDay[id]), 11, null, Ui.Brush("AppSubtle")), 4);
+        Ui.Cell(row, Ui.Mono(ByteFormat.Format(totals[id]), 12), 5, right: true);
         Ui.Cell(row, Ui.MoreButton(() => OpenRowMenu(outer, tree, id)), 6, right: true);
 
         outer.Cursor = System.Windows.Input.Cursors.Hand;
@@ -1153,53 +1164,20 @@ public sealed class SearchPage : FileListPage
 }
 
 /// <summary>
-/// Overview — the "why is my disk full" dashboard: storage health,
-/// where the space went, largest opportunities, top files.
+/// Overview — the calm-system landing page (docs/DESIGN.md §17):
+/// one reading column (max 880), the hero figure, "where it's going"
+/// category rows, worth-reviewing and growth/file columns, a mono
+/// footer. Hairlines and space — no cards.
 /// </summary>
 public sealed class OverviewPage : ListPage
 {
     protected override void Refresh()
     {
         Root.Children.Clear();
-        Root.Children.Add(Header("Overview", "Your disk at a glance — what's using the space and what to review."));
         var tree = Model.Tree;
         if (tree is null || Model.Totals.Length != tree.Count)
         {
-            // WIN-063: first-run hero — teach scan → explore → stage.
-            var hero = new StackPanel { Margin = new Thickness(0, 40, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
-            hero.Children.Add(Ui.T("Understand your storage", 24, FontWeights.Bold));
-            var subtitle = Ui.Subtle("DiskMap reads your disk's own map — a full scan takes seconds, not minutes.\nThen it shows what's using the space, what's safe to remove, and what to do next.", 13);
-            subtitle.HorizontalAlignment = HorizontalAlignment.Center;
-            subtitle.TextAlignment = TextAlignment.Center;
-            subtitle.Margin = new Thickness(0, 8, 0, 20);
-            hero.Children.Add(subtitle);
-
-            var steps = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-            foreach (var (num, title, blurb) in new[]
-            {
-                ("1", "Scan", "Pick a folder or a whole drive — the file table does the counting, not file-by-file stat calls."),
-                ("2", "Explore", "Treemap, flame, ring — click anything to inspect it; every number adds up."),
-                ("3", "Clean up", "Stage what you want gone; it only ever moves to the Recycle Bin — recoverable until you empty it."),
-            })
-            {
-                var card = new StackPanel { Width = 220, Margin = new Thickness(8) };
-                card.Children.Add(Ui.T(num, 22, FontWeights.Bold, Ui.Brush("AppAccent")));
-                card.Children.Add(Ui.T(title, 14, FontWeights.SemiBold));
-                var body = Ui.Subtle(blurb, 11.5);
-                body.TextWrapping = TextWrapping.Wrap;
-                card.Children.Add(body);
-                steps.Children.Add(Ui.Card(card, 14));
-            }
-            hero.Children.Add(steps);
-
-            var scanBtn = Ui.Button("Scan a folder", Icons.Add, Ui.ButtonStyle.Dark, () => Model.RequestScan());
-            scanBtn.Margin = new Thickness(0, 24, 0, 8);
-            scanBtn.HorizontalAlignment = HorizontalAlignment.Center;
-            hero.Children.Add(scanBtn);
-            var dragHint = Ui.Faint("… or drag a folder onto this window");
-            dragHint.HorizontalAlignment = HorizontalAlignment.Center;
-            hero.Children.Add(dragHint);
-            Root.Children.Add(hero);
+            Root.Children.Add(FirstRunHero());
             return;
         }
 
@@ -1218,25 +1196,68 @@ public sealed class OverviewPage : ListPage
             }
             return new
             {
-                Children = tree.ChildrenOf(0, totals).OrderByDescending(c => c.Size).ToList(),
-                TopFiles = TopSizes.Largest(1, tree.Count, 8, id => totals[id],
+                TopFiles = TopSizes.Largest(1, tree.Count, 5, id => totals[id],
                     id => !tree.IsDirectory[id] && totals[id] > 0),
-                TypeBreakdown = FileTypes.TypeBreakdown(tree, totals, 0),
                 Compressed = compressed,
                 CloudBytes = cloudBytes,
             };
-        }, data => Show(tree, totals, volume, data.Children, data.TopFiles, data.TypeBreakdown,
-            data.Compressed, data.CloudBytes));
+        }, data => Show(tree, totals, volume, data.TopFiles, data.Compressed, data.CloudBytes));
+    }
+
+    /// <summary>The one reading column — centred, 880 max (§17).</summary>
+    private StackPanel ReadingColumn()
+    {
+        var center = new Grid();
+        var column = new StackPanel
+        {
+            MaxWidth = 880,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(32, 8, 32, 0),
+        };
+        center.Children.Add(column);
+        Root.Children.Add(center);
+        return column;
     }
 
     private void Show(FileTree tree, long[] totals, VolumeInfo? volume,
-        List<(int Id, long Size)> children, List<int> topFiles,
-        Dictionary<string, long> typeBreakdown, long compressedBytes, long cloudOnlyBytes)
+        List<int> topFiles, long compressedBytes, long cloudOnlyBytes)
     {
-        Root.Children.RemoveAt(Root.Children.Count - 1); // the Working() line
+        Root.Children.Clear();
+        var column = ReadingColumn();
+        column.Children.Add(Hero(tree, totals, volume, compressedBytes, cloudOnlyBytes));
 
-        // Storage health card.
-        var healthBody = new StackPanel();
+        // Access-denied notice — the one bordered row the page may carry.
+        if (Model.DeniedDirectories is { Count: > 0 } denied && Model.RootPath is { } rootPath)
+        {
+            var examples = denied.Take(3).Select(id => tree.PathOf(id, rootPath)).ToList();
+            var notice = Ui.Notice(
+                $"{denied.Count} folder{(denied.Count == 1 ? "" : "s")} couldn't be scanned",
+                "Access was denied — the figures above are missing what's inside. " +
+                "Run DiskMap as administrator to include everything." +
+                (examples.Count > 0 ? "\n" + string.Join("\n", examples.Select(e => "  " + e)) +
+                    (denied.Count > examples.Count ? $"\n  …and {denied.Count - examples.Count} more" : "") : ""));
+            notice.Margin = new Thickness(0, 0, 0, 32);
+            column.Children.Add(notice);
+        }
+
+        var going = WhereGoing(tree, totals);
+        going.Margin = new Thickness(0, 0, 0, 32);
+        column.Children.Add(going);
+
+        var pair = TwoColumns(tree, totals, topFiles);
+        pair.Margin = new Thickness(0, 0, 0, 32);
+        column.Children.Add(pair);
+
+        column.Children.Add(Footer());
+    }
+
+    // ---- Hero (§17.1): volume label, the one display figure, the
+    // capacity bar, one coverage sentence + the Why? popover ----
+
+    private FrameworkElement Hero(FileTree tree, long[] totals, VolumeInfo? volume,
+        long compressedBytes, long cloudOnlyBytes)
+    {
+        var hero = new StackPanel { Margin = new Thickness(0, 0, 0, 32) };
         long used, total, free;
         string driveName;
         if (volume is { } v)
@@ -1249,314 +1270,505 @@ public sealed class OverviewPage : ListPage
             used = totals[0]; total = totals[0]; free = 0;
             driveName = Model.RootPath ?? "Scan";
         }
-        double frac = total > 0 ? (double)used / total : 0;
-        var headline = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-        var big = Ui.T($"{ByteFormat.Format(used)} used", 20, FontWeights.Bold);
-        DockPanel.SetDock(big, Dock.Left);
-        var pct = Ui.T($"{frac * 100:0}% full", 13, FontWeights.SemiBold,
-            frac > 0.9 ? Ui.Brush("AppDanger") : frac > 0.75 ? Ui.Brush("AppWarning") : Ui.Brush("AppSuccess"));
-        pct.VerticalAlignment = VerticalAlignment.Bottom;
-        pct.Margin = new Thickness(10, 0, 0, 3);
-        DockPanel.SetDock(pct, Dock.Left);
-        headline.Children.Add(big);
-        headline.Children.Add(pct);
-        healthBody.Children.Add(headline);
-        var bar = Ui.Bar(frac, frac > 0.9 ? Ui.Brush("AppDanger") : Ui.Brush("AppAccent"), 8, 0);
-        bar.Width = double.NaN;
-        healthBody.Children.Add(bar);
-        healthBody.Children.Add(new Border { Height = 6 });
-        healthBody.Children.Add(Ui.Subtle(
-            $"{ByteFormat.Format(total)} total · {ByteFormat.Format(free)} free" +
-            $" · scanned {Model.ItemCount:N0} items in {Model.Elapsed:0.0}s via {Model.Backend}", 11.5));
+        double usedFrac = total > 0 ? (double)used / total : 0;
+        double freeFrac = total > 0 ? (double)free / total : 1;
+        bool low = freeFrac < 0.10;
 
-        // Honest reconciliation (WIN-005): what the scan accounts for vs
-        // what the volume reports used — the gap is named, never hidden.
-        if (Model.Snapshot?.Reconciliation is { } rec)
+        hero.Children.Add(Ui.MonoLabel(driveName));
+        var display = Ui.Mono($"{ByteFormat.Format(free)} free", 28, FontWeights.SemiBold);
+        display.Margin = new Thickness(0, 4, 0, 2);
+        hero.Children.Add(display);
+
+        var sub = new StackPanel { Orientation = Orientation.Horizontal };
+        sub.Children.Add(Ui.Mono($"of {ByteFormat.Format(total)} · {usedFrac * 100:0}% used", 12, null, Ui.Brush("AppSubtle")));
+        if (low)
         {
-            healthBody.Children.Add(new Border { Height = 6 });
-            string line;
-            if (rec.ScannedExceedsUsed)
+            var safety = Ui.SafetyLabel(Ui.Brush("AppDanger"), "Low on space");
+            safety.Margin = new Thickness(14, 0, 0, 0);
+            safety.VerticalAlignment = VerticalAlignment.Center;
+            sub.Children.Add(safety);
+        }
+        sub.Margin = new Thickness(0, 0, 0, 10);
+        hero.Children.Add(sub);
+
+        var bar = Ui.CapacityBar(usedFrac,
+            low ? Ui.Brush("AppDanger") : Ui.WithOpacity("AppForeground", 0.55));
+        bar.Margin = new Thickness(0, 0, 0, 10);
+        hero.Children.Add(bar);
+
+        // Coverage sentence + Why? popover (§16.3) — the reconciliation
+        // numbers live in the popover, the sentence on the page.
+        var coverage = new StackPanel { Orientation = Orientation.Horizontal };
+        var rec = Model.Snapshot?.Reconciliation;
+        string sentence = rec is { } r && !r.ScannedExceedsUsed
+            ? $"This scan accounts for {ByteFormat.Format(r.ScannedBytes)} of the {ByteFormat.Format(r.UsedBytes)} in use ({r.CoverageFraction * 100:0.#}%)."
+            : $"This scan counts {ByteFormat.Format(totals[0])} across every name it could read.";
+        var sent = Ui.Subtle(sentence, 12);
+        coverage.Children.Add(sent);
+        var whyLink = Ui.LinkText("Why?", () => { }, 12);
+        whyLink.Margin = new Thickness(8, 0, 0, 0);
+        var popup = WhyPopover(whyLink, tree, compressedBytes, cloudOnlyBytes);
+        whyLink.MouseLeftButtonDown += (_, _) => popup.IsOpen = !popup.IsOpen;
+        coverage.Children.Add(whyLink);
+        hero.Children.Add(coverage);
+        hero.Children.Add(popup);
+        return hero;
+    }
+
+    /// <summary>§16.3 — "WHY THE NUMBERS DIFFER", raised, 340 wide.</summary>
+    private System.Windows.Controls.Primitives.Popup WhyPopover(
+        FrameworkElement anchor, FileTree tree, long compressedBytes, long cloudOnlyBytes)
+    {
+        var body = new StackPanel { Width = 340 };
+        body.Children.Add(Ui.MonoLabel("Why the numbers differ", Ui.Brush("AppSubtle")));
+        var rec = Model.Snapshot?.Reconciliation;
+        if (rec is { } r)
+        {
+            string detail;
+            if (r.ScannedExceedsUsed)
             {
-                line = $"This scan counts {ByteFormat.Format(rec.ScannedBytes)} across names — " +
-                       $"more than the {ByteFormat.Format(rec.UsedBytes)} in use, because hard-linked " +
-                       "files share the same physical blocks.";
-            }
-            else if (rec.UnaccountedBytes > 512L * 1024 * 1024)
-            {
-                // WIN-078: name the shadow storage home when it's a
-                // drive-root scan — VSS usage explains the gap concretely.
-                // SVI is denied, so it surfaces via DeniedDirectories,
-                // not the tree's children.
-                bool sviPresent = Model.DeniedDirectories.Any(id =>
-                    tree.NameOf(id).Equals("System Volume Information", StringComparison.OrdinalIgnoreCase));
-                line = $"This scan accounts for {ByteFormat.Format(rec.ScannedBytes)} of the " +
-                       $"{ByteFormat.Format(rec.UsedBytes)} in use ({rec.CoverageFraction * 100:0}%) — " +
-                       $"{ByteFormat.Format(rec.UnaccountedBytes)} is outside it: " +
-                       (sviPresent
-                           ? "restore points and VSS shadow copies live in System Volume Information (which Windows won't let us read), plus "
-                           : "restore points and ") +
-                       "system state, other volumes mounted under this folder, folders Windows " +
-                       "wouldn't let us read, and filesystem metadata itself.";
+                detail = $"This scan counts {ByteFormat.Format(r.ScannedBytes)} across names — more than the " +
+                    $"{ByteFormat.Format(r.UsedBytes)} in use, because hard-linked files share the same physical blocks.";
             }
             else
             {
-                line = $"This scan accounts for {ByteFormat.Format(rec.ScannedBytes)} of the " +
-                       $"{ByteFormat.Format(rec.UsedBytes)} in use ({rec.CoverageFraction * 100:0}%).";
+                bool svi = Model.DeniedDirectories.Any(id =>
+                    tree.NameOf(id).Equals("System Volume Information", StringComparison.OrdinalIgnoreCase));
+                detail = $"{ByteFormat.Format(r.UnaccountedBytes)} sits outside the scan: " +
+                    (svi ? "restore points and VSS shadow copies in System Volume Information (which Windows won't let us read), plus "
+                        : "restore points and ") +
+                    "system state, other volumes mounted under this folder, folders Windows " +
+                    "wouldn't let us read, and filesystem metadata itself.";
             }
-            healthBody.Children.Add(Ui.Subtle(line, 11.5));
+            var text = Ui.Subtle(detail, 12);
+            text.TextWrapping = TextWrapping.Wrap;
+            text.Margin = new Thickness(0, 8, 0, 0);
+            body.Children.Add(text);
         }
-
-        // WIN-066: on a ReFS (Dev Drive) root the honest answer —
-        // block clones are per-copy here; hard links already dedupe.
-        if (volume is { DriveFormat: "ReFS" })
-        {
-            healthBody.Children.Add(Ui.Subtle(
-                "ReFS volume: block-cloned copies are counted per copy — " +
-                "the sharing pass isn't run (hard links are already deduped).", 11.5));
-        }
-
-        // WIN-076: how much is already compressed/sparse — logical
-        // size the scan recorded minus what NTFS allocated.
-        if (compressedBytes > 256L * 1024 * 1024)
-            healthBody.Children.Add(Ui.Subtle(
-                $"{ByteFormat.Format(compressedBytes)} of the scanned data is already compressed or sparse on disk.", 11.5));
-
-        // WIN-077: cloud-only bytes — freeing them is an Explorer
-        // "Free up space" action, never a deletion — show, don't run.
-        if (cloudOnlyBytes > 0)
-            healthBody.Children.Add(Ui.Subtle(
-                $"{ByteFormat.Format(cloudOnlyBytes)} lives only in the cloud (☁ rows) — " +
-                "evicting those files frees the space without deleting them.", 11.5));
-
         var correction = Model.Snapshot?.HardLinkCorrection;
-        if (correction is { } c && !c.IsEmpty)
+        if (correction is { IsEmpty: false } c)
         {
-            healthBody.Children.Add(Ui.Subtle(
-                $"{c.DuplicateNameCount:N0} names of hard-linked files counted once — " +
-                $"{ByteFormat.Format(c.AllocatedBytes)} of shared blocks", 11.5));
+            var t = Ui.Subtle($"{c.DuplicateNameCount:N0} names of hard-linked files are counted once — " +
+                $"{ByteFormat.Format(c.AllocatedBytes)} of shared blocks.", 12);
+            t.TextWrapping = TextWrapping.Wrap;
+            t.Margin = new Thickness(0, 8, 0, 0);
+            body.Children.Add(t);
         }
-        Root.Children.Add(Ui.HeadedCard(Icons.Drive, Ui.Brush("AppAccentSoft"), Ui.Brush("AppAccent"),
-            driveName, "Storage health", healthBody));
-
-        // WIN-027: the story line — a few sentences naming what matters
-        // most, ranked by the recommendation score.
-        if (Model.Snapshot is { } snap)
+        if (Model.Volume is { DriveFormat: "ReFS" })
         {
-            var stories = StorageNarrator.Stories(snap, 4);
-            var recs = StorageNarrator.Recommendations(snap, 3);
-            if (stories.Count > 0 || recs.Count > 0)
+            var clone = Model.CloneCorrection;
+            var t = Ui.Subtle(clone.CloneCount > 0
+                ? $"{clone.CloneCount:N0} cloned copies share {ByteFormat.Format(clone.Bytes)} — counted once."
+                : "Block-cloned copies are counted per copy — turn on clone accounting in Settings (Ctrl+,) to count clones once.");
+            t.FontSize = 12;
+            t.TextWrapping = TextWrapping.Wrap;
+            t.Margin = new Thickness(0, 8, 0, 0);
+            body.Children.Add(t);
+        }
+        if (compressedBytes > 256L * 1024 * 1024 || cloudOnlyBytes > 0)
+        {
+            string extra = compressedBytes > 256L * 1024 * 1024
+                ? $"{ByteFormat.Format(compressedBytes)} of the scanned data is already compressed or sparse on disk."
+                : "";
+            if (cloudOnlyBytes > 0)
+                extra += (extra.Length > 0 ? " " : "") +
+                    $"{ByteFormat.Format(cloudOnlyBytes)} lives only in the cloud — evicting it in Explorer frees space without deleting.";
+            var t = Ui.Subtle(extra, 12);
+            t.TextWrapping = TextWrapping.Wrap;
+            t.Margin = new Thickness(0, 8, 0, 0);
+            body.Children.Add(t);
+        }
+        return new System.Windows.Controls.Primitives.Popup
+        {
+            PlacementTarget = anchor,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+            Child = new Border
             {
-                var body = new StackPanel();
-                foreach (var story in stories)
-                {
-                    var row = new DockPanel { Margin = new Thickness(0, 3, 0, 3) };
-                    var bytes = Ui.T(ByteFormat.Format(story.Bytes), 12, FontWeights.Medium,
-                        Ui.Brush("AppSubtle"));
-                    DockPanel.SetDock(bytes, Dock.Right);
-                    row.Children.Add(bytes);
-                    var title = new StackPanel();
-                    title.Children.Add(Ui.T(story.Title, 12.5, FontWeights.Medium));
-                    title.Children.Add(Ui.Faint(story.Detail));
-                    row.Children.Add(title);
-                    body.Children.Add(row);
-                }
-                if (recs.Count > 0)
-                {
-                    body.Children.Add(new Border { Height = 8 });
-                    foreach (var recommendation in recs)
-                        body.Children.Add(Ui.Subtle(
-                            $"→ {recommendation.Title} — {recommendation.Detail}", 11.5));
-                }
-                Root.Children.Add(Ui.HeadedCard(Icons.Overview, Ui.Hex("#FEF3DE"), Ui.Hex("#B45309"),
-                    "The story", "What this scan says matters most", body));
-            }
-        }
-
-        // Access-denied warning: without it a denied directory silently
-        // under-reports every total above it.
-        if (Model.DeniedDirectories is { Count: > 0 } denied && Model.RootPath is { } rootPath)
-        {
-            var examples = denied.Take(3).Select(id => tree.PathOf(id, rootPath)).ToList();
-            Root.Children.Add(Ui.WarningCard(
-                $"{denied.Count} folder{(denied.Count == 1 ? "" : "s")} couldn't be scanned",
-                "Access was denied — the totals above are missing what's inside. " +
-                "Run DiskMap as administrator to include everything." +
-                (examples.Count > 0 ? "\n" + string.Join("\n", examples) +
-                    (denied.Count > examples.Count ? $"\n…and {denied.Count - examples.Count} more" : "") : "")));
-        }
-
-        // Two columns: where the space goes | largest opportunities.
-        // WIN-028: "What grew this week" — the history comparison,
-        // honest about a non-week base and changed denied counts.
-        if (Model.HistoryComparison is { } growth && growth.Growers.Count > 0)
-        {
-            var body = new StackPanel();
-            string spanLabel = growth.IsWeek
-                ? $"since {growth.Since.LocalDateTime:MMM d}"
-                : $"since {growth.Since.LocalDateTime:MMM d} (not quite a week)";
-            body.Children.Add(Ui.Subtle(
-                $"{(growth.ScannedDelta >= 0 ? "+" : "−")}{ByteFormat.Format(Math.Abs(growth.ScannedDelta))} " +
-                $"in this scan {spanLabel}", 12));
-            if (growth.DeniedChanged)
-                body.Children.Add(Ui.Subtle(
-                    "The two scans read different folders — small deltas may be the reading, not the disk.", 11.5));
-            foreach (var g in growth.Growers)
-            {
-                var row = new DockPanel { Margin = new Thickness(0, 5, 0, 0) };
-                var delta = Ui.T($"+{ByteFormat.Format(g.Delta)}", 12, FontWeights.Medium,
-                    Ui.Brush("AppDanger"));
-                DockPanel.SetDock(delta, Dock.Right);
-                row.Children.Add(delta);
-                var name = Ui.T(g.Path.Replace('/', '\\'), 12, FontWeights.Medium);
-                name.Cursor = System.Windows.Input.Cursors.Hand;
-                string captured = g.Path;
-                name.MouseLeftButtonDown += (_, _) =>
-                {
-                    // The record stores root-relative names — rebuild the
-                    // path and resolve it in the live tree.
-                    if (Model.RootPath is { } root && Model.Tree is { } t)
-                    {
-                        string full = root.TrimEnd('\\') + "\\" + captured.Replace('/', '\\');
-                        var lookup = FileQuery.NodeAt(full, t, root);
-                        if (lookup.Kind == FileQuery.NodeLookupKind.Found)
-                            Model.Select(lookup.Id);
-                    }
-                };
-                row.Children.Add(name);
-                body.Children.Add(row);
-            }
-            Root.Children.Add(Ui.HeadedCard(Icons.Forgotten, Ui.Hex("#FEF3DE"), Ui.Hex("#B45309"),
-                "What grew this week", "Folders up at least 100 MB", body));
-        }
-
-        // Two columns: where the space goes | largest opportunities.
-        var columns = new Grid { Margin = new Thickness(0, 0, 0, 12) };
-        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var going = WhereGoing(tree, totals, children);
-        var opportunities = Opportunities(tree, totals);
-        Grid.SetColumn(going, 0);
-        Grid.SetColumn(opportunities, 2);
-        columns.Children.Add(going);
-        columns.Children.Add(opportunities);
-        Root.Children.Add(columns);
-
-        // Biggest files preview.
-        var filesBody = new StackPanel();
-        foreach (var id in topFiles.Take(6))
-        {
-            string kind = FileTypes.KindOfFile(tree.NameOf(id));
-            var cat = FileTypes.Categories.FirstOrDefault(c => c.Id == kind);
-            var row = Ui.NameCell(Icons.ForKind(kind),
-                Ui.Hex(cat?.BadgeBackground ?? "#F1F5F9"), Ui.Hex(cat?.BadgeForeground ?? "#475569"),
-                tree.NameOf(id), ByteFormat.Format(totals[id]), 26);
-            row.Margin = new Thickness(0, 4, 0, 4);
-            int captured = id;
-            row.Cursor = System.Windows.Input.Cursors.Hand;
-            row.MouseLeftButtonDown += (_, _) => Model.Select(captured);
-            filesBody.Children.Add(row);
-        }
-        var link = Ui.T("See all in Biggest Files →", 12, null, Ui.Brush("AppAccent"));
-        link.Cursor = System.Windows.Input.Cursors.Hand;
-        link.Margin = new Thickness(0, 10, 0, 0);
-        link.MouseLeftButtonDown += (_, _) => Model.ShowPage("Biggest Files");
-        filesBody.Children.Add(link);
-        Root.Children.Add(Ui.HeadedCard(Icons.BiggestFiles, Ui.Hex("#F3E8FF"), Ui.Hex("#7C3AED"),
-            "Largest files", "The individual files using the most space", filesBody));
+                Background = Ui.Brush("AppCard"),
+                BorderBrush = Ui.Brush("AppBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(16),
+                Margin = new Thickness(0, 6, 0, 0),
+                Child = body,
+            },
+        };
     }
 
-    private Border WhereGoing(FileTree tree, long[] totals, List<(int Id, long Size)> children)
+    // ---- Where it's going (§17.3): SectionHeader + segmented bar +
+    // §14.4 category rows ----
+
+    private FrameworkElement WhereGoing(FileTree tree, long[] totals)
     {
-        var body = new StackPanel();
-        // Prefer the snapshot's exclusive categories (home/drive name
-        // split, or by file type for arbitrary folders) over raw children.
+        var section = new StackPanel();
+        var open = Ui.LinkText("Open in Visualize →", () => Model.Visualize(0));
+        open.VerticalAlignment = VerticalAlignment.Bottom;
+        section.Children.Add(Ui.SectionHeader(
+            Model.Snapshot?.Mode == CategoryMode.Folder ? "Where it's going · by type" : "Where it's going",
+            trailing: open));
+        section.Children.Add(new Border { Height = 12 });
+
         var cats = Model.Snapshot?.Categories;
+        List<(string Name, long Bytes, Brush Brush, Action? Go)> rows = [];
         if (cats is { Count: > 0 })
         {
-            long max = Math.Max(1, cats[0].Bytes);
             foreach (var cat in cats.Take(8))
             {
-                var row = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
-                var top = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
-                var sizeText = Ui.T(ByteFormat.Format(cat.Bytes), 11.5, FontWeights.Medium);
-                DockPanel.SetDock(sizeText, Dock.Right);
-                top.Children.Add(sizeText);
-                var name = Ui.T(cat.Title, 12.5, FontWeights.Medium);
-                if (cat.NodeId is { } nodeId)
-                {
-                    name.Cursor = System.Windows.Input.Cursors.Hand;
-                    name.MouseLeftButtonDown += (_, _) => Model.Visualize(nodeId);
-                }
-                top.Children.Add(name);
-                row.Children.Add(top);
-                var bar = Ui.Bar((double)cat.Bytes / max,
-                    cat.ColorHex is { } hex ? Ui.Hex(hex) : Ui.Brush("AppAccent"), 8, 0);
-                bar.Width = double.NaN;
-                row.Children.Add(bar);
-                body.Children.Add(row);
+                Action? go = cat.NodeId is { } nodeId
+                    ? () => Model.Visualize(nodeId)
+                    : cat.FileKind is { } kind
+                        ? () => { Model.SearchQuery = $"kind:{kind}"; Model.ShowPage("Find"); }
+                        : null;
+                rows.Add((cat.Title, cat.Bytes, CategoryBrush(cat), go));
             }
         }
         else
         {
-            long max = children.Count > 0 ? Math.Max(1, children[0].Size) : 1;
-            foreach (var (id, size) in children.Take(7))
+            int i = 0;
+            foreach (var (id, size) in tree.ChildrenOf(0, totals).OrderByDescending(c => c.Size).Take(7))
             {
-                var row = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
-                var top = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
-                var sizeText = Ui.T(ByteFormat.Format(size), 11.5, FontWeights.Medium);
-                DockPanel.SetDock(sizeText, Dock.Right);
-                top.Children.Add(sizeText);
-                var name = Ui.T(tree.NameOf(id), 12.5, FontWeights.Medium);
-                name.Cursor = System.Windows.Input.Cursors.Hand;
                 int captured = id;
-                name.MouseLeftButtonDown += (_, _) => Model.Visualize(captured);
-                top.Children.Add(name);
-                row.Children.Add(top);
-                var bar = Ui.Bar((double)size / max, Ui.Hex(FileTypes.BadgeForegroundOf(
-                    FileTypes.DominantKind(tree, totals, id))), 8, 0);
-                bar.Width = double.NaN;
-                row.Children.Add(bar);
-                body.Children.Add(row);
+                rows.Add((tree.NameOf(id), size, Ui.Data(i++), () => Model.Visualize(captured)));
             }
         }
-        if (body.Children.Count == 0) body.Children.Add(Ui.Subtle("The scan is empty."));
-        return Ui.HeadedCard(Icons.BiggestFolders, Ui.Brush("AppAccentSoft"), Ui.Brush("AppAccent"),
-            "Where is your storage going?",
-            Model.Snapshot?.Mode == CategoryMode.Folder ? "By file type" : "By category", body,
-            new Thickness(0));
+        long sum = Math.Max(1, rows.Sum(r => r.Bytes));
+
+        // The 6 pt composition bar — segments in the data palette.
+        var parts = rows.Take(6).Select(r => ((double)r.Bytes / sum, r.Brush)).ToList();
+        double rest = Math.Max(0, 1 - parts.Sum(p => p.Item1));
+        if (rest > 0.005) parts.Add((rest, Ui.Data(6)));
+        var bar = Ui.SegBar(parts);
+        bar.Margin = new Thickness(0, 0, 0, 12);
+        section.Children.Add(bar);
+
+        // §14.4 rows: dot · name · 3 pt bar · mono size · mono %.
+        foreach (var (name, bytes, brush, go) in rows)
+        {
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
+            var dot = Ui.Dot(brush, 8);
+            Grid.SetColumn(dot, 0);
+            row.Children.Add(dot);
+            var nameText = Ui.T(name, 13, FontWeights.Medium);
+            nameText.TextTrimming = TextTrimming.CharacterEllipsis;
+            nameText.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(nameText, 1);
+            row.Children.Add(nameText);
+            var prop = Ui.CapacityBar((double)bytes / Math.Max(1, rows[0].Bytes), brush, double.NaN);
+            prop.Height = 3;
+            prop.VerticalAlignment = VerticalAlignment.Center;
+            prop.Margin = new Thickness(0, 0, 12, 0);
+            Grid.SetColumn(prop, 2);
+            row.Children.Add(prop);
+            var sizeText = Ui.Mono(ByteFormat.Format(bytes), 12, FontWeights.Medium);
+            sizeText.HorizontalAlignment = HorizontalAlignment.Right;
+            sizeText.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(sizeText, 3);
+            row.Children.Add(sizeText);
+            var pctText = Ui.Mono($"{100.0 * bytes / sum:0}%", 11, null, Ui.Brush("AppSubtle"));
+            pctText.HorizontalAlignment = HorizontalAlignment.Right;
+            pctText.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(pctText, 4);
+            row.Children.Add(pctText);
+            section.Children.Add(Ui.HoverRow(row, go));
+        }
+        if (rows.Count == 0)
+            section.Children.Add(Ui.Subtle("The scan is empty.", 12));
+        return section;
     }
 
-    private Border Opportunities(FileTree tree, long[] totals)
+    private static Brush CategoryBrush(StorageCategory cat) =>
+        cat.FileKind is { } kind ? Ui.KindColor(kind)
+        : cat.Key switch
+        {
+            "downloads" => Ui.Data(2),
+            "applications" or "apps" => Ui.Data(4),
+            "documents" => Ui.Data(5),
+            "developer" => Ui.Data(0),
+            "caches" or "appdata" => Ui.Data(3),
+            _ => cat.ColorHex is { } hex ? Ui.Hex(hex) : Ui.Data(6),
+        };
+
+    // ---- Two columns (§17.4): worth reviewing | what grew / biggest ----
+
+    private FrameworkElement TwoColumns(FileTree tree, long[] totals, List<int> topFiles)
     {
-        var body = new StackPanel();
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var left = WorthReviewing(totals);
+        Grid.SetColumn(left, 0);
+        grid.Children.Add(left);
+
+        FrameworkElement right = Model.HistoryComparison is { } growth && growth.Growers.Count > 0
+            ? WhatGrew(tree, growth)
+            : BiggestFiles(tree, totals, topFiles);
+        Grid.SetColumn(right, 2);
+        grid.Children.Add(right);
+        return grid;
+    }
+
+    private FrameworkElement WorthReviewing(long[] totals)
+    {
+        var section = new StackPanel();
         var hits = Model.QuickWins ?? [];
         var groups = hits.GroupBy(h => h.Category)
             .Select(g => (Category: g.Key, Bytes: g.Sum(h => totals[h.Id]), Count: g.Count()))
             .OrderByDescending(g => g.Bytes).Take(6).ToList();
-        if (groups.Count == 0)
+        long reclaimable = groups.Sum(g => g.Bytes);
+        section.Children.Add(Ui.SectionHeader("Worth reviewing",
+            reclaimable > 0 ? $"~{ByteFormat.Format(reclaimable)}" : null));
+
+        // The narrator's ranked recommendations lead — each row is a
+        // safety dot, a name, a tail-truncated detail, a mono size (§17.4).
+        if (Model.Snapshot is { } snap)
         {
-            body.Children.Add(Ui.Subtle("No easy wins found — this scan looks clean."));
+            foreach (var r in StorageNarrator.Recommendations(snap, 3))
+            {
+                var color = r.Safety switch
+                {
+                    StorySafety.Safe => Ui.Brush("AppSuccess"),
+                    StorySafety.Protected => Ui.Brush("AppDanger"),
+                    _ => Ui.Brush("AppWarning"),
+                };
+                section.Children.Add(LinkRow(color, r.Title, r.Detail,
+                    ByteFormat.Format(r.Bytes), () => Model.ShowPage("Safe to Review")));
+            }
         }
         foreach (var g in groups)
         {
-            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-            var review = Ui.T("Review →", 11.5, FontWeights.Medium, Ui.Brush("AppAccent"));
-            review.Cursor = System.Windows.Input.Cursors.Hand;
-            DockPanel.SetDock(review, Dock.Right);
-            review.MouseLeftButtonDown += (_, _) => Model.ShowPage("Safe to Review");
-            row.Children.Add(review);
-            var text = new StackPanel();
-            text.Children.Add(Ui.T(g.Category, 12.5, FontWeights.Medium));
-            text.Children.Add(Ui.Faint($"{g.Count:N0} locations"));
-            row.Children.Add(text);
-            var sizeText = Ui.T(ByteFormat.Format(g.Bytes), 12, FontWeights.SemiBold);
-            DockPanel.SetDock(sizeText, Dock.Right);
-            row.Children.Add(sizeText);
-            body.Children.Add(row);
+            section.Children.Add(LinkRow(Ui.Brush("AppSuccess"), g.Category,
+                $"{g.Count:N0} location{(g.Count == 1 ? "" : "s")} — regenerable data",
+                ByteFormat.Format(g.Bytes), () => Model.ShowPage("Safe to Review")));
         }
-        return Ui.HeadedCard(Icons.SafeReview, Ui.Brush("AppSuccessBg"), Ui.Brush("AppSuccess"),
-            "Largest opportunities", "Regenerable data you can usually remove", body,
-            new Thickness(0));
+        if (groups.Count == 0 && Model.Snapshot is null)
+            section.Children.Add(Ui.Subtle("Nothing flagged — this scan looks clean.", 12));
+        return section;
+    }
+
+    /// <summary>§17.4 link row: safety dot · name · detail · mono size · ›.</summary>
+    private FrameworkElement LinkRow(Brush dot, string name, string detail, string size, Action go)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+        grid.Children.Add(Ui.Dot(dot, 6));
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(Ui.T(name, 13, FontWeights.Medium));
+        var d = Ui.Faint(detail, 11.5);
+        d.TextTrimming = TextTrimming.CharacterEllipsis;
+        text.Children.Add(d);
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(text);
+        var sizeText = Ui.Mono(size, 12, FontWeights.Medium);
+        sizeText.VerticalAlignment = VerticalAlignment.Center;
+        sizeText.Margin = new Thickness(8, 0, 4, 0);
+        Grid.SetColumn(sizeText, 2);
+        grid.Children.Add(sizeText);
+        var chevron = Ui.T("›", 12, FontWeights.SemiBold, Ui.Brush("AppFaint"));
+        chevron.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(chevron, 3);
+        grid.Children.Add(chevron);
+        return Ui.HoverRow(grid, go);
+    }
+
+    private FrameworkElement WhatGrew(FileTree tree, StorageHistory.Comparison growth)
+    {
+        var section = new StackPanel();
+        string span = growth.IsWeek ? "this week" : $"since {growth.Since.LocalDateTime:MMM d}";
+        string delta = $"{(growth.ScannedDelta >= 0 ? "+" : "−")}{ByteFormat.Format(Math.Abs(growth.ScannedDelta))}";
+        section.Children.Add(Ui.SectionHeader($"What grew {span}", delta));
+
+        if (growth.DeniedChanged)
+            section.Children.Add(Ui.Subtle(
+                "The two scans read different folders — small deltas may be the reading, not the disk.", 11.5));
+        foreach (var g in growth.Growers.Take(6))
+        {
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var name = Ui.T(g.Path.Replace('/', '\\'), 13, FontWeights.Medium);
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            name.VerticalAlignment = VerticalAlignment.Center;
+            grid.Children.Add(name);
+            var d = Ui.Mono($"+{ByteFormat.Format(g.Delta)}", 12, FontWeights.Medium);
+            d.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(d, 1);
+            grid.Children.Add(d);
+            string captured = g.Path;
+            section.Children.Add(Ui.HoverRow(grid, () =>
+            {
+                if (Model.RootPath is { } root && Model.Tree is { } t)
+                {
+                    string full = root.TrimEnd('\\') + "\\" + captured.Replace('/', '\\');
+                    var lookup = FileQuery.NodeAt(full, t, root);
+                    if (lookup.Kind == FileQuery.NodeLookupKind.Found)
+                        Model.Select(lookup.Id);
+                }
+            }));
+        }
+        return section;
+    }
+
+    private FrameworkElement BiggestFiles(FileTree tree, long[] totals, List<int> topFiles)
+    {
+        var section = new StackPanel();
+        section.Children.Add(Ui.SectionHeader("Biggest files"));
+        foreach (var id in topFiles)
+        {
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+            string kind = FileTypes.KindOfFile(tree.NameOf(id));
+            var icon = Ui.IconTile(Icons.ForKind(kind), 20,
+                Ui.Tint(((SolidColorBrush)Ui.KindColor(kind)).Color, 40),
+                Ui.KindColor(kind), 5);
+            icon.VerticalAlignment = VerticalAlignment.Center;
+            grid.Children.Add(icon);
+            var name = Ui.T(tree.NameOf(id), 13, FontWeights.Medium);
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            name.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(name, 1);
+            grid.Children.Add(name);
+            var size = Ui.Mono(ByteFormat.Format(totals[id]), 12, FontWeights.Medium);
+            size.VerticalAlignment = VerticalAlignment.Center;
+            size.Margin = new Thickness(8, 0, 4, 0);
+            Grid.SetColumn(size, 2);
+            grid.Children.Add(size);
+            var chevron = Ui.T("›", 12, FontWeights.SemiBold, Ui.Brush("AppFaint"));
+            chevron.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(chevron, 3);
+            grid.Children.Add(chevron);
+            int captured = id;
+            section.Children.Add(Ui.HoverRow(grid, () => Model.Select(captured)));
+        }
+        if (topFiles.Count == 0)
+            section.Children.Add(Ui.Subtle("No files in this scan.", 12));
+        return section;
+    }
+
+    // ---- Mono footer (§17.5): scan kind + time, rescan links ----
+
+    private FrameworkElement Footer()
+    {
+        var section = new StackPanel();
+        section.Children.Add(Ui.Hairline());
+        var row = new DockPanel { Margin = new Thickness(0, 10, 0, 0) };
+        var links = new StackPanel { Orientation = Orientation.Horizontal };
+        DockPanel.SetDock(links, Dock.Right);
+        links.Children.Add(Ui.LinkText("Rescan", async () => await Model.RescanAsync(), 11));
+        if (Model.Backend == "incremental" && Model.RootPath is not null)
+        {
+            var sep = Ui.Mono("  ·  ", 11, null, Ui.Brush("AppFaint"));
+            links.Children.Add(sep);
+            links.Children.Add(Ui.LinkText("Full Rescan", async () =>
+            {
+                if (Model.RootPath is { } rp) ScanCache.Remove(rp);
+                await Model.RescanAsync();
+            }, 11));
+        }
+        row.Children.Add(links);
+        string kind = Model.Backend == "incremental" ? "Quick update" : "Full scan";
+        row.Children.Add(Ui.Mono(
+            $"{kind} — {Model.ItemCount:N0} items in {Model.Elapsed:0.0}s · {Model.Backend}",
+            11, null, Ui.Brush("AppFaint")));
+        section.Children.Add(row);
+        return section;
+    }
+
+    // ---- First-run hero (§17): the mark, eyebrow, headline, buttons,
+    // dashed hairline, four numbered mono hints ----
+
+    private FrameworkElement FirstRunHero()
+    {
+        var hero = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 60, 0, 0) };
+
+        // The treemap mark — five data-palette tiles, 220 × 132.
+        var mark = new Grid { Width = 220, Height = 132 };
+        mark.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+        mark.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star) });
+        mark.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
+        mark.RowDefinitions.Add(new RowDefinition { Height = new GridLength(3, GridUnitType.Star) });
+        mark.RowDefinitions.Add(new RowDefinition { Height = new GridLength(2, GridUnitType.Star) });
+        void Tile(int row, int col, int rowSpan, Brush fill)
+        {
+            var tile = new Border
+            {
+                Background = fill,
+                CornerRadius = new CornerRadius(6),
+                Margin = new Thickness(1.5),
+            };
+            if (rowSpan > 1) Grid.SetRowSpan(tile, rowSpan);
+            Grid.SetRow(tile, row);
+            Grid.SetColumn(tile, col);
+            mark.Children.Add(tile);
+        }
+        Tile(0, 0, 1, Ui.Data(0));   // slate
+        Tile(0, 1, 1, Ui.Data(2));   // rose
+        Tile(0, 2, 2, Ui.Data(3));   // sage
+        Tile(1, 0, 1, Ui.Data(1));   // violet
+        Tile(1, 1, 1, Ui.Data(4));   // sand
+        hero.Children.Add(mark);
+
+        var eyebrow = Ui.MonoLabel("LOCAL · FAST · PRIVATE");
+        eyebrow.HorizontalAlignment = HorizontalAlignment.Center;
+        eyebrow.Margin = new Thickness(0, 28, 0, 10);
+        hero.Children.Add(eyebrow);
+
+        var headline = Ui.T("See where your space went.", 30, FontWeights.SemiBold);
+        headline.HorizontalAlignment = HorizontalAlignment.Center;
+        hero.Children.Add(headline);
+
+        var paragraph = Ui.Subtle(
+            "DiskMap reads your disk's own map — a full scan takes seconds, not minutes. " +
+            "Then it shows what's using the space, what's safe to remove, and what to do next.", 13);
+        paragraph.TextAlignment = TextAlignment.Center;
+        paragraph.TextWrapping = TextWrapping.Wrap;
+        paragraph.MaxWidth = 520;
+        paragraph.Margin = new Thickness(0, 10, 0, 24);
+        hero.Children.Add(paragraph);
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+        var scan = Ui.Button("Scan this PC", null, Ui.ButtonStyle.Dark, () =>
+        {
+            string root = System.IO.Path.GetPathRoot(
+                Environment.GetFolderPath(Environment.SpecialFolder.System)) ?? "C:\\";
+            _ = Model.ScanAsync(root);
+        });
+        var choose = Ui.Button("Choose Folder…", null, Ui.ButtonStyle.Outline, () => Model.RequestScan());
+        choose.Margin = new Thickness(10, 0, 0, 0);
+        buttons.Children.Add(scan);
+        buttons.Children.Add(choose);
+        hero.Children.Add(buttons);
+
+        var dash = Ui.DashedHairline();
+        dash.Margin = new Thickness(0, 36, 0, 24);
+        hero.Children.Add(dash);
+
+        var hints = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+        foreach (var hint in new[]
+        {
+            "01 — Pick a drive", "02 — See the map",
+            "03 — Review what's safe", "04 — Send to Recycle Bin",
+        })
+        {
+            var h = Ui.MonoLabel(hint);
+            h.Margin = new Thickness(10, 0, 10, 0);
+            hints.Children.Add(h);
+        }
+        hero.Children.Add(hints);
+        return hero;
     }
 }

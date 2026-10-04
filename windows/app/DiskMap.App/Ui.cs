@@ -56,8 +56,7 @@ public static class Ui
         new() { Text = text, FontSize = 13, Foreground = Brush("AppSubtle"), TextWrapping = TextWrapping.Wrap };
 
     /// <summary>Small uppercase-ish gray section label ("FIND", "Safety").</summary>
-    public static TextBlock SectionLabel(string text) =>
-        new() { Text = text, FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = Brush("AppFaint") };
+    public static TextBlock SectionLabel(string text) => MonoLabel(text);
 
     public static TextBlock Subtle(string text, double size = 12) =>
         T(text, size, null, Brush("AppSubtle"));
@@ -127,36 +126,28 @@ public static class Ui
         };
     }
 
+    /// <summary>Type column: a kind-colour dot and a word — no tinted fill (§3.4).</summary>
     public static Border KindBadge(string kindId)
     {
         var cat = FileTypes.Categories.FirstOrDefault(c => c.Id == kindId);
-        return cat is not null
-            ? Badge(cat.Label, Hex(cat.BadgeForeground), Hex(cat.BadgeBackground))
-            : Badge(kindId == FileTypes.FolderId ? "Folder" : "Other",
-                Hex("#475569"), Hex("#F1F5F9"));
+        string label = cat?.Label ?? (kindId == FileTypes.FolderId ? "Folder" : "Other");
+        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(Dot(KindColor(kindId), 6));
+        var t = T(label, 11, null, Brush("AppSubtle"));
+        t.Margin = new Thickness(6, 0, 0, 0);
+        t.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(t);
+        return new Border { Child = row };
     }
 
-    /// <summary>Safety pill — "Generally safe" green / "Review first" amber.</summary>
+    /// <summary>Safety — a dot and a word, never a fill (spec §3.2).</summary>
     public static Border SafetyBadge(bool safe, string? text = null)
     {
-        string label = text ?? (safe ? "Generally safe" : "Review first");
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(Glyph(safe ? Icons.Check : Icons.Info, 11,
-            safe ? Brush("AppSuccess") : Brush("AppWarning")));
-        row.Children.Add(new TextBlock
-        {
-            Text = " " + label,
-            FontSize = 11, FontWeight = FontWeights.Medium,
-            Foreground = safe ? Brush("AppSuccess") : Brush("AppWarning"),
-            VerticalAlignment = VerticalAlignment.Center,
-        });
         return new Border
         {
-            Background = safe ? Brush("AppSuccessBg") : Brush("AppWarningBg"),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(7, 2, 7, 2),
             VerticalAlignment = VerticalAlignment.Center,
-            Child = row,
+            Child = SafetyLabel(safe ? Brush("AppSuccess") : Brush("AppWarning"),
+                text ?? (safe ? "Generally safe" : "Review first"), 11),
         };
     }
 
@@ -214,7 +205,9 @@ public static class Ui
         switch (style)
         {
             case ButtonStyle.Primary:
-                bg = Brush("AppAccent"); fg = Brushes.White; border = Brush("AppAccent"); break;
+                // Calm system: the one filled button is ink — violet is
+                // selection/links/chips, never a button (§8).
+                bg = Brush("AppInkButton"); fg = Brush("AppInkButtonFg"); border = Brush("AppInkButton"); break;
             case ButtonStyle.Dark:
                 bg = Brush("AppInkButton"); fg = Brush("AppInkButtonFg"); border = Brush("AppInkButton"); break;
             case ButtonStyle.Danger:
@@ -256,7 +249,7 @@ public static class Ui
         return template;
     }
 
-    /// <summary>Filter chip — dark when selected, bordered pill otherwise.</summary>
+    /// <summary>Filter chip — accent tint when selected, bordered pill otherwise (§9).</summary>
     public static System.Windows.Controls.Button Pill(string text, bool selected, Action onClick)
     {
         var btn = new System.Windows.Controls.Button
@@ -265,10 +258,10 @@ public static class Ui
             {
                 Text = text, FontSize = 12,
                 FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal,
-                Foreground = selected ? Brush("AppInkButtonFg") : Brush("AppForeground"),
+                Foreground = selected ? Brush("AppAccent") : Brush("AppSubtle"),
                 VerticalAlignment = VerticalAlignment.Center,
             },
-            Foreground = selected ? Brush("AppInkButtonFg") : Brush("AppForeground"),
+            Foreground = selected ? Brush("AppAccent") : Brush("AppSubtle"),
             Padding = new Thickness(13, 5, 13, 5),
             Cursor = Cursors.Hand,
         };
@@ -288,9 +281,9 @@ public static class Ui
         hover.Setters.Add(new Setter(UIElement.OpacityProperty, 0.8));
         template.Triggers.Add(hover);
         btn.Template = template;
-        btn.Background = selected ? Brush("AppInkButton") : Brush("AppCard");
-        btn.Foreground = selected ? Brush("AppInkButtonFg") : Brush("AppForeground");
-        btn.BorderBrush = selected ? Brush("AppInkButton") : Brush("AppCardBorder");
+        btn.Background = selected ? Brush("AppAccentSoft") : Brushes.Transparent;
+        btn.Foreground = selected ? Brush("AppAccent") : Brush("AppSubtle");
+        btn.BorderBrush = selected ? Brush("AppAccentSoft") : Brush("AppCardBorder");
         btn.Click += (_, _) => onClick();
         return btn;
     }
@@ -385,7 +378,7 @@ public static class Ui
         string name, string? sub, double iconSize = 30)
     {
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(T(name, 12.5, FontWeights.SemiBold));
+        text.Children.Add(T(name, 13, FontWeights.Medium));
         if (sub is { Length: > 0 })
             text.Children.Add(Faint(sub));
         var icon = IconTile(glyph, iconSize, glyphBg, glyphFg, 7);
@@ -426,21 +419,19 @@ public static class Ui
 
     // ---- Cards with icon + title header ----
 
+    /// <summary>
+    /// Calm section (§11.3): a mono label, a hairline, the body — no
+    /// icon tile, no card chrome. The legacy icon params are accepted
+    /// so call sites don't change; they're ignored.
+    /// </summary>
     public static Border HeadedCard(string glyph, Brush iconBg, Brush iconFg,
         string title, string? subtitle, UIElement body, Thickness? margin = null)
     {
         var stack = new StackPanel();
-        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-        var icon = IconTile(glyph, 38, iconBg, iconFg, 9);
-        DockPanel.SetDock(icon, Dock.Left);
-        var titles = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        titles.Children.Add(T(title, 14, FontWeights.SemiBold));
-        if (subtitle is not null) titles.Children.Add(Subtle(subtitle, 11.5));
-        head.Children.Add(icon);
-        head.Children.Add(titles);
-        stack.Children.Add(head);
+        stack.Children.Add(SectionHeader(title, subtitle));
+        stack.Children.Add(new Border { Height = 10 });
         stack.Children.Add(body);
-        return Card(stack, 16, margin);
+        return new Border { Child = stack, Margin = margin ?? new Thickness(0, 0, 0, 24) };
     }
 
     /// <summary>Page header: colored icon tile + bold title + gray subtitle.</summary>
@@ -458,18 +449,14 @@ public static class Ui
         return header;
     }
 
-    /// <summary>One stat card: icon + big value on top, label line below.</summary>
+    /// <summary>One stat: a mono figure on top, label line below.</summary>
     public static Border StatCard(string glyph, Brush iconBg, Brush iconFg,
         string value, string label, string? sub = null)
     {
         var stack = new StackPanel();
-        var top = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 4, 0) };
-        top.Children.Add(IconTile(glyph, 30, iconBg, iconFg, 7));
-        var vt = T(value, 17, FontWeights.Bold);
-        vt.Margin = new Thickness(10, 0, 0, 0);
-        vt.VerticalAlignment = VerticalAlignment.Center;
-        top.Children.Add(vt);
-        stack.Children.Add(top);
+        var vt = Mono(value, 18, FontWeights.SemiBold);
+        vt.Margin = new Thickness(0, 0, 4, 0);
+        stack.Children.Add(vt);
         var labelLine = new StackPanel { Orientation = Orientation.Horizontal };
         labelLine.Children.Add(T(label, 11.5, FontWeights.Medium, Brush("AppSubtle")));
         if (sub is not null) labelLine.Children.Add(Faint("  " + sub));
@@ -493,7 +480,7 @@ public static class Ui
     public static DockPanel DotRow(Brush color, string label, string value, double frac)
     {
         var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
-        var val = T(value, 11.5, FontWeights.Medium, Brush("AppSubtle"));
+        var val = Mono(value, 11, FontWeights.Medium, Brush("AppSubtle"));
         DockPanel.SetDock(val, Dock.Right);
         val.VerticalAlignment = VerticalAlignment.Center;
         row.Children.Add(val);
@@ -523,9 +510,9 @@ public static class Ui
         return Bar(Math.Clamp(frac, 0.02, 1), brush, 5, 0);
     }
 
-    /// <summary>Table header label — small gray text.</summary>
+    /// <summary>Table header label — the mono eyebrow (§12).</summary>
     public static TextBlock TableHead(string text) =>
-        T(text, 11.5, FontWeights.SemiBold, Brush("AppSubtle"));
+        MonoLabel(text, Brush("AppSubtle"));
 
     /// <summary>Segmented bar of (value, brush) parts — for age/type distribution.</summary>
     public static Grid Segmented(List<(double Frac, Brush B)> parts, double height = 10)
@@ -632,31 +619,223 @@ public static class Ui
     /// <summary>Warning callout card — amber, ⚠ icon, text.</summary>
     public static Border WarningCard(string title, string body, Thickness? margin = null)
     {
-        var row = new DockPanel();
-        var icon = Glyph(Icons.Warning, 14, Brush("AppWarning"));
-        DockPanel.SetDock(icon, Dock.Top);
-        icon.Margin = new Thickness(0, 1, 8, 0);
-        var text = new StackPanel();
-        text.Children.Add(T(title, 12, FontWeights.SemiBold));
-        text.Children.Add(new Border { Height = 3 });
-        text.Children.Add(new TextBlock
+        // Calm system: a warning is a dot and a word inside a hairline
+        // notice — never an amber fill (§3.2/§11.4).
+        var inner = new StackPanel();
+        var head = new StackPanel { Orientation = Orientation.Horizontal };
+        head.Children.Add(Dot(Brush("AppWarning"), 6));
+        var t = T(title, 12.5, FontWeights.Medium);
+        t.Margin = new Thickness(8, 0, 0, 0);
+        t.VerticalAlignment = VerticalAlignment.Center;
+        head.Children.Add(t);
+        inner.Children.Add(head);
+        var b = new TextBlock
         {
             Text = body, FontSize = 11.5, Foreground = Brush("AppSubtle"),
-            TextWrapping = TextWrapping.Wrap,
-        });
-        row.Children.Add(icon);
-        row.Children.Add(text);
+            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0),
+        };
+        inner.Children.Add(b);
         return new Border
         {
-            Background = Brush("AppWarningBg"),
-            CornerRadius = new CornerRadius(8),
+            BorderBrush = Brush("AppBorder"), BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
             Padding = new Thickness(12, 10, 12, 10),
             Margin = margin ?? new Thickness(0, 0, 0, 12),
-            Child = row,
+            Child = inner,
         };
     }
 
     /// <summary>Metadata row: gray label left, value right.</summary>
+    // ---- Calm kit (docs/DESIGN.md): mono type, hairlines, section
+    // headers, dot+word safety, the data palette ----
+
+    /// <summary>SF Mono's Windows counterpart — figures, counts, dates, paths (§4.2).</summary>
+    private static readonly FontFamily MonoFont = new("Cascadia Mono, Consolas");
+
+    /// <summary>Mono text — sizes, counts, paths (§4.2). 12 regular.</summary>
+    public static TextBlock Mono(string text, double size = 12, FontWeight? weight = null, Brush? fg = null) =>
+        new()
+        {
+            Text = text, FontFamily = MonoFont, FontSize = size,
+            FontWeight = weight ?? FontWeights.Regular,
+            Foreground = fg ?? Brush("AppForeground"),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+
+    /// <summary>Eyebrow/section label — 10 pt medium mono, uppercase (§4.1 `label`).</summary>
+    public static TextBlock MonoLabel(string text, Brush? fg = null, double size = 10) =>
+        new()
+        {
+            Text = text.ToUpperInvariant(), FontFamily = MonoFont, FontSize = size,
+            FontWeight = FontWeights.Medium, Foreground = fg ?? Brush("AppFaint"),
+        };
+
+    /// <summary>The one separator — 1 px of `line` (§6).</summary>
+    public static Border Hairline() =>
+        new() { Height = 1, Background = Brush("AppBorder") };
+
+    /// <summary>Dashed hairline (3/3) — one per screen, under the first-run hero (§6).</summary>
+    public static System.Windows.Shapes.Line DashedHairline() =>
+        new()
+        {
+            X1 = 0, X2 = 1, Y1 = 0.5, Y2 = 0.5, Height = 1,
+            Stroke = Brush("AppBorder"), StrokeThickness = 1,
+            StrokeDashArray = new DoubleCollection { 3, 3 },
+            Stretch = System.Windows.Media.Stretch.Fill,
+            SnapsToDevicePixels = true,
+        };
+
+    /// <summary>The 6 pt safety dot (§3.2) — colour carries the word, never a fill.</summary>
+    public static System.Windows.Shapes.Ellipse Dot(Brush fill, double size = 6) =>
+        new()
+        {
+            Width = size, Height = size, Fill = fill,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+    /// <summary>Safety as spec'd: a 6 pt dot followed by a word — no fills (§3.2).</summary>
+    public static StackPanel SafetyLabel(Brush color, string word, double size = 11.5)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(Dot(color));
+        var t = T(word, size, FontWeights.Medium, color);
+        t.Margin = new Thickness(6, 0, 0, 0);
+        t.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(t);
+        return row;
+    }
+
+    /// <summary>
+    /// `SectionHeader` (§11.3): a mono label in ink2, an optional mono
+    /// detail in ink3, an optional trailing element (usually a link),
+    /// hairline underneath.
+    /// </summary>
+    public static FrameworkElement SectionHeader(string label, string? detail = null, FrameworkElement? trailing = null)
+    {
+        var stack = new StackPanel();
+        var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+        if (trailing is not null)
+        {
+            DockPanel.SetDock(trailing, Dock.Right);
+            row.Children.Add(trailing);
+        }
+        var text = new StackPanel { Orientation = Orientation.Horizontal };
+        text.Children.Add(MonoLabel(label, Brush("AppSubtle")));
+        if (detail is not null)
+        {
+            var d = Mono("  " + detail, 10, null, Brush("AppFaint"));
+            d.VerticalAlignment = VerticalAlignment.Bottom;
+            text.Children.Add(d);
+        }
+        row.Children.Add(text);
+        stack.Children.Add(row);
+        stack.Children.Add(Hairline());
+        return stack;
+    }
+
+    /// <summary>Accent text link — the `LinkButtonStyle` equivalent (§8).</summary>
+    public static TextBlock LinkText(string text, Action onClick, double size = 12)
+    {
+        var t = T(text, size, FontWeights.Medium, Brush("AppAccent"));
+        t.Cursor = Cursors.Hand;
+        t.MouseLeftButtonDown += (_, _) => onClick();
+        return t;
+    }
+
+    /// <summary>A colour at a fixed alpha — e.g. the 16% kind tint behind icons (§3.4).</summary>
+    public static Brush Tint(Color color, byte alpha) =>
+        new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B));
+
+    /// <summary>Slim bordered notice — the one sanctioned box on a page (§11.4).</summary>
+    public static Border Notice(string title, string body)
+    {
+        var inner = new StackPanel();
+        inner.Children.Add(T(title, 13, FontWeights.Medium));
+        var b = Subtle(body, 12);
+        b.Margin = new Thickness(0, 2, 0, 0);
+        b.TextWrapping = TextWrapping.Wrap;
+        inner.Children.Add(b);
+        return new Border
+        {
+            Background = Brushes.Transparent,
+            BorderBrush = Brush("AppBorder"), BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 10, 12, 10),
+            Child = inner,
+        };
+    }
+
+    /// <summary>A brush at a lower opacity — e.g. ink @ 55% for the capacity bar.</summary>
+    public static Brush WithOpacity(string resourceKey, double opacity)
+    {
+        var c = ((SolidColorBrush)Brush(resourceKey)).Color;
+        return new SolidColorBrush(c) { Opacity = opacity };
+    }
+
+    /// <summary>§3.3 — the one data palette for charts, bars, categories.</summary>
+    public static readonly string[] DataPalette =
+        ["#849BB8", "#A795C7", "#C78797", "#7BA89C", "#B9A071", "#8FACC0", "#A2A4AC"];
+
+    public static Brush Data(int i) => Hex(DataPalette[i % DataPalette.Length]);
+
+    /// <summary>§3.4 — file-kind colour map (fixed, both appearances).</summary>
+    public static Brush KindColor(string kindId) => kindId switch
+    {
+        "video" => Hex("#C78797"),
+        "audio" => Hex("#A795C7"),
+        "image" => Hex("#8FACC0"),
+        "document" => Hex("#7BA89C"),
+        "developer" => Hex("#849BB8"),
+        "archive" => Hex("#B9A071"),
+        "diskImage" => Hex("#849BB8"),
+        "application" => Hex("#8FACC0"),
+        "virtualDisk" or "virtualMachine" => Hex("#A795C7"),
+        "deviceBackup" or "backup" => Hex("#9FB5A9"),
+        "database" => Hex("#A2A4AC"),
+        _ => Hex("#A2A4AC"),
+    };
+
+    /// <summary>6 pt capacity/proportion bar with a `line` track (§14.1).</summary>
+    public static Grid CapacityBar(double fraction, Brush fill, double maxWidth = 520)
+    {
+        // Star columns size the fill declaratively — no SizeChanged
+        // dance, and the radius stays on both edges of the track.
+        fraction = Math.Max(0, Math.Min(1, fraction));
+        var grid = new Grid { Height = 6, HorizontalAlignment = HorizontalAlignment.Stretch };
+        if (!double.IsNaN(maxWidth) && !double.IsInfinity(maxWidth))
+            grid.MaxWidth = maxWidth;
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(fraction, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1 - fraction, GridUnitType.Star) });
+        var track = new Border { Background = Brush("AppBarTrack"), CornerRadius = new CornerRadius(3) };
+        Grid.SetColumnSpan(track, 2);
+        var bar = new Border { Background = fill, CornerRadius = new CornerRadius(3) };
+        grid.Children.Add(track);
+        grid.Children.Add(bar);
+        return grid;
+    }
+
+    /// <summary>A 36 pt calm row — hover fill, radius 6, hand cursor (§10.1).</summary>
+    public static Border HoverRow(FrameworkElement content, Action? onClick = null)
+    {
+        var row = new Border
+        {
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 0, 10, 0),
+            Child = content,
+            MinHeight = 36,
+        };
+        row.MouseEnter += (_, _) => row.Background = Brush("AppHover");
+        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+        if (onClick is not null)
+        {
+            row.Cursor = Cursors.Hand;
+            row.MouseLeftButtonDown += (_, _) => onClick();
+        }
+        return row;
+    }
+
+    /// <summary>The segmented composition bar — 6 pt, 2 pt gaps (§14.1).</summary>
+    public static Grid SegBar(List<(double Frac, Brush B)> parts) => Segmented(parts, 6);
+
     public static DockPanel MetaRow(string label, UIElement value)
     {
         var dock = new DockPanel { Margin = new Thickness(0, 5, 0, 5) };

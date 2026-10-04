@@ -151,6 +151,18 @@ public sealed class InspectorPanel : UserControl
             _root.Children.Add(Ui.MetaRow("On disk", diskPanel));
         }
 
+        // WIN-066: a file in a clone family — what it shares and with
+        // how many copies (the macOS inspector's "N other copies" row).
+        if (!isDir && tree.SharingInfoOf(id) is { } sharing)
+        {
+            var clonePanel = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right };
+            clonePanel.Children.Add(Ui.T(ByteFormat.Format(sharing.SharedBytes), 12, FontWeights.Medium));
+            clonePanel.Children.Add(Ui.Faint(sharing.OtherCopies > 0
+                ? $"shared with {sharing.OtherCopies} other {(sharing.OtherCopies == 1 ? "copy" : "copies")}"
+                : "shared with copies outside this scan"));
+            _root.Children.Add(Ui.MetaRow("Block clone", clonePanel));
+        }
+
         if (id < Model.Counts.Files.Length)
         {
             int files = Model.Counts.Files[id];

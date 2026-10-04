@@ -25,45 +25,52 @@ public static class Theme
     /// </summary>
     public static void Apply() => Apply(AppSettings.Load().WantsDark);
 
+    /// <summary>
+    /// The Calm palette (docs/DESIGN.md §3.1/§22): one canvas, one raised
+    /// step, hairlines, ink text, a single violet accent. Safety colours
+    /// are dot+word colours — never fills. Soft values are the spec's
+    /// alpha mixes composited over the canvas.
+    /// </summary>
     public static void Apply(bool dark)
     {
         var r = Application.Current.Resources;
 
-        // Surfaces
-        Set(r, "AppBackground", dark ? "#FF1C1C1E" : "#FFFFFFFF");
-        Set(r, "AppSidebar", dark ? "#FF232325" : "#FFF5F6F7");
-        Set(r, "AppCard", dark ? "#FF262628" : "#FFFFFFFF");
-        Set(r, "AppCardBorder", dark ? "#FF3A3A3D" : "#FFE7E7EA");
-        Set(r, "AppChrome", dark ? "#FF2C2C2E" : "#FFFFFFFF");
-        Set(r, "AppField", dark ? "#FF2C2C2E" : "#FFF1F2F4");
-        Set(r, "AppHover", dark ? "#FF33353B" : "#FFF0F2F5");
+        // Surfaces — one canvas everywhere; raised is for floats only.
+        Set(r, "AppBackground", dark ? "#FF0B0B0C" : "#FFF8F7F4");
+        Set(r, "AppSidebar", dark ? "#FF0B0B0C" : "#FFF8F7F4");
+        Set(r, "AppCard", dark ? "#FF141416" : "#FFFFFFFF");
+        Set(r, "AppCardBorder", dark ? "#FF26262A" : "#FFE4E3DF");
+        Set(r, "AppChrome", dark ? "#FF0B0B0C" : "#FFF8F7F4");
+        Set(r, "AppField", dark ? "#FF101012" : "#FFFCFBFA");   // raised @ 55%
+        Set(r, "AppHover", dark ? "#FF161617" : "#FFEEEDEB");   // ink/white @ 4.5%
 
-        // Text
-        Set(r, "AppForeground", dark ? "#FFF2F2F5" : "#FF1D1D1F");
-        Set(r, "AppSubtle", dark ? "#FF9A9AA0" : "#FF6E6E73");
-        Set(r, "AppFaint", dark ? "#FF6F6F74" : "#FF9CA3AF");
+        // Text — ink, ink2, ink3.
+        Set(r, "AppForeground", dark ? "#FFF2F2F3" : "#FF252B31");
+        Set(r, "AppSubtle", dark ? "#FFA3A3A8" : "#FF66717E");
+        Set(r, "AppFaint", dark ? "#FF76767C" : "#FF949AA2");
 
-        // Accent + selection
-        Set(r, "AppAccent", dark ? "#FF4C8DFF" : "#FF2563EB");
-        Set(r, "AppAccentSoft", dark ? "#FF2B3A55" : "#FFEAF1FE");
-        Set(r, "AppNavSelected", dark ? "#FF33353B" : "#FFE8ECF3");
-        Set(r, "AppRowSelected", dark ? "#FF2B3A55" : "#FFEFF4FE");
+        // Accent + selection — one violet.
+        Set(r, "AppAccent", dark ? "#FF9A8BF0" : "#FF7966DA");
+        Set(r, "AppAccentSoft", dark ? "#FF1B1925" : "#FFEAE7F1");   // accent @ 11%
+        Set(r, "AppNavSelected", dark ? "#FF1B1925" : "#FFEAE7F1");
+        Set(r, "AppRowSelected", dark ? "#FF1B1925" : "#FFEAE7F1");
 
-        // Semantic
-        Set(r, "AppDanger", dark ? "#FFF87171" : "#FFDC2626");
-        Set(r, "AppDangerBg", dark ? "#FF452A2A" : "#FFFDECEC");
-        Set(r, "AppSuccess", dark ? "#FF4ADE80" : "#FF16A34A");
-        Set(r, "AppSuccessBg", dark ? "#FF243B2C" : "#FFE8F6EE");
-        Set(r, "AppWarning", dark ? "#FFFBBF24" : "#FFB45309");
-        Set(r, "AppWarningBg", dark ? "#FF3F3620" : "#FFFEF3DE");
-        Set(r, "AppInfoBg", dark ? "#FF24324A" : "#FFEEF4FE");
-        Set(r, "AppInkButton", dark ? "#FFF2F2F5" : "#FF1D1D1F");
-        Set(r, "AppInkButtonFg", dark ? "#FF1D1D1F" : "#FFFFFFFF");
-        Set(r, "AppBarTrack", dark ? "#FF333336" : "#FFECECF0");
+        // Safety — dot+word colours; Bg keys stay as muted tints for
+        // the pages that still badge.
+        Set(r, "AppDanger", dark ? "#FFEE7A70" : "#FFC2453D");
+        Set(r, "AppDangerBg", dark ? "#FF241717" : "#FFF2E3E0");
+        Set(r, "AppSuccess", dark ? "#FF6CC495" : "#FF3E8E63");
+        Set(r, "AppSuccessBg", dark ? "#FF151F1B" : "#FFE4EBE4");
+        Set(r, "AppWarning", dark ? "#FFE0A548" : "#FFB7791F");
+        Set(r, "AppWarningBg", dark ? "#FF221C13" : "#FFF1E9DD");
+        Set(r, "AppInfoBg", dark ? "#FF1B1925" : "#FFEAE7F1");
+        Set(r, "AppInkButton", dark ? "#FFF2F2F3" : "#FF252B31");
+        Set(r, "AppInkButtonFg", dark ? "#FF0B0B0C" : "#FFFFFFFF");
+        Set(r, "AppBarTrack", dark ? "#FF26262A" : "#FFE4E3DF");
 
         // Kept for existing references (pages rewritten to the new names).
-        Set(r, "AppPanel", dark ? "#FF232325" : "#FFF5F6F7");
-        Set(r, "AppBorder", dark ? "#FF3A3A3D" : "#FFE7E7EA");
+        Set(r, "AppPanel", dark ? "#FF0B0B0C" : "#FFF8F7F4");
+        Set(r, "AppBorder", dark ? "#FF26262A" : "#FFE4E3DF");
     }
 
     private static void Set(ResourceDictionary r, string key, string hex)

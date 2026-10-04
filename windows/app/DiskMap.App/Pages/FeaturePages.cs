@@ -815,8 +815,9 @@ public sealed class SnapshotsPage : ListPage
         load.Margin = new Thickness(8, 0, 0, 0);
         actions.Children.Add(load);
         DockPanel.SetDock(actions, Dock.Right);
-        // Insert before the fill-last title so the buttons keep their width.
-        head.Children.Insert(1, actions);
+        // Insert first: the title stack stays the fill-last child, so the
+        // subtitle gives up space instead of pushing the buttons out.
+        head.Children.Insert(0, actions);
         Root.Children.Add(head);
 
         // Two columns: snapshot list | compare.

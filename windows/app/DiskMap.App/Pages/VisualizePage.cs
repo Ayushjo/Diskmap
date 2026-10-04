@@ -131,6 +131,7 @@ public sealed class VisualizePage : ListPage
         DockPanel.SetDock(status, Dock.Right);
         header.Children.Add(status);
         var titles = new StackPanel();
+        titles.Children.Add(Ui.MonoLabel("EXPLORE", Ui.Brush("AppSubtle")));
         titles.Children.Add(Ui.PageTitle("Visualize Storage"));
         titles.Children.Add(Ui.PageSubtitle("Explore your disk as a map. Click to inspect, double-click a folder to enter it."));
         header.Children.Add(titles);
@@ -174,8 +175,6 @@ public sealed class VisualizePage : ListPage
         // WIN-050: a legend explains the active coloring — age buckets or
         // "type/folder" semantic labels; gray always means "Other".
         _legendRow = new WrapPanel { Margin = new Thickness(0, 4, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        var legendHost = new DockPanel();
-        legendHost.Children.Add(_legendRow);
         var wrap = new StackPanel();
         wrap.Children.Add(bar);
         wrap.Children.Add(_legendRow);

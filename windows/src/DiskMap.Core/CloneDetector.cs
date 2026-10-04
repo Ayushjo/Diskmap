@@ -22,14 +22,15 @@ namespace DiskMap.Core;
 /// </summary>
 public static class CloneDetector
 {
-    private readonly record struct Extent(long FileOffset, long DeviceOffset, long LengthBytes);
+    internal readonly record struct Extent(long FileOffset, long DeviceOffset, long LengthBytes);
 
     /// <summary>
     /// Full physical map, or null if the file can't be mapped (missing,
     /// empty, or a filesystem that doesn't answer FSCTL_GET_RETRIEVAL_POINTERS
-    /// — e.g. exFAT, network shares).
+    /// — e.g. exFAT, network shares). Shared with the block-clone
+    /// profiler (WIN-066), which maps every candidate file once.
     /// </summary>
-    private static unsafe List<Extent>? ExtentMapOf(string path)
+    internal static unsafe List<Extent>? ExtentMapOf(string path)
     {
         using var handle = Win32.CreateFileW(
             Win32.ExtendedPath(path), Win32.FILE_READ_ATTRIBUTES,

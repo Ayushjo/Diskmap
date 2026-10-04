@@ -107,7 +107,8 @@ public sealed class FileTree
         long reserved = (long)(_nameIndex.Capacity + _parent.Capacity + _firstChild.Capacity
             + _nextSibling.Capacity + _modifiedDay.Capacity + _createdDay.Capacity) * sizeof(int)
             + (long)(_logicalSize.Capacity + _allocatedSize.Capacity + _fileId.Capacity) * sizeof(long)
-            + _isDirectory.Capacity + _flags.Capacity;
+            + _isDirectory.Capacity + _flags.Capacity
+            + Sharing.ReservedBytes;
         long utf8 = 0;
         foreach (var name in _nameTable) utf8 += Encoding.UTF8.GetByteCount(name);
         return new StorageFootprint(
@@ -299,14 +300,19 @@ public sealed class FileTree
     /// so N names of one inode can't inflate an ancestor's total. A file
     /// whose other names live outside the scan keeps its full size: its
     /// bytes really are in this folder.
+    ///
+    /// Block clones (WIN-066): on the allocated basis a non-elected family
+    /// member is charged only its private bytes — the shared extents are
+    /// carried once, by the family's elected member.
     /// </summary>
     public long[] RollUpSizes(SizeBasis basis = SizeBasis.Allocated)
     {
         var totals = new long[Count];
         var suppressed = SuppressedHardLinkNames();
+        var charges = basis == SizeBasis.Allocated ? CloneCharges() : null;
         for (int id = Count - 1; id >= 0; id--)
         {
-            long total = OwnSize(id, basis, suppressed);
+            long total = OwnSize(id, basis, suppressed, charges);
             int child = _firstChild[id];
             while (child != -1)
             {
@@ -324,10 +330,11 @@ public sealed class FileTree
         var logical = new long[Count];
         var allocated = new long[Count];
         var suppressed = SuppressedHardLinkNames();
+        var charges = CloneCharges();
         for (int id = Count - 1; id >= 0; id--)
         {
             long l = OwnSize(id, SizeBasis.Logical, suppressed);
-            long a = OwnSize(id, SizeBasis.Allocated, suppressed);
+            long a = OwnSize(id, SizeBasis.Allocated, suppressed, charges);
             int child = _firstChild[id];
             while (child != -1)
             {
@@ -341,12 +348,16 @@ public sealed class FileTree
         return (logical, allocated);
     }
 
-    private long OwnSize(int id, SizeBasis basis, bool[]? suppressed = null)
+    private long OwnSize(int id, SizeBasis basis, bool[]? suppressed = null, long[]? cloneCharge = null)
     {
         // A second name for a file already charged elsewhere in this tree
         // contributes nothing: the blocks are the same blocks. Deleting
         // this name frees nothing until the last name goes.
         if (suppressed is not null && suppressed[id]) return 0;
+        // A clone whose family's shared blocks another member carries:
+        // only its private bytes are its own (allocated basis only).
+        if (basis == SizeBasis.Allocated && cloneCharge is not null && cloneCharge[id] >= 0)
+            return cloneCharge[id];
         long selected = basis == SizeBasis.Logical ? _logicalSize[id] : _allocatedSize[id];
         if (!_isDirectory[id]) return selected;
         bool evictedWithoutChildren =
@@ -551,6 +562,9 @@ public sealed class FileTree
         _isDirectory = [.. isDirectory];
         _flags = [.. flags];
         _fileId = fileId is null ? new List<long>(new long[n]) : [.. fileId];
+        // A freshly packed tree has no sharing facts — the codec installs
+        // them with ReplaceSharing when the file carries rows.
+        ClearSharing();
         return true;
     }
 
@@ -569,4 +583,180 @@ public sealed class FileTree
         }
         return result;
     }
+
+    // MARK: Block-clone sharing (WIN-066 — the ReFS/CloneDetector counterpart
+    // of the macOS APFS sharing table, TASK-077)
+
+    /// <summary>Which sharing facts the tree carries — the DMAP v4 mode byte (macOS codec layout).</summary>
+    public enum CloneSharingMode : byte { Off = 0, Refcount = 1, Full = 2 }
+
+    /// <summary>
+    /// Sparse, sorted-by-node block-clone sharing facts. Rows exist only
+    /// for files that share backing extents with another file — parallel
+    /// arrays so a profiled scan adds ~20 bytes per clone, not per node.
+    /// </summary>
+    public sealed class SharingTable
+    {
+        public int[] Node = [];
+        public long[] CloneId = [];
+        public long[] PrivateBytes = [];
+        public int[] RefCount = [];
+
+        public int Count => Node.Length;
+        public bool IsEmpty => Node.Length == 0;
+        public long ReservedBytes => (long)Node.Length * (sizeof(int) * 2 + sizeof(long) * 2);
+
+        /// <summary>Row index for <paramref name="nodeId"/>, or -1. Rows are sorted by node.</summary>
+        public int RowOf(int nodeId)
+        {
+            int i = Array.BinarySearch(Node, nodeId);
+            return i >= 0 ? i : -1;
+        }
+    }
+
+    /// <summary>Sharing facts measured for this tree (empty unless a block-clone pass ran).</summary>
+    public SharingTable Sharing { get; private set; } = new();
+    /// <summary>How <see cref="Sharing"/> was measured. <see cref="CloneSharingMode.Off"/> = per-copy totals.</summary>
+    public CloneSharingMode SharingMode { get; private set; } = CloneSharingMode.Off;
+    public bool HasSharingInfo => SharingMode != CloneSharingMode.Off;
+
+    /// <summary>Installs measured sharing facts (the block-clone pass writes these).</summary>
+    public void SetSharing(SharingTable table, CloneSharingMode mode)
+    {
+        Sharing = table;
+        SharingMode = mode;
+    }
+
+    /// <summary>Drops sharing facts — a tree counted per copy is never mistaken for a deduped one.</summary>
+    public void ClearSharing()
+    {
+        Sharing = new SharingTable();
+        SharingMode = CloneSharingMode.Off;
+    }
+
+    /// <summary>
+    /// Codec entry point: rows must be node-sorted and in range or the
+    /// file is rejected rather than trusted.
+    /// </summary>
+    public bool ReplaceSharing(SharingTable table, CloneSharingMode mode)
+    {
+        for (int i = 0; i < table.Count; i++)
+        {
+            if (table.Node[i] < 0 || table.Node[i] >= Count
+                || (i > 0 && table.Node[i] <= table.Node[i - 1]))
+            {
+                return false;
+            }
+        }
+        SetSharing(table, mode);
+        return true;
+    }
+
+    /// <summary>
+    /// What counting each clone family once removed from the allocated
+    /// totals, and what stays counted in full because the other copies
+    /// are unknown — so the UI can explain both (the macOS
+    /// SharingCorrection).
+    /// </summary>
+    public readonly record struct SharingCorrection(
+        int FamilyCount, int CloneCount, long Bytes,
+        int PartialCount, long PartialSharedBytes)
+    {
+        public bool IsEmpty => CloneCount == 0 && PartialCount == 0;
+        public static readonly SharingCorrection None = new(0, 0, 0, 0, 0);
+    }
+
+    public SharingCorrection GetSharingCorrection() => CloneGrouping(wantCharges: false).Correction;
+
+    /// <summary>
+    /// For a file in a clone family: the bytes it shares and how many other
+    /// files on the volume share them (refcount − 1). Null when it shares
+    /// nothing known.
+    /// </summary>
+    public (long SharedBytes, int OtherCopies)? SharingInfoOf(int id)
+    {
+        if (id < 0 || id >= Count || (_flags[id] & NodeFlags.FileClone) == 0) return null;
+        int row = Sharing.RowOf(id);
+        if (row < 0) return null;
+        long shared = _allocatedSize[id] - Math.Max(0, Sharing.PrivateBytes[row]);
+        if (shared <= 0) return null;
+        return (shared, Math.Max(0, Sharing.RefCount[row] - 1));
+    }
+
+    /// <summary>
+    /// Clone families present in this tree, in one sort: rows with
+    /// refcount &gt; 1 ordered by (clone id, inode). Consecutive rows with
+    /// the same inode are one member (hard-linked names); the first
+    /// member of each family — lowest inode — carries the family's
+    /// blocks. Lowest inode, because it is stable between scans (node ids
+    /// are not) and free to compare, where electing by path would build
+    /// ~900k path strings on a real disk.
+    /// </summary>
+    private (long[]? Charges, SharingCorrection Correction) CloneGrouping(bool wantCharges)
+    {
+        if (Sharing.IsEmpty) return (null, SharingCorrection.None);
+        var rows = new List<(long Clone, ulong Inode, int Row)>();
+        for (int row = 0; row < Sharing.Count; row++)
+        {
+            if (Sharing.RefCount[row] <= 1) continue;
+            int index = Sharing.Node[row];
+            ulong inode = _fileId[index] != 0
+                ? (ulong)_fileId[index]
+                : (ulong)(uint)index | (1UL << 63);
+            rows.Add((Sharing.CloneId[row], inode, row));
+        }
+        rows.Sort((a, b) => a.Clone != b.Clone ? a.Clone.CompareTo(b.Clone)
+            : a.Inode != b.Inode ? a.Inode.CompareTo(b.Inode)
+            : a.Row.CompareTo(b.Row));
+        long[]? charges = wantCharges ? Enumerable.Repeat(-1L, Count).ToArray() : null;
+        var correction = SharingCorrection.None;
+        int start = 0;
+        while (start < rows.Count)
+        {
+            int end = start;
+            while (end < rows.Count && rows[end].Clone == rows[start].Clone) end++;
+            ulong elected = rows[start].Inode;
+            int members = 0;
+            ulong? previous = null;
+            for (int position = start; position < end; position++)
+            {
+                var entry = rows[position];
+                bool isNewMember = entry.Inode != previous;
+                if (isNewMember) { members++; previous = entry.Inode; }
+                if (entry.Inode == elected) continue;
+                int index = Sharing.Node[entry.Row];
+                // A pure clone shares every block; use what the pass
+                // measured where it differs (an edited clone's private
+                // extents).
+                long privateBytes = Math.Clamp(Sharing.PrivateBytes[entry.Row], 0, _allocatedSize[index]);
+                if (charges is not null) charges[index] = privateBytes;
+                if (isNewMember)
+                {
+                    correction = correction with { CloneCount = correction.CloneCount + 1 };
+                    correction = correction with { Bytes = correction.Bytes + (_allocatedSize[index] - privateBytes) };
+                }
+            }
+            if (members > 1) correction = correction with { FamilyCount = correction.FamilyCount + 1 };
+            start = end;
+        }
+        // Refcount ≤ 1 rows: files sharing blocks with copies the scan
+        // can't name (an edited clone's former family, or a clone kept
+        // outside the scanned root). Counted in full — reported, not
+        // charged down.
+        for (int row = 0; row < Sharing.Count; row++)
+        {
+            if (Sharing.RefCount[row] > 1) continue;
+            long shared = _allocatedSize[Sharing.Node[row]] - Math.Max(0, Sharing.PrivateBytes[row]);
+            if (shared <= 0) continue;
+            correction = correction with
+            {
+                PartialCount = correction.PartialCount + 1,
+                PartialSharedBytes = correction.PartialSharedBytes + shared,
+            };
+        }
+        return (correction.CloneCount > 0 ? charges : null, correction);
+    }
+
+    /// <summary>Allocated charge per node for non-elected family members (their private bytes), -1 elsewhere.</summary>
+    private long[]? CloneCharges() => CloneGrouping(wantCharges: true).Charges;
 }

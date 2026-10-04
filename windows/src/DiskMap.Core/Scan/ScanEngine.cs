@@ -51,6 +51,8 @@ public sealed class ScanEngine
         public int NoIdentityCount { get; init; }
         /// <summary>Journal cursor captured before the walk — feeds seeded staging + the next rescan's baseline.</summary>
         public UsnJournal.Marker? ScanMarker { get; init; }
+        /// <summary>Non-null when the opt-in block-clone pass ran on this tree (WIN-066; ReFS only).</summary>
+        public BlockClones.Report? CloneProfile { get; init; }
     }
 
     /// <summary>
@@ -67,14 +69,33 @@ public sealed class ScanEngine
     public Task<Result> ScanAsync(string root, IProgress<int>? progress) =>
         ScanAsync(root, progress is null ? null : new ProgressAdapter(progress), CancellationToken.None);
 
+    /// <param name="profileBlockClones">
+    /// WIN-066: opt-in — after the walk, map every file's physical extents
+    /// and count ReFS block clones once per family. Only runs on ReFS
+    /// volumes (NTFS has no block clones; hard links are already deduped).
+    /// </param>
     public async Task<Result> ScanAsync(
         string root, IProgress<ScanProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool profileBlockClones = false)
     {
         var started = System.Diagnostics.Stopwatch.StartNew();
         var walked = await Task.Run(() => Walk(root, progress, cancellationToken), cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         walked.Tree.Compact();
+        BlockClones.Report? cloneProfile = null;
+        if (profileBlockClones && IsReFs(root))
+        {
+            cloneProfile = await Task.Run(
+                () => BlockClones.Profile(walked.Tree, root, progress, cancellationToken),
+                cancellationToken);
+        }
+        else
+        {
+            // A snapshot/baseline carrying rows must not keep them when the
+            // pass wasn't asked for — stale facts would mis-charge the rollups.
+            walked.Tree.ClearSharing();
+        }
         var afterRelease = ProcessMemory.Current();
         started.Stop();
         var result = new Result
@@ -91,9 +112,21 @@ public sealed class ScanEngine
             FailedDirectoryCount = walked.FailedDirectoryCount,
             NoIdentityCount = walked.NoIdentityCount,
             ScanMarker = walked.ScanMarker,
+            CloneProfile = cloneProfile,
         };
         LogSummary(result);
         return result;
+    }
+
+    /// <summary>True when the volume under <paramref name="root"/> reports ReFS — the only filesystem with block clones.</summary>
+    internal static bool IsReFs(string root)
+    {
+        try
+        {
+            string? volumeRoot = Path.GetPathRoot(Path.GetFullPath(root));
+            return volumeRoot is not null && new DriveInfo(volumeRoot).DriveFormat == "ReFS";
+        }
+        catch { return false; }
     }
 
     /// <summary>Adapts an items-only reporter onto the ScanProgress shape.</summary>
@@ -268,10 +301,13 @@ public sealed class ScanEngine
         string after = result.ResidentBytesAfterWalk?.ToString() ?? "unavailable";
         // stderr, not stdout — the CLI's --json contract keeps stdout
         // machine-readable (WIN-070).
+        string clones = result.CloneProfile is { } p
+            ? $" clone_families={p.FamilyCount} clone_copies={p.SharedCopies} shared_bytes={p.SharedBytes}"
+            : "";
         Console.Error.WriteLine(
             $"DiskMap scan: backend={result.Backend} items={result.ItemCount} " +
             $"elapsed={result.ElapsedSeconds:0.000}s rss_during_walk_peak={result.PeakResidentBytesDuringWalk} " +
-            $"rss_after_walk={after} not_downloaded={result.NotDownloadedCount} mft_skipped={result.FallbackReason ?? "-"}");
+            $"rss_after_walk={after} not_downloaded={result.NotDownloadedCount} mft_skipped={result.FallbackReason ?? "-"}{clones}");
         Console.Error.Flush();
     }
 }

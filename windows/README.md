@@ -85,12 +85,20 @@ build — the codec writes v4 and reads v1–4, so files are interchangeable.
 ## Known gaps vs. the macOS build
 
 - Block clones (shared extents): only ReFS supports them, and the
-  per-file extent pass is deliberately not run during a scan (the same
-  +14%-ish cost macOS declined). On a ReFS root the Overview says so —
-  cloned copies count per copy. Hard links dedupe on every backend:
-  file ids are recorded inline (MFT FRN, walk FileId) and the rollup
-  charges a multiply-linked file once at its lowest path.
+  per-file extent pass is opt-in (Settings → "Count block clones once",
+  or `--clones` on the CLI — the same cost macOS declines by default).
+  When it runs, each clone family's shared extents are charged once at
+  the lowest inode; when it's off, clones count per copy and the
+  Overview says so. Extents shared with copies outside the scanned
+  root are invisible to `FSCTL_GET_RETRIEVAL_POINTERS` — unlike APFS
+  refcounts — so no "partial" rows exist; those files count once, the
+  same answer hard links give for names outside the root. Hard links
+  dedupe on every backend: file ids are recorded inline (MFT FRN,
+  walk FileId) and the rollup charges a multiply-linked file once at
+  its lowest path.
 - No Quick Look equivalent — Reveal in Explorer plus the inspector's
   Overview/Contents/Insights tabs carry that surface.
-- `diskmap dev` on the CLI is deferred — the Developer page has the
-  full catalog in the app; the CLI covers scan/find/dup/export/check.
+- `diskmap dev` has no interactive filtering — it prints the same
+  `DeveloperCatalog` model the Developer page renders (projects,
+  items, rebuild commands); `--reclaimable` and `--older-than` filter
+  it.

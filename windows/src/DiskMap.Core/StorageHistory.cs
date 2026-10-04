@@ -32,8 +32,10 @@ public sealed class StorageHistory
         /// 50 MB or more; for big top-level folders, their 20 largest children too.</summary>
         Dictionary<string, long> Folders)
     {
-        /// <summary>The only counting mode this port writes.</summary>
+        /// <summary>The default counting mode: hard-linked names deduped, clones per copy.</summary>
         public const string SharingModeHardLinkDedup = "hardlink-dedup";
+        /// <summary>WIN-066: the opt-in ReFS block-clone pass ran — shared extents counted once.</summary>
+        public const string SharingModeBlockCloneDedup = "blockclone-dedup";
     }
 
     private sealed class File_

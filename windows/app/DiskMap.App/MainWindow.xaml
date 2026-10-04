@@ -47,6 +47,7 @@
                         </DockPanel>
                         <ContentControl x:Name="DriveBar" />
                         <TextBlock x:Name="DriveStats" FontSize="11" Margin="0,6,0,0"
+                                   FontFamily="Cascadia Mono, Consolas"
                                    Foreground="{DynamicResource AppSubtle}" />
                     </StackPanel>
                 </Border>

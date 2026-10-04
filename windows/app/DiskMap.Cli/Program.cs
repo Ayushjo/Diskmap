@@ -46,9 +46,25 @@ if (target is null || !Directory.Exists(target))
 }
 target = Path.GetFullPath(target);
 
-var scan = await new ScanEngine().ScanAsync(target, Terminal.Progress());
+// --clones: run the ReFS block-clone pass after the walk (WIN-066) —
+// totals then count each clone family's shared extents once.
+bool clones = argsList.Contains("--clones");
+var scan = await new ScanEngine().ScanAsync(target, Terminal.Progress(),
+    cancellationToken: default, profileBlockClones: clones);
 var tree = scan.Tree;
 var totals = tree.RollUpSizes();
+
+if (clones && scan.CloneProfile is { } profile)
+{
+    Console.Error.WriteLine(
+        $"diskmap: clone pass — {profile.FilesProfiled:N0} files mapped in " +
+        $"{profile.Seconds:0.0}s · {profile.FamilyCount:N0} groups · " +
+        $"{profile.SharedCopies:N0} copies share {HumanUnits.Format(profile.SharedBytes)}");
+}
+else if (clones && scan.CloneProfile is null)
+{
+    Console.Error.WriteLine("diskmap: --clones ignored — the volume isn't ReFS");
+}
 
 switch (command)
 {
@@ -126,6 +142,88 @@ switch (command)
         return 0;
     }
 
+    case "dev":
+    {
+        // WIN-070: the developer-storage catalog — the same model the
+        // Developer Storage page renders, without the window.
+        var catalog = DeveloperCatalog.Build(tree, target, totals);
+        bool onlyReclaimable = argsList.Contains("--reclaimable");
+        // --older-than 6m: keep only projects untouched at least that long.
+        int? olderThan = null;
+        {
+            int flagIndex = argsList.IndexOf("--older-than");
+            if (flagIndex >= 0 && flagIndex + 1 < argsList.Count)
+                olderThan = TryParseAgeDays(argsList[flagIndex + 1])
+                    ?? (int.TryParse(argsList[flagIndex + 1], out int d) ? d : null);
+        }
+        var projects = catalog.Projects;
+        var items = catalog.Items;
+        if (olderThan is { } days)
+        {
+            int today = AgeMap.Today();
+            var stale = projects.Where(p => p.LastSourceDay > 0
+                && today - p.LastSourceDay >= days).Select(p => p.Key).ToHashSet();
+            projects = projects.Where(p => stale.Contains(p.Key)).ToList();
+            items = items.Where(i => i.ProjectKey is { } k && stale.Contains(k)).ToList();
+        }
+        if (onlyReclaimable)
+            items = items.Where(i =>
+                i.Reclaimability != DeveloperReclaimability.Keep && !i.IsProtected).ToList();
+        if (argsList.Contains("--json"))
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                summary = new
+                {
+                    bytes = catalog.Summary.TotalBytes,
+                    reclaimable = catalog.Summary.ReclaimableBytes,
+                    projects = catalog.Summary.ProjectCount,
+                    staleProjects = catalog.Summary.StaleProjectCount,
+                },
+                projects = projects.Select(p => new
+                {
+                    name = p.Name, path = p.AbsolutePath, ecosystem = p.Ecosystem.ToString(),
+                    bytes = p.Bytes, reclaimable = p.ReclaimableBytes,
+                    lastSourceDay = p.LastSourceDay,
+                }),
+                items = items.Select(i => new
+                {
+                    path = i.AbsolutePath, bytes = i.Bytes,
+                    category = i.Category.ToString(), ecosystem = i.Ecosystem.ToString(),
+                    reclaimability = i.Reclaimability.ToString(),
+                    project = i.ProjectName,
+                    rebuild = i.Recipe?.Command,
+                }),
+            }));
+        }
+        else
+        {
+            Console.WriteLine($"{target}: {HumanUnits.Format(catalog.Summary.TotalBytes)} of developer storage — " +
+                $"{HumanUnits.Format(catalog.Summary.ReclaimableBytes)} reclaimable, " +
+                $"{catalog.Summary.ProjectCount:N0} projects" +
+                (catalog.Summary.StaleProjectCount > 0
+                    ? $" ({catalog.Summary.StaleProjectCount:N0} untouched 6+ months)"
+                    : ""));
+            int today = AgeMap.Today();
+            foreach (var p in projects.OrderByDescending(p => p.Bytes).Take(20))
+            {
+                string age = p.LastSourceDay > 0 ? $"{today - p.LastSourceDay}d since source" : "source age unknown";
+                Console.WriteLine($"{HumanUnits.Format(p.Bytes),10}  {p.Name} ({p.Ecosystem}) — {age}");
+            }
+            if (items.Count > 0)
+            {
+                Console.WriteLine("items:");
+                foreach (var i in items.OrderByDescending(i => i.Bytes).Take(30))
+                {
+                    string tag = i.Reclaimability == DeveloperReclaimability.Keep || i.IsProtected
+                        ? "keep" : i.Recipe?.Command is { } cmd ? $"rebuild: {cmd}" : "reclaimable";
+                    Console.WriteLine($"{HumanUnits.Format(i.Bytes),10}  {i.AbsolutePath}  [{tag}]");
+                }
+            }
+        }
+        return 0;
+    }
+
     case "export":
     {
         var format = argsList.Contains("--ndjson") ? TreeExporter.Format.Ndjson
@@ -160,13 +258,15 @@ static int Usage()
         diskmap — disk usage from the file table, not stat calls.
 
           diskmap bench <path> [--repeat N] [--json]
-          diskmap scan  <path> [--json]
+          diskmap scan  <path> [--json] [--clones]
           diskmap find  <path> <query> [--limit N] [--json]
           diskmap dup   <path> [--json]
+          diskmap dev   <path> [--reclaimable] [--older-than 6m] [--json]
           diskmap export <path> [--json|--ndjson|--csv|--ncdu] [out]
           diskmap check <path> --fail-over 50GB
 
         Sizes are SI (GB=10⁹, GiB=2³⁰); ages are d/w/m/y.
+        --clones runs the ReFS block-clone pass (clone copies counted once).
         Exit codes: 0 ok · 1 threshold exceeded · 2 usage · 3 unreadable.
         """);
     return 2;
@@ -176,6 +276,20 @@ static int? IntOf(List<string> args, string flag)
 {
     int i = args.IndexOf(flag);
     return i >= 0 && i + 1 < args.Count && int.TryParse(args[i + 1], out int v) ? v : null;
+}
+
+/// <summary>Ages: "30d"/"2w"/"6m"/"1y" → days (m=30d, y=365d — the query DSL's units).</summary>
+static int? TryParseAgeDays(string? s)
+{
+    if (s is null || s.Length < 2 || !int.TryParse(s[..^1], out int n)) return null;
+    return s[^1] switch
+    {
+        'd' or 'D' => n,
+        'w' or 'W' => n * 7,
+        'm' or 'M' => n * 30,
+        'y' or 'Y' => n * 365,
+        _ => null,
+    };
 }
 
 /// <summary>SI sizes: "50GB"/"50GiB"/"200MB"/"4KB"; bare digits = bytes.</summary>

@@ -149,6 +149,13 @@ public sealed class ScanModel : ViewModelBase
     private VolumeInfo? _volume;
     public VolumeInfo? Volume { get => _volume; private set { if (Set(ref _volume, value)) Changed(); } }
 
+    /// <summary>WIN-066: non-null when the opt-in ReFS block-clone pass ran on the last scan.</summary>
+    public BlockClones.Report? CloneProfile { get; private set; }
+
+    /// <summary>What clone dedup removed from the allocated totals, if the tree was profiled.</summary>
+    public FileTree.SharingCorrection CloneCorrection =>
+        Tree?.GetSharingCorrection() ?? FileTree.SharingCorrection.None;
+
     /// <summary>Which chart mode the Visualize page shows.</summary>
     private string _visualizeMode = "Treemap";
     public string VisualizeMode { get => _visualizeMode; set { if (Set(ref _visualizeMode, value)) Changed(); } }
@@ -287,8 +294,10 @@ public sealed class ScanModel : ViewModelBase
                 ScanStats = p;
             });
             var basis = _sizeBasis;
+            var settings = AppSettings.Load();
             var scanned = await Task.Run(
-                () => _engine.ScanAsync(path, progress, cts.Token), cts.Token);
+                () => _engine.ScanAsync(path, progress, cts.Token, settings.CloneAccounting),
+                cts.Token);
             ScanPhase = "summarizing";
             var (logical, allocated, counts, quickWins, snapshot) = await Task.Run(() =>
             {
@@ -302,15 +311,20 @@ public sealed class ScanModel : ViewModelBase
             cts.Token.ThrowIfCancellationRequested();
             // History record — one JSON line per scan, feeds "what grew".
             var volume = VolumeStats.Of(path);
-            var folders = StorageHistory.Folders(scanned.Tree, allocated);
-            _history.Record(new StorageHistory.Entry(
-                DateTimeOffset.Now,
-                volume?.FreeBytes ?? 0,
-                volume?.TotalBytes ?? 0,
-                allocated.Length > 0 ? allocated[0] : 0,
-                scanned.FailedDirectoryCount,
-                StorageHistory.Entry.SharingModeHardLinkDedup,
-                folders), path);
+            if (settings.KeepHistory)
+            {
+                var folders = StorageHistory.Folders(scanned.Tree, allocated);
+                _history.Record(new StorageHistory.Entry(
+                    DateTimeOffset.Now,
+                    volume?.FreeBytes ?? 0,
+                    volume?.TotalBytes ?? 0,
+                    allocated.Length > 0 ? allocated[0] : 0,
+                    scanned.FailedDirectoryCount,
+                    scanned.Tree.Sharing.IsEmpty
+                        ? StorageHistory.Entry.SharingModeHardLinkDedup
+                        : StorageHistory.Entry.SharingModeBlockCloneDedup,
+                    folders), path);
+            }
             ItemCount = scanned.ItemCount;
             Elapsed = scanned.ElapsedSeconds;
             NotDownloaded = scanned.NotDownloadedCount;
@@ -332,6 +346,7 @@ public sealed class ScanModel : ViewModelBase
             _selectedNode = -1;
             _zoomBack.Clear();
             _zoomForward.Clear();
+            CloneProfile = scanned.CloneProfile;
             RootPath = path;
             Volume = VolumeStats.Of(path);
             Tree = scanned.Tree;
@@ -379,6 +394,7 @@ public sealed class ScanModel : ViewModelBase
         FallbackReason = null;
         DeniedDirectories = [];
         FailedDirectoryCount = 0;
+        CloneProfile = null;
         Duplicates = [];
         _duplicatesRan = false;
         QuickWins = quickWins;

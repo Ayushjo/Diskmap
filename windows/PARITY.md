@@ -574,11 +574,11 @@ state, but the inspector and coloring layers are missing entirely.
   `TrayIcon.cs` (NotifyIcon, `UseWindowsForms` with the WinForms/
   Drawing implicit usings removed so WPF names stay clean): passive
   context menu — free space with ⚠-low under 10%, last-scan
-  path+size line, Rescan (enabled only when a scan exists and none is
+  path+size line, Δ-since-last-scan ("Free space −X this week ·
+  <folder> +Y" from `HistoryComparison` — free delta + biggest
+  grower), Rescan (enabled only when a scan exists and none is
   running), Open DiskMap (double-click too), Quit. Repaints on
-  `StateChanged`. Change-since-last-scan Δ needs a persistent previous
-  size — the StorageHistory record already tracks it and the menu's
-  scan line could extend later; see WIN-028.
+  `StateChanged`.
   `GetDiskFreeSpaceEx` poll on a timer, no background scanning.
   WPF `NotifyIcon` (needs a Forms reference or a small interop wrapper).
 
@@ -598,21 +598,30 @@ state, but the inspector and coloring layers are missing entirely.
   FontSize-tokens refactor macOS needed is unnecessary — one transform
   scales everything crisply.
 
-- [~] **WIN-060: Settings window** — appearance + text size live in
-  View → (the File menu) against `AppSettings` at
-  `%LOCALAPPDATA%\DiskMap\settings.json`. A dedicated window waits for
-  real toggles: clone accounting (WIN-066), history retention
-  (WIN-028), update preference (WIN-074). The ⌘, shortcut remains free
-  for it.
+- [x] **WIN-060: Settings window** — `SettingsWindow.cs` (Ctrl+, — the
+  ⌘, convention — and File → Settings…). Carries Appearance
+  (Follow Windows/Light/Dark pills — same callback as View →
+  Appearance), Text size (4 pills), "Keep storage history" (default
+  on — feeds `HistoryComparison` and the tray Δ), and "Count block
+  clones once on ReFS volumes" (default off — WIN-066's gate). Scan
+  toggles persist via `AppSettings`; the next scan reads them.
+  Appearance/text-scale apply live through `MainWindow`'s existing
+  callbacks.
 
 - [x] **WIN-061: Accessibility** — the treemap is `Focusable` and
   carries a `TreemapPeer` automation peer: the control announces
   "Storage treemap — <folder>, N cells" and exposes its top 60 cells as
   ListItem peers named "name, size, share, folder — double-click to
   enter" (the macOS accessible-list cap). Arrow keys move selection
-  across cells in layout order; Enter drills. List pages already expose
-  rows as focusable checkboxes with names — Narrator reads them
-  through the standard WPF peers.
+  across cells in layout order; Enter drills. The other four charts
+  (sunburst, flame, bubbles, mind map) got the same contract:
+  `Focusable`, the shared `ChartNavigation` model (←/→ siblings,
+  ↑ parent, ↓ first child, Enter drills, Esc clears multi),
+  click-selects / Ctrl+click multi / double-click drills with the
+  treemap's white + accent selection strokes, and a `ChartPeer`
+  announcing "<chart> — <folder>" with the top-60 accessible items.
+  List pages already expose rows as focusable checkboxes with names —
+  Narrator reads them through the standard WPF peers.
 
 - [x] **WIN-062: Quick Look counterpart — decided.** Windows' honest
   equivalent is the one chosen: Reveal in Explorer + the inspector's
@@ -645,15 +654,35 @@ state, but the inspector and coloring layers are missing entirely.
 
 ## 7. Correctness & accounting extras — P1/P2
 
-- [~] **WIN-066: Clone-aware totals (ReFS), opt-in** — decision:
-  documented limitation + detection, not the extent pass. Only ReFS
-  (Dev Drive) has block clones; `FSCTL_GET_RETRIEVAL_POINTERS` per
-  file during a full-disk walk is exactly the +14% cost macOS declined.
-  What landed: `ScanResult` notes the volume's filesystem (detected
-  once per scan root) and a ReFS root shows the honest limitation line
-  on Overview ("block clones are counted per copy — NTFS hard links
-  are already deduped"). The opt-in extent pass remains a future
-  settings toggle once the bench harness (WIN-071) exists to gate it.
+- [x] **WIN-066: Clone-aware totals (ReFS), opt-in** — the extent
+  pass exists and is opt-in (`AppSettings.cloneAccounting` — Settings
+  → "Count block clones once on ReFS volumes", off by default; CLI
+  `--clones`). `BlockClones.Profile` runs after the walk when the
+  root's volume reports ReFS: dedupes inodes, one
+  `FSCTL_GET_RETRIEVAL_POINTERS` map per inode (parallel, progress
+  reported), sweeps overlapping physical ranges, union-finds them
+  into clone families, and installs a `SharingTable` on the tree.
+  `FileTree` grew the macOS machinery verbatim: `SharingTable`
+  (node/cloneId/privateBytes/refcount rows), `CloneGrouping` —
+  lowest-inode member of each family elected to carry the shared
+  blocks, others charged only private bytes — `GetSharingCorrection`,
+  `SharingInfoOf`, and the `NodeFlags.FileClone` flag. The snapshot
+  codec writes real v4 rows (mode 2) and decodes rows from either
+  platform — a macOS APFS file's clone facts now apply here and vice
+  versa. Overview reports "N cloned copies in M groups share X —
+  counted once" when the pass found clones, "no cloned copies" when
+  it ran clean, and the enable hint otherwise. History entries record
+  `blockclone-dedup` so mode-mismatched scans never compare.
+  Honest limits, documented in `BlockClones`: extents shared with
+  copies outside the scanned root are invisible to
+  FSCTL_GET_RETRIEVAL_POINTERS (unlike APFS refcounts), so no
+  refcount-1 "partial" rows are produced — such files count once,
+  which is the same answer hard links give for names outside the
+  root. Tests cover the sweep (synthetic extent maps — chained
+  sharing, private-byte splits, sparse-run rejection), the rollup
+  charges, codec round-trips, and row validation; the ioctl path
+  needs a real ReFS fixture (none on CI — same rule as the MFT
+  tests).
 
 - [x] **WIN-067: Snapshot codec convergence** — done via option (a),
   full tracking: the Windows codec now writes DMAP **v4** (fileIDs +
@@ -685,14 +714,15 @@ state, but the inspector and coloring layers are missing entirely.
 ## 8. CLI & export — P2
 
 - [x] **WIN-070: `diskmap` CLI** — `app/DiskMap.Cli`, a console
-  project on DiskMap.Core only: `scan --json`, `find <path> <query>`
-  (FileQuery structured + bare words), `dup`, `export
+  project on DiskMap.Core only: `scan --json [--clones]`,
+  `find <path> <query>` (FileQuery structured + bare words), `dup`,
+  `dev [--reclaimable] [--older-than 6m] [--json]` (the
+  `DeveloperCatalog` model — projects, items, rebuild commands, stale
+  filters — the macOS `diskmap dev` counterpart), `export
   [--json|--ndjson|--csv|--ncdu]`, `check --fail-over 50GB`. Exit
   codes 0/1/2/3; SI sizes + GiB; the engine's scan summary moved to
   stderr and progress only renders on a terminal, so `--json` stdout
-  stays clean. `dev` deferred — `DeveloperCatalog` needs a
-  model-level entry point; the CLI covers the scan/find/dup/export
-  surface first.
+  stays clean.
 
 - [x] **WIN-071: Bench harness** — `diskmap bench <path>
   [--repeat N] [--json]`: per-run backend/items/seconds/peak-RSS rows
@@ -766,19 +796,24 @@ same spirit as the macOS "do better" list. Track here so they aren't lost.
 ## 11. Tests & tooling
 
 - [x] **WIN-079: Port feature tests as features land** — the suite is
-  at 103 tests covering the ported surface: identity/creation-day,
+  at 116 tests covering the ported surface: identity/creation-day,
   hard links (real `CreateHardLinkW`), denied dirs, cancellation,
   codec v1–v4, incremental rescan, seeded staging, cleanup reclaim/
   ordering/receipt, put back, FileQuery, dev catalog, saved searches,
   storage history, snapshot compare, insights/stories, exporter,
-  excluded-paths audit, sparse-file accounting, network policy. Style:
-  real temp dirs, never mocks — the macOS fixture contract.
+  excluded-paths audit, sparse-file accounting, block-clone family
+  math + rollup charges + sharing codec round-trips, network policy.
+  Style: real temp dirs, never mocks — the macOS fixture contract.
 - [x] **WIN-080: Visual/snapshot harness** — `DISKMAP_AUTOSCAN` +
-  `DISKMAP_PAGE` launch hooks render the real window into any state for
-  screenshot review; the codebase's `UNVERIFIED`-on-render policy keeps
-  golden-PNG diffing out of scope (no stable font/DPI baseline in CI —
-  a render-to-file eyeball pass is the honest affordance, and it
-  exists).
+  `DISKMAP_PAGE` launch hooks render the real window into any state;
+  `DISKMAP_SHOT=<png>` (`DISKMAP_SHOT_SETTLE`, `DISKMAP_SHOT_QUIT=0` to
+  keep the window) writes a `RenderTargetBitmap` PNG and exits — the
+  `--snapshot-dir` counterpart. Run it via `dotnet DiskMap.App.dll`
+  (no manifest elevation, no z-order dependency). The codebase's
+  `UNVERIFIED`-on-render policy keeps golden-PNG diffing out of scope
+  (no stable font/DPI baseline in CI — an eyeball pass is the honest
+  affordance, and it exists). `windows/scripts/capture-window.ps1`
+  remains for non-elevated window grabs.
 - [x] **WIN-081: README mapping current** — table updated: the walk is
   `NtQueryDirectoryFile` (not FindFirstFileExW), file-id entry added,
   FSEvents→USN journal, trashItem→SHFileOperation + `$I` Put Back,

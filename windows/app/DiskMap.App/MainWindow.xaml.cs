@@ -48,16 +48,35 @@ public partial class MainWindow : Window
         // it is the explicit user action ("Scan with DiskMap").
         Loaded += async (_, _) =>
         {
-            string? scanPath = App.StartupPath
-                ?? Environment.GetEnvironmentVariable("DISKMAP_AUTOSCAN");
-            if (scanPath is { Length: > 0 }
-                && Directory.Exists(scanPath)
-                && !_model.IsScanning && _model.Tree is null)
+            try
             {
-                await _model.ScanAsync(scanPath);
-                if (Environment.GetEnvironmentVariable("DISKMAP_PAGE") is { Length: > 0 } page)
-                    SelectPage(page);
+                string? scanPath = App.StartupPath
+                    ?? Environment.GetEnvironmentVariable("DISKMAP_AUTOSCAN");
+                Trace("loaded");
+                if (scanPath is { Length: > 0 }
+                    && Directory.Exists(scanPath)
+                    && !_model.IsScanning && _model.Tree is null)
+                {
+                    Trace($"scan:{scanPath}");
+                    await _model.ScanAsync(scanPath);
+                    Trace("scanned");
+                    if (Environment.GetEnvironmentVariable("DISKMAP_PAGE") is { Length: > 0 } page)
+                        SelectPage(page);
+                }
+                // WIN-080: render-to-file screenshot — the macOS --snapshot-dir
+                // counterpart. Waits a beat for async page content (the
+                // Overview's deferred Compute) before encoding.
+                if (Environment.GetEnvironmentVariable("DISKMAP_SHOT") is { Length: > 0 } shotPath)
+                {
+                    await Task.Delay(
+                        int.TryParse(Environment.GetEnvironmentVariable("DISKMAP_SHOT_SETTLE"), out int s) ? s : 1200);
+                    SaveShot(shotPath);
+                    Trace("shot");
+                    if (Environment.GetEnvironmentVariable("DISKMAP_SHOT_QUIT") != "0")
+                        Close();
+                }
             }
+            catch (Exception ex) { Trace("ERR " + ex); }
         };
     }
 
@@ -312,6 +331,13 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
+        // Ctrl+, — Settings (the ⌘, convention, WIN-060).
+        if (e.Key == Key.OemComma && mods == ModifierKeys.Control)
+        {
+            OpenSettings();
+            e.Handled = true;
+            return;
+        }
         // Ctrl+1..N — destinations in sidebar order.
         if (mods == ModifierKeys.Control && e.Key is >= Key.D1 and <= Key.D9)
         {
@@ -468,11 +494,54 @@ public partial class MainWindow : Window
         view.Items.Add(textSize);
         menu.Items.Add(view);
         menu.Items.Add(new Separator());
+        var settings = new MenuItem { Header = "Settings…\tCtrl+," };
+        settings.Click += (_, _) => OpenSettings();
+        menu.Items.Add(settings);
+        menu.Items.Add(new Separator());
         var exit = new MenuItem { Header = "Exit" };
         exit.Click += (_, _) => Close();
         menu.Items.Add(exit);
         menu.PlacementTarget = (Button)sender;
         menu.IsOpen = true;
+    }
+
+    /// <summary>WIN-080: launch-harness trace — one line per milestone when DISKMAP_TRACE is set.</summary>
+    private static void Trace(string line)
+    {
+        if (Environment.GetEnvironmentVariable("DISKMAP_TRACE") is { Length: > 0 } path)
+            File.AppendAllText(path, $"{DateTime.Now:HH:mm:ss.fff} {line}\n");
+    }
+
+    /// <summary>WIN-080: PNG of the whole window at device pixels — no z-order dependency.</summary>
+    private void SaveShot(string path)
+    {
+        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
+        var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(
+            Math.Max(1, (int)Math.Ceiling(ActualWidth * dpi.DpiScaleX)),
+            Math.Max(1, (int)Math.Ceiling(ActualHeight * dpi.DpiScaleY)),
+            96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY,
+            System.Windows.Media.PixelFormats.Pbgra32);
+        bmp.Render(this);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        using var stream = File.Create(path);
+        encoder.Save(stream);
+    }
+
+    /// <summary>WIN-060: the Settings window — one instance, re-activated if open.</summary>
+    private SettingsWindow? _settingsWindow;
+
+    private void OpenSettings()
+    {
+        if (_settingsWindow is not null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+        _settingsWindow = new SettingsWindow(SetAppearance, SetTextScale) { Owner = this };
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.Show();
     }
 
     /// <summary>Appearance switch — palette + Fluent theme + rebuild cached pages.</summary>
@@ -768,7 +837,7 @@ public partial class MainWindow : Window
         }
         DriveIcon.Content = Ui.Glyph(Icons.Drive, 14, Ui.Brush("AppSubtle"));
         DriveName.Text = v.DriveLabel;
-        DriveStats.Text = $"{ByteFormat.Format(v.TotalBytes)} total · {ByteFormat.Format(v.FreeBytes)} free";
+        DriveStats.Text = $"{ByteFormat.Format(v.FreeBytes)} free of {ByteFormat.Format(v.TotalBytes)}";
         DriveBar.Content = Ui.Bar(v.UsedFraction, Ui.Brush("AppAccent"), 5, 190);
     }
 

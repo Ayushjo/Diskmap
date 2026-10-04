@@ -58,6 +58,12 @@ public static class NodeColors
     public static readonly Pen StrokePen = Freeze(new Pen(Stroke, 1));
     public static readonly Pen ConnectorPen = Freeze(new Pen(Stroke, 1.5));
 
+    /// <summary>Focused-cell ring — the white stroke the treemap draws (WIN-061).</summary>
+    public static readonly Pen SelectionPen = Freeze(new Pen(Brushes.White, 2.5));
+
+    /// <summary>Multi-select ring — the accent pen; resolved per render so theme swaps follow.</summary>
+    public static Pen MultiPen() => new(Ui.Brush("AppAccent"), 2);
+
     /// <summary>Age-map bucket colors — ported from macOS AgeMapView.</summary>
     public static Brush AgeBucket(AgeBucket bucket) => Freeze(new SolidColorBrush(bucket switch
     {

@@ -15,7 +15,24 @@ public sealed class BubblesControl : FrameworkElement
 {
     private readonly List<(int? NodeId, double X, double Y, double R)> _circles = [];
     private readonly Dictionary<string, ChartSlice> _slicesById = new();
+    private List<(ChartSlice Slice, ChartSlice? Parent)> _nav = [];
     private ToolTip? _tooltip;
+    private Pen? _multiPen;
+
+    /// <summary>WIN-061: announces itself + its biggest slices to UIA.</summary>
+    protected override System.Windows.Automation.Peers.AutomationPeer OnCreateAutomationPeer() =>
+        new ChartPeer(this, "Bubble chart", () => ChartNavigation.AccessibleIds(_nav, ScanModel.Shared));
+
+    /// <summary>WIN-061: arrow keys move the selection (siblings/parent/child); Enter drills.</summary>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (ChartNavigation.OnKey(e, _nav, ScanModel.Shared))
+        {
+            e.Handled = true;
+            InvalidateVisual();
+        }
+        base.OnKeyDown(e);
+    }
 
     public BubblesControl()
     {
@@ -24,6 +41,7 @@ public sealed class BubblesControl : FrameworkElement
         MouseMove += OnMove;
         MouseLeave += (_, _) => { if (_tooltip is not null) _tooltip.IsOpen = false; };
         MouseRightButtonDown += OnRightClick;
+        Focusable = true;   // WIN-061: arrow-key chart navigation
     }
 
     protected override void OnRender(DrawingContext dc)
@@ -32,9 +50,11 @@ public sealed class BubblesControl : FrameworkElement
         _slicesById.Clear();
         var model = ScanModel.Shared;
         var tree = model.Tree;
-        if (tree is null || model.Totals.Length == 0) return;
+        if (tree is null || model.Totals.Length == 0) { _nav = []; return; }
+        _multiPen = model.MultiSelection.Count > 0 ? NodeColors.MultiPen() : null;
 
         var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals, model.ChartDepth);
+        _nav = ChartNavigation.Flatten(slices);
         var packed = CirclePack.Pack(slices);
         if (packed.Count == 0) return;
         foreach (var s in slices) IndexSlice(s);
@@ -52,6 +72,14 @@ public sealed class BubblesControl : FrameworkElement
             var fill = slice?.NodeID is { } id ? NodeColors.BrushFor(id) : NodeColors.OtherBrush;
             dc.DrawEllipse(fill, NodeColors.StrokePen, center, r, r);
             _circles.Add((slice?.NodeID, center.X, center.Y, r));
+            // Selection rings — multi in accent, focused cell in white.
+            if (slice?.NodeID is { } sid)
+            {
+                if (sid == model.SelectedNode)
+                    dc.DrawEllipse(null, NodeColors.SelectionPen, center, r - 1, r - 1);
+                else if (_multiPen is { } mp && model.MultiSelection.Contains(sid))
+                    dc.DrawEllipse(null, mp, center, r - 1, r - 1);
+            }
 
             if (slice?.NodeID is { } nid && r > 26)
             {
@@ -88,8 +116,22 @@ public sealed class BubblesControl : FrameworkElement
 
     private void OnClick(object sender, MouseButtonEventArgs e)
     {
-        if (HitAt(e.GetPosition(this)) is { } id && ScanModel.Shared.Tree?.IsDirectory[id] == true)
-            ScanModel.Shared.DrillTo(id);
+        if (HitAt(e.GetPosition(this)) is not { } id) return;
+        var model = ScanModel.Shared;
+        if (e.ClickCount >= 2)
+        {
+            if (model.Tree?.IsDirectory[id] == true) model.DrillTo(id);
+            return;
+        }
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            model.ToggleMulti(id);
+            InvalidateVisual();
+            return;
+        }
+        model.ClearMulti();
+        model.Select(id);
+        InvalidateVisual();
     }
 
     private void OnMove(object sender, MouseEventArgs e)
