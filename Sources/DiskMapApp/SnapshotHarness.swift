@@ -227,7 +227,8 @@ enum SnapshotHarness {
             "left": ("\u{F702}", 123), "right": ("\u{F703}", 124),
         ]
         for name in keys.split(separator: ",").map(String.init) {
-            guard let (characters, code) = table[name] else { continue }
+            // Any other single character is typed as itself (`--keys m,p,4`).
+            guard let (characters, code) = table[name] ?? (name.count == 1 ? (name, UInt16(0)) : nil) else { continue }
             for type in [NSEvent.EventType.keyDown, .keyUp] {
                 if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [],
                                                 timestamp: ProcessInfo.processInfo.systemUptime,

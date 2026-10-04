@@ -284,7 +284,7 @@ the list (rows add 10 pt inside, so text lines up at 28).
 | Top bar height | 44 |
 | Sidebar width | 212 × text scale (min 212) |
 | Control height (buttons, menus, chips 26) | 28 |
-| Search field height | 30 |
+| Search field / field menu height | 32 |
 | Table header height | 28 |
 | Inspector padding | 20 |
 | Inspector width | 290 (window < 1450) / 320 (≥ 1450); drawer 280–320 below 1200 |
@@ -407,10 +407,23 @@ Rules:
 
 ### 9.1 Search field (`DiskMapSearchField`)
 
-30 pt tall, radius 6, `raised` @ 55% (100% focused), 1 px `line` outline
-(`accent` @ 60% focused), magnifier `ink3`, text `body`, clear button when
-non-empty, optional `Kbd` shortcut hint inside on the right. Placeholder says
-what you can search ("Search by name or path"). Typical max width 260–340.
+32 pt tall, radius 8, `raised` fill, 1 px `line` outline (`ink3` @ 55% on
+hover; `accent` @ 75% plus a 3 pt `accent` @ 18% outer ring when focused),
+magnifier `ink3` (`ink2` focused), text `body` `ink`, placeholder `ink3`, a
+clear button when non-empty, optional `Kbd` hint on the right. Clicking
+anywhere in the field focuses it; Esc clears it. Typical max width 260–340.
+The shared look is `KitFieldBackground`, used by every input.
+
+A page must keep the same view structure while the user types: swapping
+layouts on the first keystroke rebuilds the field and drops focus (this broke
+Find after one letter).
+
+### 9.1a Field menus (`KitMenuField`)
+
+A menu that looks like an input, for choices that are values rather than
+filters (Snapshots' Before / After): `KitFieldBackground`, an optional
+`MonoLabel` ("BEFORE"), the value in `body` (middle-truncated), a chevron.
+Shrinks between a min and max width instead of widening the page.
 
 ### 9.2 Menus (`DiskMapMenu`)
 

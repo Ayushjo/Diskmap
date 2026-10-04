@@ -250,34 +250,23 @@ struct SnapshotsView: View {
 
     private var compareSelectors: some View {
         HStack(spacing: 8) {
-            MonoLabel("Compare")
             snapshotPicker("Before", selection: $beforeID)
             Button { swap(&beforeID, &afterID) } label: {
                 Label("Swap Before and After", systemImage: "arrow.left.arrow.right")
             }
-            .buttonStyle(IconButtonStyle(size: 24))
+            .buttonStyle(IconButtonStyle())
             .help("Swap Before and After")
             snapshotPicker("After", selection: $afterID)
             Spacer(minLength: 0)
         }
     }
 
+    /// Field-style menus (they shrink and truncate rather than widening the page).
     private func snapshotPicker(_ title: String, selection: Binding<String?>) -> some View {
-        Picker(title, selection: selection) {
-            Text("Select…").tag(String?.none)
-            if let current = currentRecord {
-                Text("Current scan (now)").tag(Optional(current.id))
-            }
-            ForEach(records) { rec in
-                Text(rec.pickerLabel).tag(Optional(rec.id))
-            }
-        }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        // Shrinks (the label truncates) instead of forcing the page wider
-        // than the window; long dates pushed the inspector off-screen.
-        .frame(minWidth: 120, maxWidth: 280)
-        .accessibilityLabel(title)
+        var options: [(id: String?, title: String)] = [(nil, "Select…")]
+        if let current = currentRecord { options.append((current.id, "Current scan (now)")) }
+        options += records.map { (Optional($0.id), $0.pickerLabel) }
+        return KitMenuField(label: title, selection: selection, options: options, minWidth: 160, maxWidth: 320)
     }
 
     private var canCompare: Bool {

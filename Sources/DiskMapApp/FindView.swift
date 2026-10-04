@@ -96,14 +96,10 @@ struct FindView: View {
     }
 
     var body: some View {
-        Group {
-            if trimmedQuery.isEmpty {
-                mainColumn
-            } else {
-                AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init),
-                                       main: mainColumn, inspector: inspector)
-            }
-        }
+        // One layout whether or not there's a query: switching layouts on the
+        // first keystroke rebuilt the field and dropped focus after one letter.
+        AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init),
+                               main: mainColumn, inspector: inspector)
         .background(DiskMapTheme.canvas)
         .task(id: runKey) { await run() }
         .task(id: model.scanID) {
@@ -373,6 +369,9 @@ struct FindView: View {
                     FileInspector(model: model, tree: tree, rootURL: rootURL, id: id, size: row.bytes,
                                   reason: "Find: \(trimmedQuery)")
                 }
+            } else if trimmedQuery.isEmpty {
+                DiskMapEmptyState(symbol: "magnifyingglass", title: "Search the scan",
+                                  message: "Type a name, or try an example. Results and their details appear here.")
             } else {
                 DiskMapEmptyState(symbol: "magnifyingglass", title: "Select a result", message: "Its details and actions appear here.")
             }
