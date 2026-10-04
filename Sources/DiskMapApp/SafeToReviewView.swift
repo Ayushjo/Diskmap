@@ -78,7 +78,8 @@ struct SafeToReviewView: View {
             if visible.isEmpty {
                 DiskMapEmptyState(symbol: "leaf", title: targets.isEmpty ? "Nothing to clean up" : "Nothing matches",
                                   message: targets.isEmpty ? "freedisk.space didn’t find high-confidence cleanup candidates in this scan."
-                                      : "Try another category, or clear the search.")
+                                      : "Try another category, or clear the search.",
+                                  dusty: targets.isEmpty ? .proud : nil)
             } else {
                 list
             }

@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage(CloneAccounting.key) private var cloneMode = CloneAccounting.defaultMode.rawValue
     @AppStorage(ScanModel.keepHistoryKey) private var keepHistory = true
     @AppStorage(TextSize.storageKey) private var textSize = TextSize.standard.rawValue
+    @AppStorage(DustyPreference.key) private var showDusty = true
 
     var body: some View {
         Form {
@@ -42,6 +43,10 @@ struct SettingsView: View {
                     ForEach(TextSize.allCases) { Text($0.title).tag($0) }
                 }
                 Toggle("Show in Menu Bar", isOn: $showMenuBarExtra)
+                Toggle(isOn: $showDusty) {
+                    Text("Show Dusty")
+                    Text("The mascot, in empty states and after a cleanup. Never on a step that removes files.")
+                }
             } header: {
                 Text("General")
             }

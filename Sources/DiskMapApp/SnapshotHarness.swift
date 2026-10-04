@@ -51,6 +51,13 @@ enum SnapshotHarness {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let model = ScanModel.shared
         let appearanceName = value(after: "--appearance") ?? "light"
+        // `--dusty-gallery`: every place Dusty appears, then quit (no scan needed).
+        if arguments.contains("--dusty-gallery") {
+            DustyGallery.write(to: dir.appendingPathComponent("dusty-gallery-\(appearanceName).png"),
+                               dark: appearanceName.hasSuffix("dark"))
+            NSApp.terminate(nil)
+            return
+        }
         // Optional mid-scan frame: `--snapshot-at 3` captures 3 s after launch.
         if let at = value(after: "--snapshot-at").flatMap(Double.init),
            let window = mainWindow() {
@@ -89,9 +96,15 @@ enum SnapshotHarness {
         // to Cleanup for this run (the queue is in memory until committed).
         if let list = value(after: "--stage"), let root = model.rootURL {
             _ = await model.stageForCleanup(list.split(separator: ",").map {
-                CleanupStageRequest(url: root.appendingPathComponent(String($0)), size: 0, reason: "Harness: \($0)")
+                CleanupStageRequest(url: root.appendingPathComponent(String($0)), size: 0, reason: "Selected: \($0)")
             })
             await model.refreshQueue()
+        }
+        // `--size-basis logical`: show logical sizes (demo trees use sparse
+        // files, which report their size but allocate almost nothing).
+        if value(after: "--size-basis") == "logical" {
+            model.sizeBasis = .logical
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
         }
         // `--find-duplicates`: run the duplicate search first, so Duplicates
         // (and Overview's review list) render with groups.
@@ -271,6 +284,7 @@ enum SnapshotHarness {
     /// count-capped; unlabeled groups are kept so structure stays visible.
     private static func dumpAccessibility(of window: NSWindow) -> String {
         var lines: [String] = []
+        let withFrames = arguments.contains("--ax-frames")
         // Key-value reads through the Objective-C runtime: SwiftUI's elements
         // are private NSObject subclasses, and the Swift importer sees the
         // NSAccessibility members both as methods and as properties.
@@ -287,6 +301,14 @@ enum SnapshotHarness {
             let traits = (read(node, "isAccessibilitySelected") as Bool?) == true ? " [selected]" : ""
             var line = String(repeating: "  ", count: depth) + role
             if !label.isEmpty { line += " \"\(label)\"" }
+            // `--ax-frames`: where the element sits, in window points from
+            // the top left, so a screenshot can be annotated or animated.
+            if withFrames, let frame: NSRect = read(node, "accessibilityFrame"), let view = window.contentView, frame.width > 0 {
+                let local = view.convert(window.convertFromScreen(frame), from: nil)
+                let top = view.isFlipped ? local.minY : view.bounds.height - local.maxY
+                line += String(format: " @%.1f,%.1f,%.1f,%.1f", local.minX, top, local.width, local.height)
+                if let value: String = read(node, "accessibilityValue"), !value.isEmpty { line += " value=\"\(value)\"" }
+            }
             if !title.isEmpty, title != label { line += " title=\"\(title)\"" }
             if !actions.isEmpty { line += " actions=\(actions)" }
             lines.append(line + traits)
@@ -297,8 +319,19 @@ enum SnapshotHarness {
     }
 
     private static func write(window: NSWindow, to url: URL) {
-        guard let view = window.contentView,
-              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        guard let view = window.contentView else { return }
+        // `--scale 2` renders at Retina density whatever the display is.
+        let scale = Double(value(after: "--scale") ?? "") ?? 0
+        let rep: NSBitmapImageRep?
+        if scale > 0 {
+            rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * scale), pixelsHigh: Int(view.bounds.height * scale),
+                                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+            rep?.size = view.bounds.size
+        } else {
+            rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+        }
+        guard let rep else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         if let png = rep.representation(using: .png, properties: [:]) {
             try? png.write(to: url)

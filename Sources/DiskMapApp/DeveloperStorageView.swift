@@ -211,7 +211,8 @@ struct DeveloperStorageView: View {
         return Group {
             if projects.isEmpty {
                 DiskMapEmptyState(symbol: "folder", title: "No projects found",
-                                  message: "No project-scoped folders such as node_modules, Pods or .venv in this scan.")
+                                  message: "No project-scoped folders such as node_modules, Pods or .venv in this scan.",
+                                  dusty: .curious)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {

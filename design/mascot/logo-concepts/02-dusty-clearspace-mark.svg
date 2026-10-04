@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 148 151" role="img" aria-label="Dusty silhouette with three clear-space lines"><title>Dusty silhouette with three clear-space lines</title>
+      <rect x="6" y="7" width="136" height="136" rx="30" fill="#252B31"/>
+      <path d="M48 65 C37 53 36 36 40 23 C42 16 49 17 54 24
+               C62 36 62 49 65 61 Z" fill="#CEC4F7"
+            stroke="#2B2440" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M91 64 C94 42 106 32 120 38 C129 42 132 51 127 58
+               C121 64 112 58 105 67 Z" fill="#CEC4F7"
+            stroke="#2B2440" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M45 35 C46 29 48 26 50 31 C54 38 53 45 55 51"
+            fill="none" stroke="#F6C4DA" stroke-width="7" stroke-linecap="round"/>
+      <path d="M106 51 C113 43 121 45 124 51" fill="none"
+            stroke="#F6C4DA" stroke-width="6" stroke-linecap="round"/>
+      <path d="M82 56 C86 55 88 59 89 61 C104 61 114 69 118 80
+               C127 85 126 93 121 98 C126 106 122 113 115 115
+               C115 124 107 128 99 125 C94 132 84 131 79 127
+               C70 132 61 127 59 121 C50 122 44 116 46 109
+               C39 105 39 96 43 91 C39 85 44 77 50 76
+               C53 67 63 62 73 62 C75 57 78 56 82 56 Z"
+            fill="#CEC4F7" stroke="#2B2440" stroke-width="3.5"
+            stroke-linejoin="round"/>
+      <path d="M51 97 H93 M51 108 H82 M51 119 H70" fill="none"
+            stroke="#252B31" stroke-width="6" stroke-linecap="round"/>
+      <circle cx="77" cy="83" r="3.7" fill="#2B2440"/>
+      <circle cx="101" cy="83" r="3.7" fill="#2B2440"/>
+      <path d="M87 91 Q89 94 91 91" fill="none" stroke="#2B2440"
+            stroke-width="2.5" stroke-linecap="round"/>
+    </svg>

@@ -182,7 +182,8 @@ struct OverviewView: View {
                 detail: "Totals are missing whatever \(count == 1 ? "it holds" : "they hold"). Grant Full Disk Access, then rescan.",
                 examples: model.deniedDirectoryExamples(),
                 actionTitle: "Grant access",
-                action: { model.openFullDiskAccessSettings() }
+                action: { model.openFullDiskAccessSettings() },
+                dusty: .smallOops
             )
             .accessibilityIdentifier("unreadable-folders-notice")
         }

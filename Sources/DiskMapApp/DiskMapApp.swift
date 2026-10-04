@@ -19,7 +19,14 @@ struct DiskMapApp: App {
             MenuBarCommands()
             AppearanceCommands()
             UpdateCommands()
+            AboutCommands()
         }
+        Window("About freedisk.space", id: AboutView.windowID) {
+            AboutView()
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
         Settings {
             SettingsView()
                 .id(textSize)
@@ -47,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SnapshotHarness.startIfRequested()
         // Sparkle starts only if the user turned automatic checks on (TASK-083).
         if !SnapshotHarness.isActive { Updates.shared.startIfEnabled() }
+        if DustyPreference.isOn { DustyLibrary.warmUp() }
     }
 
     /// A folder dropped on the Dock icon, or `open -a freedisk.space ~/code`

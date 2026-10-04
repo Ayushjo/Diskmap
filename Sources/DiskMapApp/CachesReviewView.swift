@@ -94,7 +94,8 @@ struct CachesReviewView: View {
             if visible.isEmpty {
                 DiskMapEmptyState(symbol: "internaldrive", title: caches.isEmpty ? "No caches found" : "Nothing matches",
                                   message: caches.isEmpty ? "This scan didn’t include Library/Caches, or the caches are empty."
-                                      : "Try another tab, or clear the search.")
+                                      : "Try another tab, or clear the search.",
+                                  dusty: caches.isEmpty ? .proud : nil)
             } else {
                 list
             }

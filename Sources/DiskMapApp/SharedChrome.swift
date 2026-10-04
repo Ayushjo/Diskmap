@@ -184,13 +184,21 @@ struct DiskMapEmptyState: View {
     var primaryAction: (() -> Void)? = nil
     var secondaryTitle: String? = nil
     var secondaryAction: (() -> Void)? = nil
+    /// Dusty in this empty state instead of the symbol (when Show Dusty is on).
+    var dusty: DustyPose? = nil
+    @AppStorage(DustyPreference.key) private var showDusty = true
 
     var body: some View {
         VStack(spacing: DiskMapSpace.sm) {
-            Image(systemName: symbol)
-                .font(.system(size: DiskMapType.scaled(20), weight: .regular))
-                .foregroundStyle(DiskMapTheme.ink3)
-                .accessibilityHidden(true)
+            if let dusty, showDusty {
+                DustyArrival(pose: dusty, width: DiskMapType.scaled(92))
+                    .padding(.bottom, DiskMapSpace.xs)
+            } else {
+                Image(systemName: symbol)
+                    .font(.system(size: DiskMapType.scaled(20), weight: .regular))
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .accessibilityHidden(true)
+            }
             Text(title)
                 .font(DiskMapType.bodyEmphasis)
                 .foregroundStyle(DiskMapTheme.ink)
@@ -324,13 +332,21 @@ struct DiskMapNoticeBanner: View {
     var examples: [String] = []
     var actionTitle: String?
     var action: (() -> Void)?
+    /// A small Dusty instead of the symbol (when Show Dusty is on).
+    var dusty: DustyPose? = nil
+    @AppStorage(DustyPreference.key) private var showDusty = true
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DiskMapSpace.sm) {
-            Image(systemName: symbol)
-                .font(.system(size: DiskMapType.scaled(11.5), weight: .medium))
-                .foregroundStyle(tint)
-                .accessibilityHidden(true)
+        HStack(alignment: dusty != nil && showDusty ? .center : .firstTextBaseline, spacing: DiskMapSpace.sm) {
+            if let dusty, showDusty {
+                Dusty(pose: dusty, width: DiskMapType.scaled(34))
+                    .accessibilityHidden(true)
+            } else {
+                Image(systemName: symbol)
+                    .font(.system(size: DiskMapType.scaled(11.5), weight: .medium))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(DiskMapType.bodyEmphasis)

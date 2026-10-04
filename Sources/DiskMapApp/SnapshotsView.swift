@@ -5,6 +5,7 @@ import SwiftUI
 /// Explore → Snapshots: storage history and comparison workspace.
 struct SnapshotsView: View {
     @ObservedObject var model: ScanModel
+    @AppStorage(DustyPreference.key) private var showDusty = true
     @Environment(\.diskMapContentWidth) private var contentWidth
 
     @State private var records: [SnapshotRecord] = []
@@ -230,12 +231,17 @@ struct SnapshotsView: View {
                     browsePath: $browsePath, selectedPath: $selectedChangePath
                 )
             } else {
-                Text(records.isEmpty
-                     ? "Save a snapshot now; compare it with a later scan to see what grew or shrank."
-                     : "Pick two snapshots to see what changed between them.")
-                    .font(DiskMapType.body)
-                    .foregroundStyle(DiskMapTheme.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .center, spacing: DiskMapSpace.md) {
+                    if records.isEmpty && showDusty {
+                        DustyArrival(pose: .sleepy, width: DiskMapType.scaled(76))
+                    }
+                    Text(records.isEmpty
+                         ? "Save a snapshot now; compare it with a later scan to see what grew or shrank."
+                         : "Pick two snapshots to see what changed between them.")
+                        .font(DiskMapType.body)
+                        .foregroundStyle(DiskMapTheme.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if let statusMessage {
                 Text(statusMessage)

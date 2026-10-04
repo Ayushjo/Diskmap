@@ -8,6 +8,9 @@ struct FirstScanHero: View {
     var pickFolder: () -> Void
     var onScanMac: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(DustyPreference.key) private var showDusty = true
+    @State private var pointer: CGPoint?
+    @State private var scanHovered = false
 
     var body: some View {
         Group {
@@ -26,6 +29,14 @@ struct FirstScanHero: View {
             TreemapMark()
                 .frame(width: 220, height: 132)
                 .accessibilityHidden(true)
+                .overlay(alignment: .topLeading) {
+                    if showDusty {
+                        // Dusty grips the top edge above the right-hand tiles.
+                        let dusty = FirstRunDusty(pointer: pointer, cheering: scanHovered)
+                        dusty.offset(x: 220 * 0.75 - dusty.width / 2, y: -dusty.aboveEdge)
+                    }
+                }
+                .padding(.top, showDusty ? 56 : 0)
                 .padding(.bottom, DiskMapSpace.xs)
 
             VStack(alignment: .leading, spacing: DiskMapSpace.sm) {
@@ -45,6 +56,7 @@ struct FirstScanHero: View {
                 Button("Scan This Mac", action: onScanMac)
                     .buttonStyle(PrimaryButtonStyle())
                     .keyboardShortcut(.defaultAction)
+                    .onHover { scanHovered = $0 }
                 Button("Choose Folder…", action: pickFolder)
                     .buttonStyle(SecondaryButtonStyle())
                     .accessibilityLabel("Choose Folder")
@@ -63,24 +75,44 @@ struct FirstScanHero: View {
         .frame(maxWidth: 520, alignment: .leading)
         .padding(.horizontal, DiskMapSpace.xl)
         .padding(.bottom, 56)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .coordinateSpace(name: "firstRun")
+        .onContinuousHover(coordinateSpace: .named("firstRun")) { phase in
+            switch phase {
+            case .active(let location): pointer = location
+            case .ended: pointer = nil
+            }
+        }
     }
 
     /// Live scan view (TASK-044/046): what has been found so far, where the
     /// walk is, and how fast — instead of an indeterminate spinner.
     private var scanningBody: some View {
         VStack(alignment: .leading, spacing: DiskMapSpace.lg) {
-            VStack(alignment: .leading, spacing: DiskMapSpace.xs) {
-                MonoLabel(scanHeadline)
-                Text(model.scannedCount.formatted() + " items")
-                    .font(DiskMapType.display)
-                    .foregroundStyle(DiskMapTheme.ink)
-                    .contentTransition(reduceMotion ? .identity : .numericText())
-                    .accessibilityIdentifier("scan-progress")
-                Text(scanSubhead)
-                    .font(DiskMapType.figureSmall)
-                    .foregroundStyle(DiskMapTheme.ink3)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+            HStack(alignment: .bottom, spacing: DiskMapSpace.md) {
+                VStack(alignment: .leading, spacing: DiskMapSpace.xs) {
+                    MonoLabel(scanHeadline)
+                    Text(model.scannedCount.formatted() + " items")
+                        .font(DiskMapType.display)
+                        .foregroundStyle(DiskMapTheme.ink)
+                        .contentTransition(reduceMotion ? .identity : .numericText())
+                        .accessibilityIdentifier("scan-progress")
+                    Text(scanSubhead)
+                        .font(DiskMapType.figureSmall)
+                        .foregroundStyle(DiskMapTheme.ink3)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                // Takes all the room Dusty doesn't; long paths shorten here
+                // instead of pushing him around.
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if showDusty {
+                    ScanningDusty(line: ScanningDusty.line(phase: model.scanPhase,
+                                                           currentFolder: model.liveProgress?.currentFolder,
+                                                           root: (model.pendingRootURL ?? model.rootURL)?.path))
+                        .transition(.opacity)
+                }
             }
 
             FigureStrip(figures: [

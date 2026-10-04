@@ -10,19 +10,33 @@ struct CleanupQueueView: View {
     @State private var showReceipt = false
     /// The entry just removed, so it can be put back (Undo) for a few seconds.
     @State private var lastRemoved: CleanupQueue.StagedItem?
+    /// What this sheet just moved to the Trash: the success moment shows until
+    /// it's dismissed, put back, or something new is added.
+    @State private var justMoved: CleanupRecord?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Hairline()
-            if model.stagedItems.isEmpty {
+            if model.stagedItems.isEmpty, let moved = justMoved, model.lastCleanup == moved {
+                CleanupSuccessView(
+                    count: moved.items.count,
+                    freedLine: model.lastCommitLines.last { $0.hasSuffix("when you empty the Trash.") } ?? "",
+                    details: model.lastCommitLines.filter { !$0.hasSuffix("when you empty the Trash.") },
+                    onPutBack: { Task { await model.putBackLastCleanup(); justMoved = nil } },
+                    onDone: { dismiss() }
+                )
+                .transition(.opacity)
+            } else if model.stagedItems.isEmpty {
                 DiskMapEmptyState(symbol: "tray", title: "Nothing in Cleanup",
                                   message: "Add files from any page with Add to Cleanup (⌘⌫). Nothing moves to the Trash until you confirm here.")
             } else {
                 list
             }
             undoRow
-            lastCleanup
+            if justMoved == nil || model.lastCleanup != justMoved || !model.stagedItems.isEmpty {
+                lastCleanup
+            }
         }
         .background(DiskMapTheme.canvas)
         .frame(minWidth: 640, minHeight: 480)
@@ -33,7 +47,13 @@ struct CleanupQueueView: View {
             titleVisibility: .visible
         ) {
             Button("Move to Trash", role: .destructive) {
-                Task { await model.commitCleanup() }
+                Task {
+                    await model.commitCleanup()
+                    // Only after the move succeeded: never during the confirmation.
+                    if let record = model.lastCleanup, !record.items.isEmpty, record.date.timeIntervalSinceNow > -30 {
+                        withAnimation(.easeOut(duration: 0.2)) { justMoved = record }
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {

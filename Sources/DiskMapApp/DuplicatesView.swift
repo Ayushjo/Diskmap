@@ -83,7 +83,8 @@ struct DuplicatesView: View {
                         ? "Nothing in this scan is stored twice."
                         : "freedisk.space compares local files in stages, on this Mac. Cloud-only placeholders are skipped; shared APFS clones are recognised.",
                     primaryTitle: model.duplicateDidRun ? "Search Again" : "Find Duplicates",
-                    primaryAction: { Task { await model.findDuplicates() } }
+                    primaryAction: { Task { await model.findDuplicates() } },
+                    dusty: model.duplicateDidRun ? .happy : nil
                 )
             } else {
                 list
