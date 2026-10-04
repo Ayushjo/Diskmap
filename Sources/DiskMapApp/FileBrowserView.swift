@@ -160,7 +160,8 @@ struct FileBrowserView: View {
                 .keyboardShortcut("]", modifiers: .command)
                 .disabled(!canGoForward)
                 .help("Forward")
-            BreadcrumbBar(tree: tree, currentNode: currentID) { jumpTo($0, recordHistory: true) }
+            // The current folder is the page title just below, so the path stops at its parent.
+            BreadcrumbBar(tree: tree, currentNode: currentID, jump: { jumpTo($0, recordHistory: true) }, includeCurrent: false)
                 .padding(.leading, 6)
             Spacer(minLength: 6)
             Button {

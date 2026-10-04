@@ -25,8 +25,9 @@ public struct ChartSlice: Sendable, Equatable, Identifiable {
     }
 }
 
-/// One level of `currentNode`'s children, plus at most one more level
-/// for the children that are large enough to draw. Anything smaller
+/// `levels` levels of `currentNode`'s descendants (2 by default: the
+/// children plus one more level; the flame chart asks for 4), each only
+/// for items large enough to draw. Anything smaller
 /// than 0.5% of its parent collapses into a single Other slice so a
 /// home scan cannot draw every descendant.
 public enum ChartLayout {
@@ -36,15 +37,16 @@ public enum ChartLayout {
         of node: Int32,
         in tree: FileTree,
         totals: [Int64],
-        otherFraction fraction: Double = otherFraction
+        otherFraction fraction: Double = otherFraction,
+        levels: Int = 2
     ) -> [ChartSlice] {
-        guard node >= 0, node < tree.count, totals.count == tree.count else { return [] }
+        guard node >= 0, node < tree.count, totals.count == tree.count, levels >= 1 else { return [] }
         return collapse(
             tree.children(of: node, totals: totals),
             parentSize: totals[Int(node)],
             tree: tree,
             totals: totals,
-            includeChildren: true,
+            depth: levels - 1,
             idPrefix: "\(node)",
             otherFraction: fraction
         )
@@ -55,7 +57,8 @@ public enum ChartLayout {
         parentSize: Int64,
         tree: FileTree,
         totals: [Int64],
-        includeChildren: Bool,
+        /// How many more levels below these items to include.
+        depth: Int,
         idPrefix: String,
         otherFraction: Double
     ) -> [ChartSlice] {
@@ -74,13 +77,13 @@ public enum ChartLayout {
         visible.sort { $0.size > $1.size }
         var slices: [ChartSlice] = visible.map { item in
             let nested: [ChartSlice]
-            if includeChildren, tree.isDirectory[Int(item.id)] {
+            if depth > 0, tree.isDirectory[Int(item.id)] {
                 nested = collapse(
                     tree.children(of: item.id, totals: totals),
                     parentSize: item.size,
                     tree: tree,
                     totals: totals,
-                    includeChildren: false,
+                    depth: depth - 1,
                     idPrefix: "\(idPrefix).\(item.id)",
                     otherFraction: otherFraction
                 )

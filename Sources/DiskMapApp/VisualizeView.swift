@@ -69,8 +69,11 @@ struct VisualizeView: View {
                     Spacer(minLength: 12)
                     modePicker
                     Rectangle().fill(DiskMapTheme.line).frame(width: 1, height: 18)
-                    DiskMapMenu(label: "Color", options: ExploreColorMode.allCases,
-                                selection: $model.colorMode, title: { $0.rawValue })
+                    // Age Map always colours by age, so the choice would do nothing there.
+                    if model.exploreMode != .ageMap {
+                        DiskMapMenu(label: "Color", options: ExploreColorMode.allCases,
+                                    selection: $model.colorMode, title: { $0.rawValue })
+                    }
                     DiskMapMenu(label: "Size", options: SizeBasis.allCases,
                                 selection: $model.sizeBasis, title: { $0 == .allocated ? "On disk" : "Logical" })
                     Button {

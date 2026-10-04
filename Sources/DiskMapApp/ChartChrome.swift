@@ -14,9 +14,12 @@ struct BreadcrumbBar: View {
     let tree: FileTree
     let currentNode: Int32
     let jump: (Int32) -> Void
+    /// False where the page title already names the current folder (File Browser).
+    var includeCurrent = true
 
     var body: some View {
-        let chain = tree.ancestorIDs(of: currentNode)
+        let all = tree.ancestorIDs(of: currentNode)
+        let chain = includeCurrent ? all : Array(all.dropLast())
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(Array(chain.enumerated()), id: \.element) { index, id in

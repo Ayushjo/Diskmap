@@ -71,21 +71,24 @@ struct DiskMapMenu<Option: Hashable>: View {
             }
         } label: {
             HStack(spacing: 5) {
-                // One Text: a borderless menu keeps only the first Text of its label.
-                (Text(label.isEmpty ? "" : label + "  ").foregroundColor(DiskMapTheme.ink3)
-                    + Text(title(selection)).foregroundColor(DiskMapTheme.ink))
-                    .lineLimit(1)
-                Spacer(minLength: 2)
+                Text(label.isEmpty ? "" : label)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                Text(title(selection))
+                    .foregroundStyle(DiskMapTheme.ink)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: DiskMapType.scaled(8.5), weight: .semibold))
                     .foregroundStyle(DiskMapTheme.ink3)
             }
             .font(DiskMapType.bodyEmphasis)
+            .lineLimit(1)
             .padding(.horizontal, 9)
             .frame(width: width, height: DiskMapMetric.controlHeight)
             .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        // A plain-button menu draws this label as written. The borderless
+        // style replaced it with a system-font title that ignored Text Size.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize(horizontal: width == nil, vertical: true)
     }
