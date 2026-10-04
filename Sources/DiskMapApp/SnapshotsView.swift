@@ -56,7 +56,7 @@ struct SnapshotsView: View {
         let vol = VolumeStats.forPath(root.path)
         let meta = SnapshotMeta(
             name: "Current scan",
-            note: "Live scan — save to keep a DiskMap analytical checkpoint.",
+            note: "Live scan — save to keep a freedisk.space analytical checkpoint.",
             favorite: false,
             volumeName: vol?.volumeName,
             totalBytes: vol?.totalBytes,
@@ -469,7 +469,7 @@ struct SnapshotsView: View {
             fileCount: model.descendantFileCounts.first,
             folderCount: model.descendantFolderCounts.first,
             scanSeconds: model.lastScanSeconds,
-            diskMapVersion: "DiskMap"
+            diskMapVersion: "freedisk.space"
         )
         let snapshot = DiskSnapshot(rootPath: root.path, capturedAt: Date(), tree: tree)
         do {

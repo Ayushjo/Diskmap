@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !SnapshotHarness.isActive { Updates.shared.startIfEnabled() }
     }
 
-    /// A folder dropped on the Dock icon, or `open -a DiskMap ~/code`
+    /// A folder dropped on the Dock icon, or `open -a freedisk.space ~/code`
     /// (TASK-063). The bundle declares folders with LSHandlerRank None, so
     /// DiskMap never becomes the default app for opening folders.
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -60,4 +60,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 }
-

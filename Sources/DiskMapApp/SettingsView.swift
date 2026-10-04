@@ -26,7 +26,7 @@ struct SettingsView: View {
             }
             Section {
                 Toggle("Keep storage history", isOn: $keepHistory)
-                Text("Notes a few hundred folder sizes per scan so DiskMap can say what grew — kept a year on this Mac, never sent anywhere.")
+                Text("Notes a few hundred folder sizes per scan so freedisk.space can say what grew — kept a year on this Mac, never sent anywhere.")
                     .font(DiskMapType.secondary)
                     .foregroundStyle(DiskMapTheme.ink2)
                     .fixedSize(horizontal: false, vertical: true)

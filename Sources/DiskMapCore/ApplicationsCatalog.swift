@@ -339,7 +339,7 @@ public enum ApplicationsCatalog {
     public static func removalGuidance(status: ApplicationStatus, name: String) -> String {
         switch status {
         case .system:
-            return "This is a system application. DiskMap will not stage it for cleanup."
+            return "This is a system application. freedisk.space will not stage it for cleanup."
         case .reviewFirst:
             return "Review first. Removing \(name) deletes the application bundle; related user data may remain until you clear it separately."
         case .keep:

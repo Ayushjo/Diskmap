@@ -1,10 +1,11 @@
 import AppKit
 import SwiftUI
+import DiskMapBrand
 
-// IconRender (TASK-083) — draws DiskMap's app icon in SwiftUI and writes an
+// IconRender (TASK-083) — draws freedisk.space's app icon in SwiftUI and writes an
 // .iconset, so the icon is code, reviewable and regenerable.
 //
-//   swift run IconRender <variant 1|2|3|4> <out.iconset> one iconset (4 = logo)
+//   swift run IconRender <variant 1|2|3|4> <out.iconset> one iconset (4 = Dusty peeking over the stack)
 //   swift run IconRender --previews <dir>                1024 px PNG of each variant
 // then: iconutil -c icns <out.iconset> -o Resources/AppIcon.icns
 
@@ -38,33 +39,44 @@ private struct Tiles: View {
     }
 }
 
-/// The logo's "D" (copy of DiskMapApp's DiskMapMark; keep the two in step).
+/// The cleared-stack mark. Its vector geometry matches DiskMapApp and the website SVG.
 private struct Mark: View {
     var ink: Color
     var accent: Color
+
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            let u = w / 260
-            let bowlX = w * 87 / 260, bowlW = w - bowlX
-            let topH = h * 129 / 273, bottomY = h * 147 / 273, bottomH = h - bottomY
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 8 * u, style: .continuous)
-                    .fill(ink)
-                    .frame(width: w * 69 / 260, height: h)
-                UnevenRoundedRectangle(topLeadingRadius: 8 * u, bottomLeadingRadius: 30 * u,
-                                       bottomTrailingRadius: 6 * u, topTrailingRadius: topH, style: .continuous)
-                    .fill(accent)
-                    .frame(width: bowlW, height: topH)
-                    .offset(x: bowlX)
-                UnevenRoundedRectangle(topLeadingRadius: 34 * u, bottomLeadingRadius: 8 * u,
-                                       bottomTrailingRadius: bottomH, topTrailingRadius: 6 * u, style: .continuous)
-                    .fill(ink)
-                    .frame(width: bowlW, height: bottomH)
-                    .offset(x: bowlX, y: bottomY)
-            }
+        ZStack {
+            ClearedStackShape(segment: 0).fill(ink)
+            ClearedStackShape(segment: 1).fill(hex(0x6D7782))
+            ClearedStackShape(segment: 2).fill(accent)
+            ClearedStackShape(segment: 3).fill(accent.opacity(0.5))
         }
-        .aspectRatio(260.0 / 273.0, contentMode: .fit)
+        .aspectRatio(106.0 / 92.0, contentMode: .fit)
+    }
+}
+
+private struct ClearedStackShape: Shape {
+    let segment: Int
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        switch segment {
+        case 0:
+            path.addRoundedRect(in: CGRect(x: 0, y: 0, width: 106, height: 22), cornerSize: CGSize(width: 11, height: 11))
+        case 1:
+            path.addRoundedRect(in: CGRect(x: 0, y: 35, width: 82, height: 22), cornerSize: CGSize(width: 11, height: 11))
+        case 2:
+            path.addRoundedRect(in: CGRect(x: 0, y: 70, width: 53, height: 22), cornerSize: CGSize(width: 11, height: 11))
+        default:
+            path.addRoundedRect(in: CGRect(x: 91, y: 44, width: 15, height: 4), cornerSize: CGSize(width: 2, height: 2))
+            path.addRoundedRect(in: CGRect(x: 63, y: 79, width: 43, height: 4), cornerSize: CGSize(width: 2, height: 2))
+        }
+        let scale = min(rect.width / 106, rect.height / 92)
+        let x = rect.minX + (rect.width - 106 * scale) / 2
+        let y = rect.minY + (rect.height - 92 * scale) / 2
+        return path
+            .applying(CGAffineTransform(scaleX: scale, y: scale))
+            .applying(CGAffineTransform(translationX: x, y: y))
     }
 }
 
@@ -76,14 +88,20 @@ private struct Icon: View {
         ZStack {
             switch variant {
             case 4:
-                // The logo: paper tile, the "D" mark centred.
+                // Dusty peeking over the cleared stack on a quiet macOS tile.
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
                     .fill(LinearGradient(colors: [hex(0xFCFBF8), hex(0xEFEDE7)], startPoint: .top, endPoint: .bottom))
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
                     .strokeBorder(Color.black.opacity(0.06), lineWidth: max(1, size * 0.002))
-                Mark(ink: hex(0x2B2F35), accent: hex(0x8070F0))
-                    .frame(height: size * 0.44)
-                    .offset(x: size * 0.012)
+                if let mark = DiskMapBrand.rasterizedPeekMark(pixelsTall: Int(size * 0.63)) {
+                    Image(nsImage: mark)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: size * 0.46, height: size * 0.63)
+                } else {
+                    Mark(ink: hex(0x252B31), accent: hex(0x7966DA))
+                        .frame(width: size * 0.54, height: size * 0.47)
+                }
             case 2:
                 // Dark tile, treemap inset, small D badge.
                 RoundedRectangle(cornerRadius: corner, style: .continuous)

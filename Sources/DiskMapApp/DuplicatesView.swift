@@ -81,7 +81,7 @@ struct DuplicatesView: View {
                     title: model.duplicateDidRun ? "No duplicates found" : "Find files with identical contents",
                     message: model.duplicateDidRun
                         ? "Nothing in this scan is stored twice."
-                        : "DiskMap compares local files in stages, on this Mac. Cloud-only placeholders are skipped; shared APFS clones are recognised.",
+                        : "freedisk.space compares local files in stages, on this Mac. Cloud-only placeholders are skipped; shared APFS clones are recognised.",
                     primaryTitle: model.duplicateDidRun ? "Search Again" : "Find Duplicates",
                     primaryAction: { Task { await model.findDuplicates() } }
                 )

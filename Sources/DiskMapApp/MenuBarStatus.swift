@@ -85,7 +85,7 @@ struct MenuBarLabel: View {
             Label(ByteFormat.string(Int64(volume.freeBytes)) + " free", systemImage: "externaldrive.badge.exclamationmark")
         } else {
             Image(systemName: "internaldrive")
-                .accessibilityLabel("DiskMap")
+                .accessibilityLabel("freedisk.space")
         }
     }
 }
@@ -156,7 +156,7 @@ struct MenuBarStatusView: View {
                 Button(model.isScanning ? "Scanning…" : "Rescan") { rescan() }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(model.isScanning || (model.rootURL ?? record.map { URL(fileURLWithPath: $0.rootPath) }) == nil)
-                Button("Open DiskMap") { openApp() }
+                Button("Open freedisk.space") { openApp() }
                     .buttonStyle(SecondaryButtonStyle())
             }
         }

@@ -1,4 +1,7 @@
-# PRD — DiskMap
+# PRD — freedisk.space
+
+The public product name is freedisk.space. Historical `DiskMap` identifiers
+in code and saved data remain compatible with earlier builds.
 
 ## Goal
 

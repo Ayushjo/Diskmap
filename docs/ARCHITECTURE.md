@@ -9,6 +9,22 @@
 
 ## Decision log
 
+### Public name and compatibility
+
+The public product and planned domain are **freedisk.space**. The app bundle
+display name, artwork, website, and distribution filenames use that name.
+The Swift module/target names, CLI command `diskmap`, bundle identifier
+`com.ayushjo.diskmap`, preference keys, and Application Support directories
+retain their original names. This avoids treating existing snapshots and
+settings as a new installation. A future identifier migration would need an
+explicit data-migration plan and compatibility tests; the brand change alone
+does not require one.
+
+The current visual mark is Dusty peeking over the cleared stack: three bars
+that shrink to show space becoming free. The website SVG, native wordmark,
+and generated Mac and Windows icons share the selected vector. The previous
+stack-only assets remain in `design/brand-backup-cleared-stack/`.
+
 ### Struct-of-arrays tree instead of a class per file
 
 A `class FileNode` with a handful of stored properties costs roughly 48+

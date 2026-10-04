@@ -40,6 +40,7 @@
     h2 { font-size:clamp(44px,4.7vw,78px); line-height:1.04; letter-spacing:-.065em; margin:18px 0; }
     .section-head p { font-size:19px; line-height:1.55; color:var(--muted); max-width:670px; }
     .flow { display:block; width:100%; height:auto; }
+    .flow-mobile { display:none; }
     .dark-band { background:#252b31; color:#f7f7f5; overflow:hidden; }
     .dark-band .kicker { color:#b9aaf5; }
     .dark-band h2 { max-width:800px; }
@@ -55,7 +56,7 @@
     footer { border-top:1px solid var(--line); padding:28px 0 48px; display:flex; justify-content:space-between; align-items:center; color:#7c858e; font-size:12px; }
     footer img { width:132px; }
     @media(max-width:1050px) { .hero { grid-template-columns:1fr; padding-top:68px; } .hero-art { justify-self:center; } .figure-note { text-align:center; } .feature-grid { grid-template-columns:1fr; } }
-    @media(max-width:700px) { .shell { width:min(100% - 36px,1380px); } .topbar { min-height:74px; } .wordmark { width:145px; } .top-links a:not(.outlined) { display:none; } .hero { padding:66px 0 64px; } h1 { font-size:clamp(56px,12vw,80px); } .principles { grid-template-columns:1fr; gap:15px; } section { padding-block:75px; } .flow { min-width:680px; } .flow-wrap { overflow-x:auto; } footer { gap:20px; align-items:flex-start; flex-direction:column; } }
+    @media(max-width:700px) { .shell { width:min(100% - 36px,1380px); } .topbar { min-height:74px; } .wordmark { width:145px; } .top-links a:not(.outlined) { display:none; } .hero { padding:66px 0 64px; } h1 { font-size:clamp(56px,12vw,80px); } .principles { grid-template-columns:1fr; gap:15px; } section { padding-block:75px; } .flow-wrap { display:none; } .flow-mobile { display:grid; gap:12px; } .flow-mobile article { background:#fff; border:1px solid var(--line); border-radius:18px; padding:24px; } .flow-mobile b { color:var(--violet); font-size:12px; letter-spacing:.12em; } .flow-mobile h3 { font-size:20px; margin:13px 0 4px; } .flow-mobile p { color:var(--muted); margin:0; line-height:1.5; } footer { gap:20px; align-items:flex-start; flex-direction:column; } }
     @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .button:hover { transform:none; } }
   </style>
 </head>
@@ -74,12 +75,13 @@
         <p class="lede">See what fills your Mac. Follow the big folders. Review everything before it moves to Trash.</p>
         <div class="actions"><a class="button primary" href="#explore">Explore DiskMap →</a><a class="button secondary" href="#how">See how it works</a></div>
       </div>
-      <div><img class="hero-art" src="hero-storage-map.svg" alt="Illustrated storage map with a selected Downloads folder and inspector"><p class="figure-note">A visual concept with illustrative data. Product screenshots should use a real scan.</p></div>
+      <div><picture><source media="(max-width: 700px)" srcset="hero-storage-map-mobile.svg"><img class="hero-art" src="hero-storage-map.svg" alt="Illustrated storage map with a selected Downloads folder and inspector"></picture><p class="figure-note">A visual concept with illustrative data. Product screenshots should use a real scan.</p></div>
     </div>
     <div id="principles" class="shell principles"><div><b>01</b> Your files stay on your Mac</div><div><b>02</b> Every file has a place on the map</div><div><b>03</b> Cleanup waits for your review</div></div>
     <section id="how" class="shell">
       <div class="section-head"><div class="kicker">The idea</div><h2>From “where did it go?”<br>to “there it is.”</h2><p>DiskMap gives the scan a shape you can explore. Select a folder to understand it, then choose what belongs in Cleanup.</p></div>
       <div class="flow-wrap"><img class="flow" src="review-flow.svg" alt="Scan, inspect, then review selected files for cleanup"></div>
+      <div class="flow-mobile"><article><b>01 / SCAN</b><h3>Understand the whole disk</h3><p>Get a local map of the folders using space.</p></article><article><b>02 / INSPECT</b><h3>See what takes space</h3><p>Open a folder and follow its largest contents.</p></article><article><b>03 / REVIEW</b><h3>You decide what moves</h3><p>Stage candidates, review the queue, then confirm.</p></article></div>
     </section>
     <section class="dark-band"><div class="shell"><div class="kicker">The difference</div><h2>Clarity before cleanup.</h2><p>Make the visuals useful: one storage map, direct inspection, honest explanations, and a queue you review before anything moves.</p></div></section>
     <section id="explore" class="shell feature-grid">

@@ -56,7 +56,7 @@ struct OldDownloadsView: View {
         Group {
             if model.tree == nil {
                 DiskMapEmptyState(symbol: "arrow.down.circle", title: "Scan to find older downloads",
-                                  message: "DiskMap looks through Downloads after a scan.",
+                                  message: "freedisk.space looks through Downloads after a scan.",
                                   primaryTitle: "Choose Folder…", primaryAction: pickFolder)
             } else {
                 AdaptiveInspectorSplit(windowWidth: contentWidth, inspectionToken: selectedID.map(String.init), main: mainColumn, inspector: inspector)

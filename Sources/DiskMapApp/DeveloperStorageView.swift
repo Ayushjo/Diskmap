@@ -584,7 +584,7 @@ private struct DeveloperInspector: View {
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(recipe.command, forType: .string)
-                            model.showToast("Command copied — DiskMap never runs it for you")
+                            model.showToast("Command copied — freedisk.space never runs it for you")
                         } label: { Label("Copy command", systemImage: "doc.on.doc") }
                             .buttonStyle(IconButtonStyle(size: 24))
                             .accessibilityLabel("Copy command \(recipe.command)")

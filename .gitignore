@@ -16,3 +16,16 @@ xcuserdata/
 .idea/
 dist/
 /build/
+
+# Design workspace: keep sources, not copies or generated output
+design/website-motion-v*/
+design/website-concepts-backup-*/
+design/brand-backup-*/
+design/**/node_modules/
+design/**/.next/
+design/**/out/
+design/**/__pycache__/
+design/**/*.mp4
+# The website lives in its own repo (Ayushjo/freedisk-website).
+# Local editor / preview config
+.claude/launch.json

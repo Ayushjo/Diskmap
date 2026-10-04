@@ -398,7 +398,7 @@ struct OverviewView: View {
             parts.append("\(correction.cloneCount.formatted()) cloned cop\(correction.cloneCount == 1 ? "y" : "ies") in \(correction.familyCount.formatted()) group\(correction.familyCount == 1 ? "" : "s") share \(ByteFormat.string(correction.bytes)) with their originals — counted once.")
         }
         if correction.partialCount > 0 {
-            parts.append("\(ByteFormat.string(correction.partialSharedBytes)) in \(correction.partialCount.formatted()) edited cop\(correction.partialCount == 1 ? "y" : "ies") is shared with files DiskMap can’t name, and counted in full.")
+            parts.append("\(ByteFormat.string(correction.partialSharedBytes)) in \(correction.partialCount.formatted()) edited cop\(correction.partialCount == 1 ? "y" : "ies") is shared with files freedisk.space can’t name, and counted in full.")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
@@ -446,7 +446,7 @@ struct OverviewView: View {
         causes.append("held by local Time Machine snapshots or purgeable space")
         let denied = model.deniedDirectoryIDs.count
         if denied > 0 {
-            causes.append("inside \(denied.formatted()) folder\(denied == 1 ? "" : "s") DiskMap couldn’t read")
+            causes.append("inside \(denied.formatted()) folder\(denied == 1 ? "" : "s") freedisk.space couldn’t read")
         }
         let list = causes.count > 1
             ? causes.dropLast().joined(separator: ", ") + ", or " + (causes.last ?? "")

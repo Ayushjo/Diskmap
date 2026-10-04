@@ -1,18 +1,33 @@
 #!/bin/zsh
-# Build a double-clickable, ad-hoc-signed DiskMap.app (no Apple Developer account).
+# Build a double-clickable, ad-hoc-signed freedisk.space.app (no Apple Developer account).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 DIST="$ROOT/dist"
-APP="$DIST/DiskMap.app"
+APP="$DIST/freedisk.space.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RES="$CONTENTS/Resources"
 
-echo "==> swift build -c release --product DiskMapApp"
-swift build -c release --product DiskMapApp
+# Universal (Apple Silicon + Intel) so the app runs on every Mac that meets
+# LSMinimumSystemVersion, whichever chip built it. One build per architecture,
+# merged with lipo: `swift build --arch a --arch b` needs xcbuild, which only
+# full Xcode ships, and this must work with Command Line Tools alone.
+PRODUCTS=""
+SLICES=()
+for ARCH in arm64 x86_64; do
+  echo "==> swift build -c release --product DiskMapApp --triple ${ARCH}-apple-macosx14.0"
+  swift build -c release --product DiskMapApp --triple "${ARCH}-apple-macosx14.0"
+  DIR="$(swift build -c release --triple "${ARCH}-apple-macosx14.0" --show-bin-path)"
+  SLICES+=("$DIR/DiskMapApp")
+  # Sparkle.framework (prebuilt, already universal) and resource bundles are
+  # architecture-independent; take them from the first slice.
+  [ -z "$PRODUCTS" ] && PRODUCTS="$DIR"
+done
 
-BIN="$ROOT/.build/release/DiskMapApp"
+BIN="$DIST/DiskMapApp-universal"
+mkdir -p "$DIST"
+lipo -create "${SLICES[@]}" -output "$BIN"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
 # Sparkle (TASK-083): updates work only when both are given; otherwise the app
@@ -36,11 +51,11 @@ cp "$ROOT/Resources/AppIcon.icns" "$RES/AppIcon.icns"
 
 # Sparkle.framework next to the binary, found through @executable_path.
 mkdir -p "$CONTENTS/Frameworks"
-cp -R "$ROOT/.build/release/Sparkle.framework" "$CONTENTS/Frameworks/"
+cp -R "$PRODUCTS/Sparkle.framework" "$CONTENTS/Frameworks/"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS/DiskMap" 2>/dev/null || true
 
 # SwiftPM resource bundle (quick-wins JSON)
-for bundle in "$ROOT"/.build/release/DiskMap_*.bundle; do
+for bundle in "$PRODUCTS"/DiskMap_*.bundle; do
   if [ -d "$bundle" ]; then
     cp -R "$bundle" "$RES/"
   fi
@@ -61,9 +76,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>DiskMap</string>
+  <string>freedisk.space</string>
   <key>CFBundleDisplayName</key>
-  <string>DiskMap</string>
+  <string>freedisk.space</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -112,18 +127,22 @@ echo "==> ad-hoc codesign"
 codesign --force --deep --sign - "$APP"
 codesign -dv --verbose=2 "$APP" 2>&1 | head -20
 
+echo "==> architectures"
+lipo -archs "$MACOS/DiskMap"
+lipo "$MACOS/DiskMap" -verify_arch arm64 x86_64
+
 echo "==> verify"
 codesign --verify --deep --strict "$APP" && echo "signature ok (ad-hoc)"
 
-DMG="$DIST/DiskMap-${VERSION}.dmg"
+DMG="$DIST/freedisk.space-${VERSION}.dmg"
 echo "==> $DMG"
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/diskmap-dmg.XXXXXX")"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 rm -f "$DMG"
-hdiutil create -volname "DiskMap ${VERSION}" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+hdiutil create -volname "freedisk.space ${VERSION}" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGE"
 
 echo "==> done: $APP (version ${VERSION}, build ${BUILD_NUMBER}) and $DMG"
-echo "First launch: right-click the app → Open (Gatekeeper unidentified-developer warning)."
+echo "First launch: open once, then System Settings → Privacy & Security → Open Anyway."
 echo "No Apple Developer account required for this personal-use path."

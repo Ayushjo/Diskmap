@@ -34,7 +34,7 @@ struct FirstScanHero: View {
                     .font(.system(size: DiskMapType.scaled(30), weight: .semibold))
                     .foregroundStyle(DiskMapTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("DiskMap maps every file and folder on this Mac, then points out what’s worth a second look. Nothing leaves your Mac.")
+                Text("freedisk.space maps every file and folder on this Mac, then points out what’s worth a second look. Nothing leaves your Mac.")
                     .font(DiskMapType.body)
                     .foregroundStyle(DiskMapTheme.ink2)
                     .fixedSize(horizontal: false, vertical: true)

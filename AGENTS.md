@@ -6,6 +6,11 @@ repo. Read this before making changes. Read `docs/PRD.md` and
 
 ## What this is
 
+The public product and website name is **freedisk.space** (`https://freedisk.space`).
+Existing `DiskMap` source targets, bundle identifier, cache/snapshot directories,
+and preference keys remain for compatibility. Use freedisk.space in new
+user-facing copy; do not rename persisted paths as part of a visual rebrand.
+
 DiskMap: an open-source, native macOS disk-space analyzer. The target is
 feature parity with — and eventually better than — DiskBuddy, a closed-source
 $9–49 one-time-purchase app. Full feature target: `docs/PRD.md`. Design

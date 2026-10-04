@@ -436,7 +436,7 @@ public enum ReviewableCatalog {
         case .packageCaches:
             return "Package managers can re-download as needed."
         case .other:
-            return "Inspect before clearing. DiskMap cannot guarantee this is unused."
+            return "Inspect before clearing. freedisk.space cannot guarantee this is unused."
         }
     }
 
