@@ -16,3 +16,6 @@ xcuserdata/
 .idea/
 dist/
 /build/
+
+# Generated scratch data (visual-fixture trees, harness output)
+/tmp/
