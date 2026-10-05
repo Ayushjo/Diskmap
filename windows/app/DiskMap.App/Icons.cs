@@ -1,72 +1,86 @@
-using System.Windows.Media;
+using DiskMap.Core;
 
 namespace DiskMap.App;
 
 /// <summary>
-/// Google Material Symbols Rounded glyphs, subset and bundled for
-/// offline use. All icon text flows through here.
+/// WPF-native SVG icon identifiers generated from react-icons 5.5.0.
+/// General UI uses Bootstrap Icons; developer ecosystems use Simple Icons.
 /// </summary>
 public static class Icons
 {
-    public static readonly FontFamily FontFamily = new(
-        new Uri("pack://application:,,,/"), "./Assets/Fonts/#Material Symbols Rounded");
-
     // Chrome
-    public const string Search = "\uEF7A";
-    public const string Rescan = "\uE5D5";
-    public const string Trash = "\uE92E";
-    public const string Back = "\uE5C4";
-    public const string Forward = "\uE5C8";
-    public const string Settings = "\uE8B8";
-    public const string Add = "\uE145";
-    public const string More = "\uE5D3";
-    public const string Info = "\uE88E";
-    public const string Warning = "\uF083";
-    public const string Cancel = "\uE5CD";
-    public const string Check = "\uF0BE";
-    public const string Shield = "\uE9E0";
-    public const string Focus = "\uE3B4";
-    public const string Copy = "\uE14D";
-    public const string Open = "\uE89E";
-    public const string Link = "\uE250";
-    public const string Drive = "\uF80E";
-    public const string ChevronDown = "\uE5CF";
-    public const string Grid = "\uE9B0";
-    public const string DarkMode = "\uE51C";
-    public const string LightMode = "\uE518";
-    public const string Visibility = "\uE8F4";
+    public const string Search = "BsSearch";
+    public const string Rescan = "BsArrowClockwise";
+    public const string Trash = "BsTrash3";
+    public const string Back = "BsArrowLeft";
+    public const string Forward = "BsArrowRight";
+    public const string Settings = "BsGear";
+    public const string Add = "BsPlus";
+    public const string More = "BsThreeDots";
+    public const string Info = "BsInfoCircle";
+    public const string Warning = "BsExclamationTriangle";
+    public const string Cancel = "BsX";
+    public const string Check = "BsCheckCircle";
+    public const string Shield = "BsShieldCheck";
+    public const string Focus = "BsCrosshair";
+    public const string Copy = "BsCopy";
+    public const string Open = "BsBoxArrowUpRight";
+    public const string Link = "BsLink45Deg";
+    public const string Drive = "BsDeviceHdd";
+    public const string ChevronDown = "BsChevronDown";
+    public const string Grid = "BsGrid";
+    public const string DarkMode = "BsMoon";
+    public const string LightMode = "BsSun";
+    public const string Visibility = "BsEye";
 
     // Sidebar destinations
-    public const string Overview = "\uE871";
-    public const string BiggestFiles = "\uE873";
-    public const string BiggestFolders = "\uE2C7";
-    public const string Forgotten = "\uE8B3";
-    public const string Duplicates = "\uE14D";
-    public const string SafeReview = "\uF0BE";
-    public const string Caches = "\uE86A";
-    public const string Downloads = "\uF090";
-    public const string Media = "\uE404";
-    public const string FileBrowser = "\uE2C8";
-    public const string Visualize = "\uE9B0";
-    public const string Developer = "\uE86F";
-    public const string Applications = "\uE5C3";
-    public const string Snapshots = "\uE412";
-    public const string Cleanup = "\uE92E";
+    public const string Overview = "BsGrid";
+    public const string BiggestFiles = "BsFileEarmark";
+    public const string BiggestFolders = "BsFolder";
+    public const string Forgotten = "BsClockHistory";
+    public const string Duplicates = "BsCopy";
+    public const string SafeReview = "BsCheckCircle";
+    public const string Caches = "BsArrowRepeat";
+    public const string Downloads = "BsDownload";
+    public const string Media = "BsFilm";
+    public const string FileBrowser = "BsFolder2Open";
+    public const string Visualize = "BsGrid3X3Gap";
+    public const string Developer = "BsCodeSlash";
+    public const string Applications = "BsApp";
+    public const string Snapshots = "BsCamera";
+    public const string Cleanup = "BsTrash3";
 
-    // File kinds
-    public const string Folder = "\uE2C7";
-    public const string File = "\uE873";
-    public const string Video = "\uE404";
-    public const string Audio = "\uEB82";
-    public const string Image = "\uE3F4";
-    public const string Document = "\uE873";
-    public const string Code = "\uE86F";
-    public const string Archive = "\uE149";
-    public const string DiskImage = "\uF80E";
-    public const string Application = "\uE5C3";
-    public const string List = "\uE5D2";
+    // File kinds and chart modes
+    public const string Folder = "BsFolder";
+    public const string File = "BsFileEarmark";
+    public const string Video = "BsFilm";
+    public const string Audio = "BsFileMusic";
+    public const string Image = "BsFileImage";
+    public const string Document = "BsFileEarmark";
+    public const string Code = "BsCodeSlash";
+    public const string Archive = "BsFileZip";
+    public const string DiskImage = "BsDeviceHdd";
+    public const string Application = "BsApp";
+    public const string List = "BsList";
+    public const string PieChart = "BsPieChart";
+    public const string BarChart = "BsBarChart";
+    public const string Bubble = "BsCircle";
+    public const string Diagram = "BsDiagram3";
 
-    /// <summary>Glyph for a FileTypes category id.</summary>
+    // Developer ecosystems (Simple Icons via react-icons/si)
+    public const string NextJs = "SiNextdotjs";
+    public const string NodeJs = "SiNodedotjs";
+    public const string Python = "SiPython";
+    public const string Docker = "SiDocker";
+    public const string Rust = "SiRust";
+    public const string Flutter = "SiFlutter";
+    public const string Android = "SiAndroid";
+    public const string Dotnet = "SiDotnet";
+    public const string Gradle = "SiGradle";
+    public const string Maven = "SiApachemaven";
+    public const string JetBrains = "SiJetbrains";
+    public const string OpenAi = "SiOpenai";
+
     public static string ForKind(string kindId) => kindId switch
     {
         "video" => Video,
@@ -79,5 +93,30 @@ public static class Icons
         "application" => Application,
         "folder" => Folder,
         _ => File,
+    };
+
+    public static string ForDeveloperItem(DeveloperItem item)
+    {
+        string path = item.AbsolutePath;
+        if (path.Contains("\\.next", StringComparison.OrdinalIgnoreCase)
+            || item.DisplayName.Equals(".next", StringComparison.OrdinalIgnoreCase))
+            return NextJs;
+        return ForEcosystem(item.Ecosystem, path);
+    }
+
+    public static string ForEcosystem(DeveloperEcosystem ecosystem, string? path = null) => ecosystem switch
+    {
+        DeveloperEcosystem.Node => NodeJs,
+        DeveloperEcosystem.Docker => Docker,
+        DeveloperEcosystem.Dotnet => Dotnet,
+        DeveloperEcosystem.Python => Python,
+        DeveloperEcosystem.Android => Android,
+        DeveloperEcosystem.Rust => Rust,
+        DeveloperEcosystem.Flutter => Flutter,
+        DeveloperEcosystem.Jvm when path?.Contains("maven", StringComparison.OrdinalIgnoreCase) == true => Maven,
+        DeveloperEcosystem.Jvm => Gradle,
+        DeveloperEcosystem.IdeAi when path?.Contains(".idea", StringComparison.OrdinalIgnoreCase) == true => JetBrains,
+        DeveloperEcosystem.IdeAi => OpenAi,
+        _ => Code,
     };
 }

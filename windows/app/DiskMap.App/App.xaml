@@ -279,6 +279,9 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="Orientation" Value="Vertical">
                                 <Setter Property="Width" Value="7" TargetName="bg" />
+                                <!-- A vertical Track counts upward; the stock template
+                                     reverses it so the thumb sits at the top at offset 0. -->
+                                <Setter Property="IsDirectionReversed" Value="True" TargetName="PART_Track" />
                             </Trigger>
                             <Trigger Property="Orientation" Value="Horizontal">
                                 <Setter Property="Height" Value="7" TargetName="bg" />

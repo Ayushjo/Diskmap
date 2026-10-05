@@ -71,13 +71,14 @@ public static class StorageNarrator
                     top.Bytes, StoryKind.Category));
             }
         }
-        if (snap.Mode is not CategoryMode.Folder
-            && snap.Categories.FirstOrDefault(c => c.Key == "developer") is { } dev
-            && dev.Bytes > 8_000_000)
+        long devBytes = snap.Categories
+            .Where(c => StorageClassifier.IsDeveloper(StorageClassifier.ById(c.Key)))
+            .Sum(c => c.Bytes);
+        if (snap.Mode is not CategoryMode.Folder && devBytes > 8_000_000)
         {
-            stories.Add(new StorageStory("developer", "Developer tool data is large",
-                $"{HumanUnits.Format(dev.Bytes)} in known developer locations (NuGet, npm, caches, and similar).",
-                dev.Bytes, StoryKind.Developer));
+            stories.Add(new StorageStory("developer", "Developer storage is large",
+                $"{HumanUnits.Format(devBytes)} in code, dependencies, toolchains, package caches, WSL/Docker disks and AI models.",
+                devBytes, StoryKind.Developer));
         }
         if (snap.TopFiles.FirstOrDefault() is { } big)
         {
@@ -119,8 +120,7 @@ public static class StorageNarrator
             f.Name.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase)
             || f.Name.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
             || f.Name.EndsWith(".mov", StringComparison.OrdinalIgnoreCase)
-            || f.Name.EndsWith(".iso", StringComparison.OrdinalIgnoreCase)
-            || f.Name.EndsWith(".vhdx", StringComparison.OrdinalIgnoreCase)) is { } media)
+            || f.Name.EndsWith(".iso", StringComparison.OrdinalIgnoreCase)) is { } media)
         {
             list.Add(new StorageRecommendation($"rec-media-{media.NodeId}", $"Large media: {media.Name}",
                 "Confirm you have another copy before removing.",

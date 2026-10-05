@@ -22,14 +22,15 @@ public static class FileTypes
     public const string FolderId = "folder";
     public const string OtherId = "other";
 
-    private static List<Category>? _categories;
-    private static Dictionary<string, Category>? _byExtension;
+    private static readonly Lazy<(List<Category> categories, Dictionary<string, Category> byExtension)> Data =
+        new(Load, LazyThreadSafetyMode.ExecutionAndPublication);
 
     public static IReadOnlyList<Category> Categories => Ensure().categories;
 
-    private static (List<Category> categories, Dictionary<string, Category> byExtension) Ensure()
+    private static (List<Category> categories, Dictionary<string, Category> byExtension) Ensure() => Data.Value;
+
+    private static (List<Category> categories, Dictionary<string, Category> byExtension) Load()
     {
-        if (_categories is not null && _byExtension is not null) return (_categories, _byExtension);
         var categories = new List<Category>();
         var assembly = typeof(FileTypes).Assembly;
         var resourceName = assembly.GetManifestResourceNames()
@@ -56,12 +57,11 @@ public static class FileTypes
                 }
             }
         }
-        _byExtension = new Dictionary<string, Category>(StringComparer.OrdinalIgnoreCase);
+        var byExtension = new Dictionary<string, Category>(StringComparer.OrdinalIgnoreCase);
         foreach (var cat in categories)
             foreach (var ext in cat.Extensions)
-                _byExtension.TryAdd(ext, cat);
-        _categories = categories;
-        return (_categories, _byExtension);
+                byExtension.TryAdd(ext, cat);
+        return (categories, byExtension);
     }
 
     /// <summary>The category id for a file name's extension; "other" when unknown.</summary>

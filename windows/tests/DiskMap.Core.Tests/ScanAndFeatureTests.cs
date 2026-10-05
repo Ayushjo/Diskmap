@@ -387,6 +387,29 @@ public class CleanupQueueTests
     }
 
     [Fact]
+    public void CommitBatchesManyItemsAndRecordsEachForPutBack()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"DiskMap-cq-{Guid.NewGuid()}");
+        Directory.CreateDirectory(dir);
+        var files = Enumerable.Range(0, 200).Select(i => Path.Combine(dir, $"f{i}.txt")).ToList();
+        foreach (var f in files) File.WriteAllText(f, "x");
+        try
+        {
+            var queue = new CleanupQueue();
+            foreach (var f in files) Assert.True(queue.Stage(f, 1, "dup"));
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var report = queue.Commit();
+            sw.Stop();
+            Assert.All(report.Entries, e => Assert.Null(e.Error));
+            Assert.All(files, f => Assert.False(File.Exists(f)));
+            Assert.Equal(200, CleanupRecord.Load()!.Items.Count);
+            // One shell call, not 200 — per-item calls took many seconds here.
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), $"commit took {sw.Elapsed}");
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
     public void ExcludedPrefixStillCannotBeStaged()
     {
         var queue = new CleanupQueue();

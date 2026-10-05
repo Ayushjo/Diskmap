@@ -2,8 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DiskMap.Core\DiskMap.Core.csproj" />
-    <Resource Include="Assets\Fonts\MaterialSymbolsRounded.ttf" />
     <Resource Include="app.ico" />
+    <None Update="Assets\Icons\LICENSE-react-icons.txt" CopyToOutputDirectory="PreserveNewest" />
     <!-- TrayIcon.cs is the only file touching WinForms; keep its
          namespaces out of ImplicitUsings so WPF names stay unambiguous. -->
     <Using Remove="System.Windows.Forms" />

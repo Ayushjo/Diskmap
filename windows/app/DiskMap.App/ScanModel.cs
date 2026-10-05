@@ -484,10 +484,39 @@ public sealed class ScanModel : ViewModelBase
         ? "Added to Cleanup — Ctrl+Shift+Delete to review"
         : $"Added {count:N0} items to Cleanup — Ctrl+Shift+Delete to review");
 
+    /// <summary>What this node is and what removing it means (WSL disk, app, cache…).</summary>
+    public StorageVerdict VerdictOf(int nodeId) =>
+        Tree is null || nodeId < 0 || nodeId >= Tree.Count
+            ? new StorageVerdict(StorageClassifier.Other, CleanupAdvice.Fine)
+            : StorageClassifier.Classify(PathOf(nodeId), Tree.IsDirectory[nodeId]);
+
+    /// <summary>
+    /// Asked before a single risky item (a WSL distro, Docker's disk, an
+    /// installed app…) is staged; true = stage anyway. Set by the window —
+    /// null means refuse, the safe default.
+    /// </summary>
+    public Func<string, StorageVerdict, bool>? ConfirmRisky { get; set; }
+
+    /// <summary>
+    /// Stages one node. Windows-managed items are refused with the right
+    /// alternative; risky ones ask first when <paramref name="notify"/> is
+    /// set (an interactive single add) and are refused in silent bulk use —
+    /// <see cref="StageMany"/> reports those.
+    /// </summary>
     public bool Stage(int nodeId, string reason, string? group = null, int groupCount = 1,
         bool notify = true)
     {
         if (Tree is null || nodeId < 0 || nodeId >= Tree.Count) return false;
+        var verdict = VerdictOf(nodeId);
+        if (verdict.Advice == CleanupAdvice.Never)
+        {
+            if (notify)
+                Toast($"{Tree.NameOf(nodeId)} is managed by Windows — {verdict.Instead ?? verdict.Note ?? "it can't be cleaned up here"}");
+            return false;
+        }
+        if (verdict.Advice == CleanupAdvice.Warn
+            && !(notify && ConfirmRisky?.Invoke(Tree.NameOf(nodeId), verdict) == true))
+            return false;
         string path = PathOf(nodeId);
         long size = nodeId < _totals.Length ? _totals[nodeId] : Tree.LogicalSize[nodeId];
         bool ok = Cleanup.Stage(path, size, reason, group, groupCount);
@@ -497,6 +526,74 @@ public sealed class ScanModel : ViewModelBase
             if (notify) ToastAdded(1);
         }
         return ok;
+    }
+
+    /// <summary>
+    /// The one bulk-add path behind every "Add Selected to Cleanup": stages
+    /// what's safe to stage, skips risky and Windows-managed items (they
+    /// need a deliberate single add, with the warning), and says so in one
+    /// toast. Returns how many were added.
+    /// </summary>
+    public int StageMany(IEnumerable<int> nodeIds, string reason)
+    {
+        if (Tree is null) return 0;
+        int added = 0, already = 0;
+        var skipped = new List<string>();
+        foreach (int id in nodeIds)
+        {
+            if (id < 0 || id >= Tree.Count) continue;
+            var advice = VerdictOf(id).Advice;
+            if (advice is CleanupAdvice.Warn or CleanupAdvice.Never) { skipped.Add(Tree.NameOf(id)); continue; }
+            if (Stage(id, reason, notify: false)) added++;
+            else already++;
+        }
+        string addedText = added == 1 ? "Added 1 item to Cleanup" : $"Added {added:N0} items to Cleanup";
+        if (skipped.Count > 0)
+        {
+            string names = string.Join(", ", skipped.Take(2)) + (skipped.Count > 2 ? $" +{skipped.Count - 2}" : "");
+            Toast($"{(added > 0 ? addedText + " · " : "")}skipped {skipped.Count} risky item{(skipped.Count == 1 ? "" : "s")} ({names}) — add those one at a time to see the warning");
+        }
+        else if (added > 0)
+        {
+            ToastAdded(added);
+        }
+        else if (already > 0)
+        {
+            Toast("Already in Cleanup");
+        }
+        return added;
+    }
+
+    /// <summary>
+    /// Shows the bulk confirmation (every item by full path); true = go.
+    /// Set by the window; null means refuse — the safe default.
+    /// </summary>
+    public Func<string, string, IReadOnlyList<Dialogs.ConfirmItem>, string?, bool>? ConfirmBulk { get; set; }
+
+    /// <summary>
+    /// <see cref="StageMany"/> behind a confirmation that lists exactly what
+    /// will be added — folder by folder, with full paths and sizes.
+    /// </summary>
+    public int ConfirmStageMany(IEnumerable<int> nodeIds, string reason, string title)
+    {
+        if (Tree is null) return 0;
+        var ids = nodeIds.Distinct().Where(id => id >= 0 && id < Tree.Count).ToList();
+        if (ids.Count == 0) return 0;
+        var safe = ids.Where(id => VerdictOf(id).Advice is not (CleanupAdvice.Warn or CleanupAdvice.Never)).ToList();
+        int risky = ids.Count - safe.Count;
+        var items = safe.Select(id => new Dialogs.ConfirmItem(Tree.NameOf(id), PathOf(id),
+            id < _totals.Length ? _totals[id] : 0)).ToList();
+        if (items.Count > 0)
+        {
+            string? footnote = risky > 0
+                ? $"{risky} risky item{(risky == 1 ? "" : "s")} (WSL/Docker disks, apps, browser data…) won't be added — add those one at a time to see the warning."
+                : null;
+            bool ok = ConfirmBulk?.Invoke(title,
+                "These will be added to Cleanup. Nothing is deleted yet — you review the list on the Cleanup page and confirm again before anything moves to the Recycle Bin.",
+                items, footnote) == true;
+            if (!ok) return 0;
+        }
+        return StageMany(ids, reason);
     }
 
     /// <summary>Stage a raw path (leftovers, staged folders).</summary>

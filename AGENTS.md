@@ -24,6 +24,14 @@ in order, with acceptance criteria: `TASKS.md`.
    Trash) — never `unlink` or `FileManager.removeItem`. If you're building a
    new cleanup feature, route it through `CleanupQueue`; don't add a second
    deletion path.
+   **Single exception (Windows, chosen by the maintainer):** when the
+   Recycle Bin refuses an item as too big, `CleanupQueue.DeletePermanently`
+   may delete it permanently — only items `CleanupQueue.IsRegenerable`
+   accepts (dependencies, build output, package/temp caches), only after the
+   user confirms them in one dialog. The shell's own "permanently delete?"
+   fallback is vetoed (`Shell32.RecycleOnlySink`), so nothing is ever
+   destroyed without that confirmation. `PermanentDeleteTests` fails if
+   `Directory.Delete` appears anywhere else in Core.
 2. **Nothing calls the network — with one exception.** Grep for outbound
    `URLSession`/networking before merging anything. Fully offline is a stated
    product promise and a differentiator over closed competitors — don't
@@ -106,8 +114,9 @@ A sibling C#/.NET 10 port lives under `windows/` (`src/DiskMap.Core`,
 `app/DiskMap.App` WPF, `tests/DiskMap.Core.Tests` xUnit). Its work
 breakdown and macOS-parity gap list is `windows/PARITY.md`. Same rules
 apply:
-no direct deletion (Recycle Bin via `SHFileOperation(FOF_ALLOWUNDO)` only,
-in `CleanupQueue`), no networking, `windows/src/DiskMap.Core/CleanupQueue.cs`
+no direct deletion (Recycle Bin via `IFileOperation(FOF_ALLOWUNDO)` with a
+recycle-only progress sink, in `CleanupQueue`; the one permanent-delete
+exception is described in rule 1), no networking, `windows/src/DiskMap.Core/CleanupQueue.cs`
 holds the Windows excluded-paths list — changes to it get called out.
 Files marked `UNVERIFIED` follow the same verify-then-unflag rule.
 Build/test: `dotnet build windows\DiskMap.Win.slnx`, `dotnet test windows\DiskMap.Win.slnx`.

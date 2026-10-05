@@ -455,6 +455,7 @@ public static class DeveloperCatalog
             if (bytes <= 0) continue;
             string path = tree.PathOf(i, rootPath);
             if (!IsPlausibleHit(name, path, rule)) continue;
+            if (StorageClassifier.IsSystemHolding(path)) continue;
             // A folder inside an installed app's directory is part of that
             // app, not a developer artifact — node_modules inside an
             // Electron app under Program Files, a site-packages bundled
@@ -462,7 +463,12 @@ public static class DeveloperCatalog
             if (CleanupQueue.IsInsideInstalledApp(path)) continue;
             hits.Add((i, rule, bytes, path, name));
         }
-        hits.Sort((a, b) => b.Bytes.CompareTo(a.Bytes));
+        // Biggest first; on a tie the outer folder first — a parent holding
+        // only its matched child (Android -> Android\Sdk) has the same bytes,
+        // and keeping the child first would count those bytes twice.
+        hits.Sort((a, b) => b.Bytes != a.Bytes
+            ? b.Bytes.CompareTo(a.Bytes)
+            : a.Path.Length.CompareTo(b.Path.Length));
 
         // Prefer outer directories: skip a hit whose ancestor is already kept.
         var kept = new List<(int Id, Rule Rule, long Bytes, string Path, string Name)>();

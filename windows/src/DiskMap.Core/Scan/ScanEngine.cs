@@ -96,6 +96,11 @@ public sealed class ScanEngine
             // pass wasn't asked for — stale facts would mis-charge the rollups.
             walked.Tree.ClearSharing();
         }
+        // The final tree (compacted, sharing settled) plus the marker taken
+        // before the walk is the next rescan's baseline — saved off the
+        // critical path. Walk results carry file ids on NTFS too.
+        if (walked.ScanMarker is { } marker)
+            ScanCache.SaveInBackground(root, walked.Tree, marker);
         var afterRelease = ProcessMemory.Current();
         started.Stop();
         var result = new Result
@@ -159,7 +164,6 @@ public sealed class ScanEngine
         {
             if (TryMft(root, progress, ct, out whyNot) is { } mft)
             {
-                if (marker is { } m0) ScanCache.Save(root, mft.Tree, m0);
                 mft.ScanMarker = marker;
                 return mft;
             }
@@ -168,20 +172,16 @@ public sealed class ScanEngine
         {
             if (Win32Scanner.Walk(root, progress, WalkHeadStart, ct) is { } quick)
             {
-                // Walk results carry file ids on NTFS — a usable baseline.
-                if (marker is { } m1) ScanCache.Save(root, quick.Tree, m1);
                 quick.ScanMarker = marker;
                 return quick;
             }
             if (TryMft(root, progress, ct, out whyNot) is { } mft)
             {
-                if (marker is { } m2) ScanCache.Save(root, mft.Tree, m2);
                 mft.ScanMarker = marker;
                 return mft;
             }
         }
         var walked = Win32Scanner.Walk(root, progress, null, ct)!;
-        if (marker is { } m3) ScanCache.Save(root, walked.Tree, m3);
         walked.ScanMarker = marker;
         walked.FallbackReason = rescanWhy is not null ? $"{rescanWhy}; {whyNot ?? "walk"}" : whyNot;
         return walked;

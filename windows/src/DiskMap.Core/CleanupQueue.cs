@@ -89,6 +89,16 @@ public sealed class CleanupQueue
     private string? _scanRoot;
     private UsnJournal.Marker? _scanMarker;
     private HashSet<int>? _scanDenied;
+    private readonly object _seedCacheGate = new();
+    private bool _scanChangesLoaded;
+    private HashSet<long>? _scanChangedFrns;
+    private Dictionary<long, List<int>>? _scanHardLinkNames;
+    private FileTree? _seedCacheTree;
+    private UsnJournal.Marker? _seedCacheMarker;
+    // Folder walks for staged items run this many at once — 2 made a big
+    // staging wave (Select all on a cache list) verify for minutes.
+    private static readonly int WalkSlots = Math.Clamp(Environment.ProcessorCount / 2, 2, 8);
+    private readonly SemaphoreSlim _walkMeasurementSlots = new(WalkSlots, WalkSlots);
 
     /// <summary>
     /// The scan's context for instant staging measurement. Called by the
@@ -105,6 +115,14 @@ public sealed class CleanupQueue
             _scanRoot = rootPath.TrimEnd('\\', '/');
             _scanMarker = marker;
             _scanDenied = deniedDirectoryIds.Count > 0 ? new HashSet<int>(deniedDirectoryIds) : null;
+        }
+        lock (_seedCacheGate)
+        {
+            _seedCacheTree = tree;
+            _seedCacheMarker = marker;
+            _scanChangesLoaded = false;
+            _scanChangedFrns = null;
+            _scanHardLinkNames = null;
         }
     }
 
@@ -156,21 +174,13 @@ public sealed class CleanupQueue
             int c = tree.FirstChild[id];
             while (c != -1) { stack.Push(c); c = tree.NextSibling[c]; }
         }
-        HashSet<long>? changed = JournalChangesForTest is { } probe
-            ? probe(marker)
-            : JournalChangesSince(marker, normalized);
+        HashSet<long>? changed = CachedChanges(tree, marker, root);
         if (changed is null) return null;      // can't verify → walk
         if (subtreeFrns.Overlaps(changed)) return null;
 
         // Build the profile from the tree; hard-linked files still get a
         // real link count (the tree flags the fact but not the number).
-        var namesByFrn = new Dictionary<long, List<int>>();
-        for (int i = 0; i < tree.Count; i++)
-        {
-            long frn = tree.FileId[i];
-            if (frn == 0) continue;
-            (namesByFrn.TryGetValue(frn, out var l) ? l : namesByFrn[frn] = []).Add(i);
-        }
+        var namesByFrn = CachedHardLinkNames(tree, marker);
         var profile = new StorageSharing.Profile();
         var walk = new Stack<int>([node]);
         while (walk.TryPop(out int id))
@@ -201,6 +211,48 @@ public sealed class CleanupQueue
                 namesStaged: inside);
         }
         return profile;
+    }
+
+    private HashSet<long>? CachedChanges(FileTree tree, UsnJournal.Marker marker, string root)
+    {
+        lock (_seedCacheGate)
+        {
+            EnsureSeedCache(tree, marker);
+            if (_scanChangesLoaded) return _scanChangedFrns;
+            _scanChangedFrns = JournalChangesForTest is { } probe
+                ? probe(marker)
+                : JournalChangesSince(marker, root);
+            _scanChangesLoaded = true;
+            return _scanChangedFrns;
+        }
+    }
+
+    private Dictionary<long, List<int>> CachedHardLinkNames(FileTree tree, UsnJournal.Marker marker)
+    {
+        lock (_seedCacheGate)
+        {
+            EnsureSeedCache(tree, marker);
+            if (_scanHardLinkNames is not null) return _scanHardLinkNames;
+            var names = new Dictionary<long, List<int>>();
+            for (int i = 0; i < tree.Count; i++)
+            {
+                if ((tree.Flags[i] & NodeFlags.HardLink) == 0) continue;
+                long frn = tree.FileId[i];
+                if (frn == 0) continue;
+                (names.TryGetValue(frn, out var list) ? list : names[frn] = []).Add(i);
+            }
+            return _scanHardLinkNames = names;
+        }
+    }
+
+    private void EnsureSeedCache(FileTree tree, UsnJournal.Marker marker)
+    {
+        if (ReferenceEquals(_seedCacheTree, tree) && _seedCacheMarker == marker) return;
+        _seedCacheTree = tree;
+        _seedCacheMarker = marker;
+        _scanChangesLoaded = false;
+        _scanChangedFrns = null;
+        _scanHardLinkNames = null;
     }
 
     private static bool IsUnder(FileTree tree, int id, int ancestor)
@@ -351,11 +403,18 @@ public sealed class CleanupQueue
         // Measure off the gate and off the UI thread: a huge folder takes
         // seconds, so staging returns at once and the figure fills in.
         var id = item.Id;
-        _ = Task.Run(() =>
+        _ = Task.Run(async () =>
         {
             // WIN-013: a folder inside the last scan measures instantly
-            // when the journal proves its subtree is unchanged.
-            var sharing = TrySeededProfile(normalized) ?? StorageSharing.ProfileAt(normalized);
+            // when the journal proves its subtree is unchanged. Only two
+            // fallback walks run at once so a batch does not thrash the disk.
+            var sharing = TrySeededProfile(normalized);
+            if (sharing is null)
+            {
+                await _walkMeasurementSlots.WaitAsync().ConfigureAwait(false);
+                try { sharing = StorageSharing.ProfileAt(normalized); }
+                finally { _walkMeasurementSlots.Release(); }
+            }
             lock (_gate)
             {
                 var idx = _items.FindIndex(i => i.Id == id);
@@ -372,6 +431,13 @@ public sealed class CleanupQueue
     private void ResumeWaitersIfSettled()
     {
         if (_items.Any(i => i.IsMeasuring)) return;
+        lock (_seedCacheGate)
+        {
+            // One staging wave shares the expensive journal delta. The next
+            // wave reads it again so changes made meanwhile cannot be missed.
+            _scanChangesLoaded = false;
+            _scanChangedFrns = null;
+        }
         var waiters = _measurementWaiters.ToArray();
         _measurementWaiters.Clear();
         foreach (var w in waiters) w.TrySetResult();
@@ -401,6 +467,11 @@ public sealed class CleanupQueue
     public IReadOnlyList<StagedItem> AllItems()
     {
         lock (_gate) return _items.ToArray();
+    }
+
+    public (int Measured, int Total) MeasurementProgress()
+    {
+        lock (_gate) return (_items.Count(item => !item.IsMeasuring), _items.Count);
     }
 
     /// <summary>Bytes a confirm would free once the bin is emptied.</summary>
@@ -530,33 +601,71 @@ public sealed class CleanupQueue
     /// over what actually moved, so a partial failure never claims bytes
     /// still on disk. Items that failed stay staged for retry.
     /// </summary>
-    public CommitReport Commit()
+    /// <summary>Where a commit is: verifying sizes, then moving items.</summary>
+    public sealed record CommitProgress(string Phase, int Done, int Total);
+
+    public CommitReport Commit(IProgress<CommitProgress>? progress = null)
     {
         // The receipt must be computed from real measurements, and a moved
-        // item can no longer be measured — so finish measuring first.
-        WaitForMeasurements().Wait();
+        // item can no longer be measured — so finish measuring first,
+        // reporting how far along that is.
+        var measured = WaitForMeasurements();
+        while (!measured.Wait(150))
+        {
+            var (done, total) = MeasurementProgress();
+            progress?.Report(new CommitProgress("Verifying sizes", done, total));
+        }
+        // Clock slack: $I creation times are what ResolveAll filters on.
+        var startedUtc = DateTime.UtcNow.AddSeconds(-5);
         StagedItem[] snapshot;
         lock (_gate) snapshot = _items.ToArray();
 
-        // Folders first: path depth ascending, ordinal within a level — a
-        // parent always precedes everything inside it.
-        var ordered = snapshot
-            .OrderBy(i => i.Path.Count(c => c is '\\' or '/'))
-            .ThenBy(i => i.Path, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var moved = new List<string>();
+        // Folders first, in rounds: each round recycles every item with no
+        // still-pending staged ancestor together — parallel shell
+        // operations, folders apart, files batched (see RecycleItemsParallel).
+        // Items under a folder that moved went with it; items under a
+        // folder that failed become top-level in the next round.
+        string Key(string p) => p.TrimEnd('\\', '/');
+        var pending = snapshot.ToDictionary(i => Key(i.Path), StringComparer.OrdinalIgnoreCase);
+        int movedCount = 0;
+        progress?.Report(new CommitProgress("Moving to the Recycle Bin", 0, snapshot.Length));
+        var moved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var outcomes = new List<(StagedItem Item, Exception? Error, bool WithFolder)>();
-        foreach (var item in ordered)
+        bool UnderAny(string path, ICollection<string> set)
         {
-            if (moved.Any(m => item.Path.StartsWith(
-                    m.EndsWith('\\') ? m : m + '\\', StringComparison.OrdinalIgnoreCase)))
+            for (var dir = Path.GetDirectoryName(path); !string.IsNullOrEmpty(dir); dir = Path.GetDirectoryName(dir))
+                if (set.Contains(Key(dir))) return true;
+            return false;
+        }
+        while (pending.Count > 0)
+        {
+            foreach (var key in pending.Keys.Where(k => UnderAny(k, moved)).ToList())
             {
-                outcomes.Add((item, null, true));
-                continue;
+                outcomes.Add((pending[key], null, true));
+                pending.Remove(key);
             }
-            var error = Shell32.RecycleItem(item.Path);
-            if (error is null) moved.Add(item.Path);
-            outcomes.Add((item, error, false));
+            var top = pending.Keys.Where(k => !UnderAny(k, pending.Keys)).ToList();
+            if (top.Count == 0) break;
+            // Only paths that exist go in the batch — "gone afterwards" is
+            // how batch success is read, so a vanished path must not count.
+            var batch = top.Where(k => File.Exists(k) || Directory.Exists(k)).ToList();
+            var refused = Shell32.RecycleItemsParallel(batch, n =>
+                progress?.Report(new CommitProgress("Moving to the Recycle Bin",
+                    Interlocked.Add(ref movedCount, n), snapshot.Length)));
+            var inBatch = batch.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var key in top)
+            {
+                var item = pending[key];
+                pending.Remove(key);
+                Exception? error = null;
+                bool gone = inBatch.Contains(key) && !File.Exists(key) && !Directory.Exists(key);
+                if (refused.Contains(key))
+                    error = new RecycleRefusedException(item.Path);   // too big for the bin — untouched
+                else if (!gone)
+                    error = Shell32.RecycleItem(item.Path);  // real per-item error, or a retry that works
+                if (error is null) moved.Add(key);
+                outcomes.Add((item, error, false));
+            }
         }
 
         // Recompute the freed figure over what actually moved — a partial
@@ -574,8 +683,102 @@ public sealed class CleanupQueue
             _items.RemoveAll(i => !failedIds.Contains(i.Id));
         }
         var report = new CommitReport(entries, freed.Bytes, freed.IsLowerBound);
-        SaveCleanupRecord(report);
+        SaveCleanupRecord(report, startedUtc);
         return report;
+    }
+
+    /// <summary>
+    /// True when <paramref name="path"/> is regenerable developer output —
+    /// dependencies (node_modules, virtualenvs, build output), package
+    /// caches or temp caches — the only things <see cref="DeletePermanently"/>
+    /// will touch. Anything excluded is never regenerable.
+    /// </summary>
+    public static bool IsRegenerable(string path)
+    {
+        if (IsExcludedPath(path)) return false;
+        var c = StorageClassifier.Classify(path, Directory.Exists(path)).Class;
+        return c == StorageClassifier.Dependencies || c == StorageClassifier.PackageCaches || c == StorageClassifier.Caches;
+    }
+
+    /// <summary>
+    /// THE ONE EXCEPTION TO "NEVER DELETE DIRECTLY" (AGENTS.md rule #1, chosen
+    /// by the maintainer): permanently deletes staged items the Recycle Bin
+    /// refused as too big — only after the user confirms them in one dialog,
+    /// and only when <see cref="IsRegenerable"/> (node_modules, build output,
+    /// package caches: things the tools recreate). Anything else is refused
+    /// here and stays staged. Read-only attributes are cleared first (npm
+    /// and git leave them); long paths go through \\?\.
+    /// </summary>
+    public CommitReport DeletePermanently(IReadOnlyCollection<Guid> ids, IProgress<CommitProgress>? progress = null)
+    {
+        StagedItem[] chosen;
+        lock (_gate) chosen = _items.Where(i => ids.Contains(i.Id)).ToArray();
+        var outcomes = new List<(StagedItem Item, Exception? Error)>();
+        int done = 0;
+        foreach (var item in chosen)
+        {
+            progress?.Report(new CommitProgress("Deleting permanently", done, chosen.Length));
+            Exception? error = null;
+            if (!IsRegenerable(item.Path))
+            {
+                error = new IOException($"Not regenerable — only node_modules, build output and caches can be deleted permanently: {item.Path}");
+            }
+            else
+            {
+                try { DeleteTree(item.Path); }
+                catch (Exception ex) { error = ex; }
+            }
+            outcomes.Add((item, error));
+            done++;
+        }
+        progress?.Report(new CommitProgress("Deleting permanently", done, chosen.Length));
+        var succeeded = outcomes.Where(o => o.Error is null).Select(o => o.Item).ToList();
+        var freed = Estimate(succeeded);
+        lock (_gate)
+        {
+            var deleted = succeeded.Select(i => i.Id).ToHashSet();
+            _items.RemoveAll(i => deleted.Contains(i.Id));
+        }
+        return new CommitReport(
+            outcomes.Select(o => new CommitEntry(o.Item, o.Error, false,
+                o.Error is null ? freed.PerItem.GetValueOrDefault(o.Item.Id) : 0)).ToList(),
+            freed.Bytes, freed.IsLowerBound);
+    }
+
+    private static void DeleteTree(string path)
+    {
+        string full = Path.GetFullPath(path);
+        string ext = full.StartsWith(@"\\?\") ? full : @"\\?\" + full;
+        if (File.Exists(ext))
+        {
+            File.SetAttributes(ext, FileAttributes.Normal);
+            File.Delete(ext);
+            return;
+        }
+        if (!Directory.Exists(ext)) return;
+        // An explicit walk, never descending into a reparse point: a
+        // junction or symlink (pnpm, workspaces) is removed as a link with a
+        // single non-recursive call, so its target is never touched. Files
+        // lose read-only first (npm and git set it); folders go bottom-up.
+        var folders = new List<string>();
+        var stack = new Stack<string>([ext]);
+        while (stack.TryPop(out var dir))
+        {
+            folders.Add(dir);
+            foreach (var entry in new DirectoryInfo(dir).EnumerateFileSystemInfos("*", new EnumerationOptions
+                     { RecurseSubdirectories = false, AttributesToSkip = 0, IgnoreInaccessible = false }))
+            {
+                bool isLink = (entry.Attributes & FileAttributes.ReparsePoint) != 0;
+                bool isDir = (entry.Attributes & FileAttributes.Directory) != 0;
+                if ((entry.Attributes & FileAttributes.ReadOnly) != 0 && !isLink)
+                    entry.Attributes &= ~FileAttributes.ReadOnly;
+                if (isLink && isDir) Directory.Delete(entry.FullName, recursive: false);   // the link only
+                else if (isDir) stack.Push(entry.FullName);
+                else File.Delete(entry.FullName);
+            }
+        }
+        for (int i = folders.Count - 1; i >= 0; i--)
+            Directory.Delete(folders[i], recursive: false);
     }
 
     /// <summary>
@@ -583,19 +786,20 @@ public sealed class CleanupQueue
     /// Only top-level moved items are recorded — an item recycled inside
     /// its folder comes back with the folder.
     /// </summary>
-    private static void SaveCleanupRecord(CommitReport report)
+    private static void SaveCleanupRecord(CommitReport report, DateTime recycledSinceUtc)
     {
         try
         {
             var items = new List<CleanupRecord.Item>();
-            foreach (var entry in report.Entries)
+            var topLevel = report.Entries.Where(e => e.Error is null && !e.MovedWithFolder).ToList();
+            // The bin path is found by the $I metadata's recorded original
+            // path — same drive as the item lived on. One bin read per
+            // volume, not per item.
+            var resolved = RecycleBinStore.ResolveAll(topLevel.Select(e => e.Item.Path), recycledSinceUtc);
+            foreach (var entry in topLevel)
             {
-                if (entry.Error is not null || entry.MovedWithFolder) continue;
-                // The bin path is found by the $I metadata's recorded
-                // original path — same drive as the item lived on.
-                var resolved = RecycleBinStore.Resolve(entry.Item.Path);
-                if (resolved is not null)
-                    items.Add(new CleanupRecord.Item(entry.Item.Path, resolved.DataPath, entry.FreedBytes));
+                if (resolved.TryGetValue(Path.GetFullPath(entry.Item.Path).TrimEnd('\\'), out var bin))
+                    items.Add(new CleanupRecord.Item(entry.Item.Path, bin.DataPath, entry.FreedBytes));
             }
             new CleanupRecord(DateTimeOffset.Now, items).Save();
         }

@@ -19,7 +19,6 @@ namespace DiskMap.App;
 public static class Ui
 {
     private static readonly Dictionary<string, Brush> _brushes = new(StringComparer.Ordinal);
-    private static readonly FontFamily _iconFont = Icons.FontFamily;
     public static double TextScale { get; set; } = 1;
     public static double Scaled(double value) => value * TextScale;
     public const double PageSide = 28;
@@ -77,16 +76,31 @@ public static class Ui
     public static TextBlock Faint(string text, double size = 11) =>
         T(text, size, null, Brush("AppFaint"));
 
-    /// <summary>Glyph text from <see cref="Icons"/>.</summary>
-    public static TextBlock Glyph(string glyph, double size = 13, Brush? fg = null) =>
-        new()
+    public static FrameworkElement Glyph(string icon, double size = 13, Brush? fg = null)
+    {
+        var color = fg ?? Brush("AppForeground");
+        if (!ReactIconData.TryGet(icon, out var definition))
+            return T("?", size, FontWeights.Medium, color);
+        var canvas = new Canvas { Width = definition.Width, Height = definition.Height };
+        foreach (var geometry in definition.Geometries)
+            canvas.Children.Add(new System.Windows.Shapes.Path { Data = geometry, Fill = color });
+        return new Viewbox
         {
-            Text = glyph,
-            FontFamily = _iconFont,
-            FontSize = Scaled(size),
-            Foreground = fg ?? Brush("AppForeground"),
+            Width = Scaled(size), Height = Scaled(size),
+            Stretch = Stretch.Uniform,
             VerticalAlignment = VerticalAlignment.Center,
+            Child = canvas,
+            Tag = icon,
         };
+    }
+
+    public static void SetIconBrush(FrameworkElement icon, Brush brush)
+    {
+        if (icon is Viewbox { Child: Canvas canvas })
+            foreach (var path in canvas.Children.OfType<System.Windows.Shapes.Path>()) path.Fill = brush;
+        else if (icon is TextBlock text)
+            text.Foreground = brush;
+    }
 
     // ---- Surfaces ----
 
@@ -106,23 +120,17 @@ public static class Ui
     }
 
     /// <summary>Rounded square holding a glyph — the mockup's item icons.</summary>
-    public static Border IconTile(string glyph, double size = 36, Brush? bg = null,
+    public static Border IconTile(string icon, double size = 36, Brush? bg = null,
         Brush? fg = null, double radius = 8)
     {
+        var glyph = Glyph(icon, size * 0.56, fg ?? Brush("AppAccent"));
+        glyph.HorizontalAlignment = HorizontalAlignment.Center;
         return new Border
         {
             Width = size, Height = size,
             Background = bg ?? Brush("AppAccentSoft"),
             CornerRadius = new CornerRadius(radius),
-            Child = new TextBlock
-            {
-                Text = glyph,
-                FontFamily = _iconFont,
-                FontSize = Scaled(size * 0.56),
-                Foreground = fg ?? Brush("AppAccent"),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            },
+            Child = glyph,
         };
     }
 
@@ -243,12 +251,9 @@ public static class Ui
                 ButtonStyle.Danger => Brush("AppDanger"),
                 _ => Brush("AppForeground"),
             };
-            content.Children.Add(new TextBlock
-            {
-                Text = glyph, FontFamily = _iconFont, FontSize = Scaled(15),
-                Foreground = glyphFg, VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 6, 0),
-            });
+            var icon = Glyph(glyph, 15, glyphFg);
+            icon.Margin = new Thickness(0, 0, 6, 0);
+            content.Children.Add(icon);
         }
         content.Children.Add(new TextBlock
         {
@@ -273,6 +278,7 @@ public static class Ui
             Cursor = Cursors.Hand,
         };
         ApplyButtonStyle(btn, style);
+        System.Windows.Automation.AutomationProperties.SetName(btn, text);
         if (onClick is not null) btn.Click += (_, _) => onClick();
         return btn;
     }
@@ -373,6 +379,7 @@ public static class Ui
         hover.Setters.Add(new Setter(Control.BackgroundProperty, selected ? Brush("AppAccentSoft") : Brush("AppHover")));
         template.Triggers.Add(hover);
         btn.Template = template;
+        System.Windows.Automation.AutomationProperties.SetName(btn, text);
         btn.Click += (_, _) => onClick();
         return btn;
     }
@@ -571,10 +578,15 @@ public static class Ui
         var vt = Mono(value, 20, FontWeights.SemiBold);
         vt.Margin = new Thickness(0, 0, 0, 3);
         stack.Children.Add(vt);
-        var labelLine = new StackPanel { Orientation = Orientation.Horizontal };
-        labelLine.Children.Add(T(label, 11.5, FontWeights.Medium, Brush("AppSubtle")));
-        if (sub is not null) labelLine.Children.Add(Faint("  " + sub));
-        stack.Children.Add(labelLine);
+        var labelText = T(label, 11.5, FontWeights.Medium, Brush("AppSubtle"), wrap: true);
+        stack.Children.Add(labelText);
+        if (sub is not null)
+        {
+            var detail = Faint(sub);
+            detail.TextWrapping = TextWrapping.Wrap;
+            detail.Margin = new Thickness(0, 2, 0, 0);
+            stack.Children.Add(detail);
+        }
         return new Border { Child = stack };
     }
 

@@ -36,8 +36,34 @@ public static class ScanCache
     private static string MarkerPath(string rootPath) =>
         Path.Combine(DirectoryPath, Key(rootPath) + ".marker.json");
 
+    // Saves run in the background, one after another: the 500 MB encode +
+    // write of a full-volume tree cost ~2 s on every scan's critical path.
+    // Load and Remove wait for them, so a rescan reads the newest baseline
+    // and a forced full rescan (Remove) can't be undone by a late save.
+    private static readonly object PendingGate = new();
+    private static Task _pending = Task.CompletedTask;
+
+    /// <summary>
+    /// Queues <see cref="Save"/> off the caller's thread. The tree must not
+    /// be mutated afterwards — ScanEngine hands it over only once final.
+    /// </summary>
+    public static void SaveInBackground(string rootPath, FileTree tree, UsnJournal.Marker marker)
+    {
+        lock (PendingGate)
+            _pending = _pending.ContinueWith(_ => Save(rootPath, tree, marker), TaskScheduler.Default);
+    }
+
+    /// <summary>Blocks until every queued background save has landed.</summary>
+    public static void WaitForPendingSaves()
+    {
+        Task pending;
+        lock (PendingGate) pending = _pending;
+        pending.Wait();
+    }
+
     public static Baseline? Load(string rootPath)
     {
+        WaitForPendingSaves();
         try
         {
             var marker = JsonSerializer.Deserialize<MarkerFile>(
@@ -91,6 +117,7 @@ public static class ScanCache
     /// <summary>Drops the baseline — the "full rescan" guarantee (Ctrl+Shift+R).</summary>
     public static void Remove(string rootPath)
     {
+        WaitForPendingSaves();
         try
         {
             File.Delete(TreePath(rootPath));

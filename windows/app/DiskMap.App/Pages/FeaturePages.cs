@@ -113,6 +113,7 @@ public sealed class CachesPage : ListPage
     protected override void Refresh()
     {
         Root.Children.Clear();
+        ActionBar.Content = null;
         Root.Children.Add(Header("Caches",
             "Temporary application data that can usually be cleared. Apps recreate these files when needed.",
             glyph: Icons.Caches, iconBg: Ui.Hex("#F3E8FF"), iconFg: Ui.Hex("#7C3AED")));
@@ -166,11 +167,43 @@ public sealed class CachesPage : ListPage
                 ("Size", new GridLength(90), true),
                 ("Safety", new GridLength(120), false),
                 ("", new GridLength(36), false)));
+            _rowChecks.Clear();
             foreach (var hit in hits.Take(300))
                 table.Children.Add(CacheRow(tree, totals, hit));
+            if (hits.Count > 300)
+                table.Children.Add(Ui.Faint($"Showing 300 of {hits.Count:N0} locations — Select all covers every one"));
             Root.Children.Add(Ui.Card(table, 12));
-            Root.Children.Add(SelectionBar(hits, totals));
+            _hits = hits;
+            PaintBar();
         });
+    }
+
+    private List<QuickWins.Hit> _hits = [];
+    private readonly Dictionary<int, CheckBox> _rowChecks = [];
+
+    /// <summary>The pinned bar: select all, running total, add in one go.</summary>
+    private void PaintBar()
+    {
+        var totals = Model.Totals;
+        var selected = _hits.Where(h => _checked.Contains(h.Id)).ToList();
+        var reveal = Ui.Button("Reveal in Explorer", Icons.Open, Ui.ButtonStyle.Outline,
+            () => { if (selected.Count > 0) Explorer.Reveal(Model.PathOf(selected[0].Id)); });
+        ActionBar.Content = SelectionBar(_hits.Count, selected.Count, selected.Sum(h => totals[h.Id]),
+            () => SetAll(true), () => SetAll(false),
+            () =>
+            {
+                Model.ConfirmStageMany(selected.Select(h => h.Id), "caches",
+                    $"Add {selected.Count:N0} cache location{(selected.Count == 1 ? "" : "s")} to Cleanup?");
+                SetAll(false);
+            },
+            reveal);
+    }
+
+    private void SetAll(bool on)
+    {
+        if (on) _checked.UnionWith(_hits.Select(h => h.Id)); else _checked.Clear();
+        foreach (var (id, box) in _rowChecks) box.IsChecked = _checked.Contains(id);
+        PaintBar();
     }
 
     private UIElement CacheRow(FileTree tree, long[] totals, QuickWins.Hit hit)
@@ -181,8 +214,9 @@ public sealed class CachesPage : ListPage
             new GridLength(90), new GridLength(120), new GridLength(36));
         outer.Child = row;
         var check = new CheckBox { IsChecked = _checked.Contains(hit.Id), VerticalAlignment = VerticalAlignment.Center };
-        check.Checked += (_, _) => { _checked.Add(hit.Id); _repaintBar?.Invoke(); };
-        check.Unchecked += (_, _) => { _checked.Remove(hit.Id); _repaintBar?.Invoke(); };
+        check.Checked += (_, _) => { if (_checked.Add(hit.Id)) PaintBar(); };
+        check.Unchecked += (_, _) => { if (_checked.Remove(hit.Id)) PaintBar(); };
+        _rowChecks[hit.Id] = check;
         Ui.Cell(row, check, 0);
         Ui.Cell(row, Ui.NameCell(Icons.Caches, Ui.DataTint(3), Ui.Data(3),
             hit.Name, Model.DisplayPath(hit.Id), 26), 1);
@@ -199,65 +233,36 @@ public sealed class CachesPage : ListPage
         return outer;
     }
 
-    /// <summary>"1 selected · 6.82 GB — Reveal / Add to Cleanup" bar.</summary>
-    private Border SelectionBar(List<QuickWins.Hit> hits, long[] totals)
-    {
-        var bar = new DockPanel();
-        bar.Children.Add(Ui.Subtle("", 12));
-        void Repaint()
-        {
-            var selected = hits.Where(h => _checked.Contains(h.Id)).ToList();
-            long bytes = selected.Sum(h => totals[h.Id]);
-            ((DockPanel)bar).Children.Clear();
-            var left = Ui.T($"{selected.Count} selected · {ByteFormat.Format(bytes)}", 12.5, FontWeights.Medium);
-            left.VerticalAlignment = VerticalAlignment.Center;
-            DockPanel.SetDock(left, Dock.Left);
-            bar.Children.Add(left);
-            var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            DockPanel.SetDock(right, Dock.Right);
-            var reveal = Ui.Button("Reveal in Explorer", Icons.Open, Ui.ButtonStyle.Outline,
-                () => { if (selected.Count > 0) Explorer.Reveal(Model.PathOf(selected[0].Id)); });
-            reveal.IsEnabled = selected.Count > 0;
-            right.Children.Add(reveal);
-            right.Children.Add(new Border { Width = 8 });
-            var add = Ui.Button("Add to Cleanup", null, Ui.ButtonStyle.Primary,
-                () =>
-                {
-                    int added = 0;
-                    foreach (var h in selected)
-                        if (Model.Stage(h.Id, "caches", notify: false)) added++;
-                    _checked.Clear();
-                    Repaint();
-                    if (added > 0) Model.ToastAdded(added);
-                });
-            add.IsEnabled = selected.Count > 0;
-            right.Children.Add(add);
-            bar.Children.Add(right);
-        }
-        Repaint();
-        // Refresh the bar whenever a checkbox flips — piggyback the model's
-        // staged-changed event is wrong; hook each row's checkbox via the
-        // page's own refresh: simplest is a lightweight timer-free repaint
-        // invoked from row toggles — so stash Repaint for the rows.
-        _repaintBar = Repaint;
-        return Ui.Card(bar, 12, new Thickness(0));
-    }
-
-    private Action? _repaintBar;
 }
 
 /// <summary>
-/// Developer Storage — the dev-shaped slice of quick wins (dependencies,
-/// build outputs, caches, toolchains), grouped by ecosystem with a "why
-/// it's safe" note, matching the reference page.
+/// Developer Storage — the dev-shaped slice of the scan (dependencies,
+/// build outputs, caches, toolchains). "Where it lives" ranks folders by
+/// developer bytes and drills in (Documents\codes → a project), with one
+/// button that sends everything removable under a folder to Cleanup; the
+/// locations list follows the folder and has the pinned selection bar.
 /// </summary>
 public sealed class DeveloperStoragePage : ListPage
 {
+    private string _developerSearch = "";
+    /// <summary>The folder being looked at; null = start where the bytes first branch.</summary>
+    private string? _folder;
+    private readonly HashSet<int> _checked = [];
+
+    private sealed class FolderStat
+    {
+        public long Bytes;
+        public long Removable;
+        public int Items;
+        public readonly HashSet<string> Children = new(StringComparer.OrdinalIgnoreCase);
+    }
+
     protected override void Refresh()
     {
         Root.Children.Clear();
+        ActionBar.Content = null;
         Root.Children.Add(Header("Developer Storage",
-            "Dependencies, build outputs and tool caches — grouped by project, priced by rebuild cost.",
+            "Dependencies, build outputs and tool caches — where they live, grouped by project, priced by rebuild cost.",
             glyph: Icons.Developer, iconBg: Ui.Hex("#E0F2FE"), iconFg: Ui.Hex("#0284C7")));
         if (Model.Tree is not { } tree || Model.Totals.Length != tree.Count || Model.RootPath is not { } root)
         {
@@ -266,8 +271,13 @@ public sealed class DeveloperStoragePage : ListPage
         }
         var totals = Model.Totals;
         Root.Children.Add(Working("Analyzing projects…"));
-        Compute(() => DeveloperCatalog.Build(tree, root, totals), result =>
+        Compute(() =>
         {
+            var result = DeveloperCatalog.Build(tree, root, totals);
+            return (result, folders: BuildFolders(result.Items, root));
+        }, data =>
+        {
+            var (result, folders) = data;
             Root.Children.RemoveAt(Root.Children.Count - 1);
             var summary = result.Summary;
             if (result.Items.Count == 0)
@@ -275,9 +285,11 @@ public sealed class DeveloperStoragePage : ListPage
                 Root.Children.Add(Ui.Subtle("No developer storage found in this scan."));
                 return;
             }
+            string rootKey = root.TrimEnd('\\', '/');
+            if (_folder is null || !folders.ContainsKey(_folder)) _folder = AutoStart(folders, rootKey);
 
             // Hero stats — the decision numbers, not just bytes.
-            var stats = Ui.StatRow(
+            Root.Children.Add(Ui.StatRow(
                 Ui.StatCard(Icons.Developer, Ui.DataTint(0), Ui.Data(0),
                     ByteFormat.Format(summary.TotalBytes),
                     "Developer storage", $"{summary.ItemCount:N0} locations"),
@@ -289,8 +301,7 @@ public sealed class DeveloperStoragePage : ListPage
                     $"{summary.StaleProjectCount:N0} stale projects", "no source change in 6+ months"),
                 Ui.StatCard(Icons.Warning, Ui.Hex("#FDECEC"), Ui.Hex("#DC2626"),
                     ByteFormat.Format(summary.UnpinnedBytes),
-                    "Unpinned dependencies", "no lockfile — may not reinstall the same"));
-            Root.Children.Add(stats);
+                    "Unpinned dependencies", "no lockfile — may not reinstall the same")));
 
             // Category strip.
             if (summary.Categories.Count > 0)
@@ -303,105 +314,413 @@ public sealed class DeveloperStoragePage : ListPage
                 Root.Children.Add(Ui.Card(strip, 14));
             }
 
+            var whereHost = new ContentControl();
+            Root.Children.Add(whereHost);
+            var locationsHost = new ContentControl();
+
             // Projects — the unit a developer actually reasons about.
             if (result.Projects.Count > 0)
+                Root.Children.Add(ProjectsCard(result));
+            Root.Children.Add(locationsHost);
+
+            void Repaint()
             {
-                var body = new StackPanel();
-                foreach (var project in result.Projects.Take(20))
-                {
-                    var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
-                    var top = new DockPanel { Margin = new Thickness(0, 0, 0, 3) };
-                    var sizeText = Ui.T(ByteFormat.Format(project.Bytes), 12, FontWeights.Medium);
-                    DockPanel.SetDock(sizeText, Dock.Right);
-                    top.Children.Add(sizeText);
-                    var name = Ui.T(project.Name, 12.5, FontWeights.Medium);
-                    if (project.NodeIDs.Count > 0)
-                    {
-                        int focusId = project.NodeIDs[0];
-                        name.Cursor = System.Windows.Input.Cursors.Hand;
-                        name.MouseLeftButtonDown += (_, _) => Model.Select(focusId);
-                    }
-                    top.Children.Add(name);
-                    panel.Children.Add(top);
-
-                    var meta = new WrapPanel();
-                    if (project.Manifest is { } manifest)
-                        meta.Children.Add(Ui.Badge(manifest, Ui.Brush("AppSubtle"), Ui.Brush("AppHover")));
-                    meta.Children.Add(Ui.Badge(project.RebuildCost.Title(),
-                        Ui.Brush("AppSubtle"), Ui.Brush("AppHover")));
-                    meta.Children.Add(Ui.Badge(project.Status, Ui.Brush("AppSubtle"), Ui.Brush("AppHover")));
-                    if (project.Lockfile is { } lf)
-                        meta.Children.Add(Ui.Badge(lf, Ui.Brush("AppSubtle"), Ui.Brush("AppHover")));
-                    foreach (var badge in meta.Children.Cast<UIElement>())
-                        ((Border)badge).Margin = new Thickness(0, 0, 6, 0);
-                    panel.Children.Add(meta);
-
-                    var detail = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
-                    detail.Children.Add(Ui.Faint($"{project.Ecosystem.Title()} · {project.ItemCount} folders · {ByteFormat.Format(project.ReclaimableBytes)} reclaimable"));
-                    if (project.IgnoredBytes is { } ignored && ignored > 0)
-                        detail.Children.Add(Ui.Faint($"  ·  {ByteFormat.Format(ignored)} git-ignored"));
-                    panel.Children.Add(detail);
-
-                    var git = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
-                    git.Children.Add(Ui.Faint(project.Git.Title));
-                    panel.Children.Add(git);
-
-                    if (project.ReclaimableBytes > 0)
-                    {
-                        var stageAll = Ui.Button(
-                            $"Add reclaimable ({ByteFormat.Format(project.ReclaimableBytes)}) to Cleanup",
-                            Icons.Cleanup, Ui.ButtonStyle.Outline,
-                            () =>
-                            {
-                                int added = 0;
-                                foreach (var item in result.Items.Where(i =>
-                                    i.ProjectKey == project.Key
-                                    && i.Reclaimability != DeveloperReclaimability.Keep
-                                    && !i.IsProtected))
-                                    if (Model.Stage(item.NodeID, "developer storage", notify: false)) added++;
-                                if (added > 0) Model.ToastAdded(added);
-                            });
-                        stageAll.Margin = new Thickness(0, 6, 0, 0);
-                        stageAll.HorizontalAlignment = HorizontalAlignment.Left;
-                        stageAll.Padding = new Thickness(10, 3, 10, 3);
-                        panel.Children.Add(stageAll);
-                    }
-                    body.Children.Add(panel);
-                }
-                if (result.Projects.Count > 20)
-                    body.Children.Add(Ui.Faint($"… and {result.Projects.Count - 20:N0} smaller projects"));
-                Root.Children.Add(Ui.HeadedCard(Icons.Code, Ui.DataTint(0), Ui.Data(0),
-                    "Projects", "Folders that own dependencies or build output", body));
+                whereHost.Content = WhereItLives(result, folders, rootKey, Repaint);
+                locationsHost.Content = Locations(tree, totals, result, rootKey, Repaint);
             }
-
-            // All locations, largest first — with recipes where a tool owns one.
-            var itemsBody = new StackPanel();
-            foreach (var item in result.Items.Take(40))
-                itemsBody.Children.Add(ItemRow(tree, totals, item));
-            if (result.Items.Count > 40)
-                itemsBody.Children.Add(Ui.Faint($"… and {result.Items.Count - 40:N0} smaller locations"));
-            Root.Children.Add(Ui.HeadedCard(Icons.Developer, Ui.DataTint(0), Ui.Data(0),
-                "All locations", "Every developer-owned folder in the scan", itemsBody));
+            Repaint();
         });
     }
 
-    private UIElement ItemRow(FileTree tree, long[] totals, DeveloperItem item)
+    // ---- Folder rollup ----
+
+    private static bool Eligible(DeveloperItem item) => !item.IsProtected
+        && item.Reclaimability != DeveloperReclaimability.Keep
+        && item.Recipe?.TrashIsUnsafe != true;
+
+    /// <summary>
+    /// Developer bytes per folder: every item counts toward each folder
+    /// above it, up to the scan root — so Documents\codes shows the sum of
+    /// every project inside it. The items themselves are leaves.
+    /// </summary>
+    private static Dictionary<string, FolderStat> BuildFolders(IReadOnlyList<DeveloperItem> items, string root)
+    {
+        string rootKey = root.TrimEnd('\\', '/');
+        var folders = new Dictionary<string, FolderStat>(StringComparer.OrdinalIgnoreCase)
+        {
+            [rootKey] = new FolderStat(),
+        };
+        foreach (var item in items)
+        {
+            bool eligible = Eligible(item);
+            string? child = null;
+            for (string? dir = Path.GetDirectoryName(item.AbsolutePath.TrimEnd('\\', '/'));
+                 dir is not null && dir.Length >= rootKey.Length;
+                 dir = Path.GetDirectoryName(dir))
+            {
+                string key = dir.TrimEnd('\\', '/');
+                if (!folders.TryGetValue(key, out var stat)) folders[key] = stat = new FolderStat();
+                stat.Bytes += item.Bytes;
+                stat.Items++;
+                if (eligible) stat.Removable += item.Bytes;
+                if (child is not null) stat.Children.Add(child);
+                child = key;
+                if (key.Equals(rootKey, StringComparison.OrdinalIgnoreCase)) break;
+            }
+        }
+        return folders;
+    }
+
+    /// <summary>
+    /// Start where the developer bytes stop being one folder's: descend
+    /// (C:\ → Users → you) while a single child holds 80%+ of them, so the
+    /// first view shows real choices. The breadcrumb walks back up.
+    /// </summary>
+    private static string AutoStart(Dictionary<string, FolderStat> folders, string rootKey)
+    {
+        string at = rootKey;
+        while (folders.TryGetValue(at, out var stat) && stat.Children.Count > 0)
+        {
+            var top = stat.Children.Select(c => (Path: c, Stat: folders[c]))
+                .MaxBy(c => c.Stat.Bytes);
+            if (top.Stat.Bytes < stat.Bytes * 0.8) break;
+            at = top.Path;
+        }
+        return at;
+    }
+
+    /// <summary>Everything removable under a folder — what one "Clean" click stages.</summary>
+    private static IEnumerable<DeveloperItem> RemovableUnder(DeveloperCatalogResult result, string folder) =>
+        result.Items.Where(i => Eligible(i) && IsUnder(i.AbsolutePath, folder));
+
+    private static bool IsUnder(string path, string folder) =>
+        path.StartsWith(folder.TrimEnd('\\', '/') + '\\', StringComparison.OrdinalIgnoreCase);
+
+    private UIElement WhereItLives(DeveloperCatalogResult result, Dictionary<string, FolderStat> folders,
+        string rootKey, Action repaint)
+    {
+        string current = _folder ?? rootKey;
+        var stat = folders.GetValueOrDefault(current) ?? new FolderStat();
+        var body = new StackPanel();
+
+        // Breadcrumb: every folder from the scan root down, clickable.
+        var crumbs = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
+        var chain = new List<string>();
+        for (string? dir = current; dir is not null && dir.Length >= rootKey.Length; dir = Path.GetDirectoryName(dir))
+        {
+            chain.Insert(0, dir.TrimEnd('\\', '/'));
+            if (dir.TrimEnd('\\', '/').Equals(rootKey, StringComparison.OrdinalIgnoreCase)) break;
+        }
+        for (int i = 0; i < chain.Count; i++)
+        {
+            string target = chain[i];
+            string label = i == 0 ? target : Path.GetFileName(target);
+            if (i > 0) crumbs.Children.Add(Ui.Faint("  ›  ", 12));
+            if (i == chain.Count - 1)
+                crumbs.Children.Add(Ui.T(label, 12.5, FontWeights.SemiBold));
+            else
+                crumbs.Children.Add(Ui.LinkText(label, () => { _folder = target; repaint(); }, 12.5));
+        }
+        body.Children.Add(crumbs);
+
+        // The folder's own one-click cleanup.
+        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 14) };
+        long removableHere = stat.Removable;
+        string currentName = Path.GetFileName(current) is { Length: > 0 } leaf ? leaf : current;
+        var cleanHere = Ui.Button(removableHere > 0
+                ? $"Clean up {currentName} — {ByteFormat.Format(removableHere)}"
+                : "Nothing removable here",
+            Icons.Cleanup, Ui.ButtonStyle.Primary,
+            () =>
+            {
+                if (Model.ConfirmStageMany(RemovableUnder(result, current).Select(i => i.NodeID), "developer storage",
+                        $"Clean up everything removable under {current}?") > 0)
+                    repaint();
+            });
+        cleanHere.IsEnabled = removableHere > 0;
+        cleanHere.ToolTip = "Sends every removable dependency, build output and cache under this folder to Cleanup. Protected and keep items are left alone.";
+        DockPanel.SetDock(cleanHere, Dock.Right);
+        head.Children.Add(cleanHere);
+        var headText = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        headText.Children.Add(Ui.Mono(ByteFormat.Format(stat.Bytes), 20, FontWeights.SemiBold));
+        headText.Children.Add(Ui.Faint($"{stat.Items:N0} developer locations · {ByteFormat.Format(stat.Removable)} removable"));
+        head.Children.Add(headText);
+        body.Children.Add(head);
+
+        // Child folders ranked by developer bytes.
+        var children = stat.Children
+            .Select(c => (Path: c, Stat: folders[c]))
+            .OrderByDescending(c => c.Stat.Bytes)
+            .ToList();
+        long max = Math.Max(1, children.Count > 0 ? children[0].Stat.Bytes : 1);
+        foreach (var (childPath, childStat) in children.Take(25))
+        {
+            var row = new Grid { MinHeight = 40 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+            var icon = Ui.Glyph(Icons.Folder, 15, Ui.Data(0));
+            icon.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(icon);
+            var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            var name = Ui.T(Path.GetFileName(childPath), 13, FontWeights.Medium);
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            names.Children.Add(name);
+            names.Children.Add(Ui.Faint($"{childStat.Items:N0} locations · {ByteFormat.Format(childStat.Removable)} removable"
+                + (childStat.Children.Count > 0 ? $" · {childStat.Children.Count} folders" : "")));
+            Grid.SetColumn(names, 1);
+            row.Children.Add(names);
+            var bar = Ui.CapacityBar((double)childStat.Bytes / max, Ui.Data(0), double.NaN);
+            bar.Height = 4;
+            bar.VerticalAlignment = VerticalAlignment.Center;
+            bar.Margin = new Thickness(12, 0, 12, 0);
+            Grid.SetColumn(bar, 2);
+            row.Children.Add(bar);
+            var size = Ui.Mono(ByteFormat.Format(childStat.Bytes), 12, FontWeights.Medium);
+            size.HorizontalAlignment = HorizontalAlignment.Right;
+            size.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(size, 3);
+            row.Children.Add(size);
+            string captured = childPath;
+            var clean = Ui.Button(childStat.Removable > 0 ? "Clean" : "Nothing removable", null, Ui.ButtonStyle.Outline,
+                () =>
+                {
+                    if (Model.ConfirmStageMany(RemovableUnder(result, captured).Select(i => i.NodeID), "developer storage",
+                            $"Clean up everything removable under {captured}?") > 0)
+                        repaint();
+                });
+            clean.IsEnabled = childStat.Removable > 0;
+            clean.Padding = new Thickness(10, 3, 10, 3);
+            clean.HorizontalAlignment = HorizontalAlignment.Right;
+            clean.VerticalAlignment = VerticalAlignment.Center;
+            clean.ToolTip = $"Send {ByteFormat.Format(childStat.Removable)} of removable developer data under {Path.GetFileName(captured)} to Cleanup";
+            Grid.SetColumn(clean, 4);
+            row.Children.Add(clean);
+            body.Children.Add(Ui.HoverRow(row, () => { _folder = captured; repaint(); }));
+        }
+        if (children.Count == 0)
+            body.Children.Add(Ui.Faint("No folders below — the locations are listed underneath."));
+        else if (children.Count > 25)
+            body.Children.Add(Ui.Faint($"… and {children.Count - 25:N0} smaller folders"));
+
+        return Ui.HeadedCard(Icons.FileBrowser, Ui.DataTint(0), Ui.Data(0),
+            "Where it lives", "Folders ranked by developer storage — click to drill in, Clean sends a folder's removable data to Cleanup", body);
+    }
+
+    private UIElement ProjectsCard(DeveloperCatalogResult result)
+    {
+        var body = new StackPanel();
+        foreach (var project in result.Projects.Take(20))
+        {
+            var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
+            var top = new DockPanel { Margin = new Thickness(0, 0, 0, 3) };
+            var sizeText = Ui.T(ByteFormat.Format(project.Bytes), 12, FontWeights.Medium);
+            DockPanel.SetDock(sizeText, Dock.Right);
+            top.Children.Add(sizeText);
+            var projectIcon = Ui.Glyph(Icons.ForEcosystem(project.Ecosystem, project.AbsolutePath), 16, Ui.Data(0));
+            projectIcon.Margin = new Thickness(0, 0, 8, 0);
+            DockPanel.SetDock(projectIcon, Dock.Left);
+            top.Children.Add(projectIcon);
+            var name = Ui.T(project.Name, 12.5, FontWeights.Medium);
+            if (project.NodeIDs.Count > 0)
+            {
+                int focusId = project.NodeIDs[0];
+                name.Cursor = System.Windows.Input.Cursors.Hand;
+                name.MouseLeftButtonDown += (_, _) => Model.Select(focusId);
+            }
+            top.Children.Add(name);
+            panel.Children.Add(top);
+
+            // Where the project lives — the folder anything below comes from.
+            var where = new DockPanel { Margin = new Thickness(24, 0, 0, 4) };
+            string projectPath = project.AbsolutePath;
+            var reveal = Ui.LinkText("Reveal", () => Explorer.Reveal(projectPath), 11.5);
+            reveal.Margin = new Thickness(10, 0, 0, 0);
+            DockPanel.SetDock(reveal, Dock.Right);
+            where.Children.Add(reveal);
+            var pathText = Ui.Mono(projectPath, 11, null, Ui.Brush("AppSubtle"));
+            pathText.TextTrimming = TextTrimming.CharacterEllipsis;
+            pathText.ToolTip = projectPath;
+            where.Children.Add(pathText);
+            panel.Children.Add(where);
+
+            var meta = new WrapPanel();
+            if (project.Manifest is { } manifest)
+                meta.Children.Add(Ui.Badge(manifest, Ui.Brush("AppSubtle"), Ui.Brush("AppHover")));
+            meta.Children.Add(Ui.Badge(project.RebuildCost.Title(), Ui.Brush("AppSubtle"), Ui.Brush("AppHover")));
+            meta.Children.Add(Ui.Badge(project.Status, Ui.Brush("AppSubtle"), Ui.Brush("AppHover")));
+            if (project.Lockfile is { } lf)
+                meta.Children.Add(Ui.Badge(lf, Ui.Brush("AppSubtle"), Ui.Brush("AppHover")));
+            foreach (var badge in meta.Children.Cast<UIElement>())
+                ((Border)badge).Margin = new Thickness(0, 0, 6, 0);
+            panel.Children.Add(meta);
+
+            var detail = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+            detail.Children.Add(Ui.Faint($"{project.Ecosystem.Title()} · {project.ItemCount} folders · {ByteFormat.Format(project.ReclaimableBytes)} reclaimable"));
+            if (project.IgnoredBytes is { } ignored && ignored > 0)
+                detail.Children.Add(Ui.Faint($"  ·  {ByteFormat.Format(ignored)} git-ignored"));
+            panel.Children.Add(detail);
+            var git = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
+            git.Children.Add(Ui.Faint(project.Git.Title));
+            panel.Children.Add(git);
+
+            // The exact folders "Add reclaimable" would send, relative to the project.
+            var removable = result.Items.Where(i => i.ProjectKey == project.Key && Eligible(i))
+                .OrderByDescending(i => i.Bytes).ToList();
+            if (removable.Count > 0)
+            {
+                var folders = new StackPanel { Margin = new Thickness(24, 6, 0, 0) };
+                foreach (var it in removable.Take(6))
+                {
+                    var r = new DockPanel();
+                    var sz = Ui.Mono(ByteFormat.Format(it.Bytes), 11, null, Ui.Brush("AppSubtle"));
+                    DockPanel.SetDock(sz, Dock.Right);
+                    r.Children.Add(sz);
+                    string rel = Path.GetRelativePath(projectPath, it.AbsolutePath);
+                    var t = Ui.Mono("· " + (rel.StartsWith("..") ? it.AbsolutePath : rel), 11, null, Ui.Brush("AppForeground"));
+                    t.TextTrimming = TextTrimming.CharacterEllipsis;
+                    t.ToolTip = it.AbsolutePath;
+                    r.Children.Add(t);
+                    folders.Children.Add(r);
+                }
+                if (removable.Count > 6)
+                    folders.Children.Add(Ui.Faint($"… and {removable.Count - 6} more folders"));
+                panel.Children.Add(folders);
+            }
+
+            if (project.ReclaimableBytes > 0)
+            {
+                var stageAll = Ui.Button(
+                    $"Add reclaimable ({ByteFormat.Format(project.ReclaimableBytes)}) to Cleanup",
+                    Icons.Cleanup, Ui.ButtonStyle.Outline,
+                    () => Model.ConfirmStageMany(result.Items
+                        .Where(i => i.ProjectKey == project.Key && Eligible(i))
+                        .Select(i => i.NodeID), "developer storage",
+                        $"Add {project.Name}'s reclaimable folders to Cleanup?"));
+                stageAll.Margin = new Thickness(0, 6, 0, 0);
+                stageAll.HorizontalAlignment = HorizontalAlignment.Left;
+                stageAll.Padding = new Thickness(10, 3, 10, 3);
+                panel.Children.Add(stageAll);
+            }
+            body.Children.Add(panel);
+        }
+        if (result.Projects.Count > 20)
+            body.Children.Add(Ui.Faint($"… and {result.Projects.Count - 20:N0} smaller projects"));
+        return Ui.HeadedCard(Icons.Code, Ui.DataTint(0), Ui.Data(0),
+            "Projects", "Folders that own dependencies or build output", body);
+    }
+
+    // ---- Locations (follow the folder) ----
+
+    private UIElement Locations(FileTree tree, long[] totals, DeveloperCatalogResult result, string rootKey, Action repaint)
+    {
+        string current = _folder ?? rootKey;
+        var locations = new StackPanel();
+        var controls = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
+        var (searchBox, searchInput) = Ui.SearchBox("Filter developer paths…", 260);
+        searchInput.Text = _developerSearch;
+        controls.Children.Add(searchBox);
+        locations.Children.Add(controls);
+        var shownSummary = Ui.Mono("", 11, null, Ui.Brush("AppFaint"));
+        shownSummary.Margin = new Thickness(0, 0, 0, 8);
+        locations.Children.Add(shownSummary);
+        locations.Children.Add(Ui.Hairline());
+        var itemsBody = new StackPanel();
+        locations.Children.Add(itemsBody);
+
+        List<DeveloperItem> Visible()
+        {
+            IEnumerable<DeveloperItem> visible = result.Items;
+            if (!current.Equals(rootKey, StringComparison.OrdinalIgnoreCase))
+                visible = visible.Where(item => IsUnder(item.AbsolutePath, current));
+            if (_developerSearch.Trim() is { Length: > 0 } needle)
+                visible = visible.Where(item => item.DisplayName.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                    || item.AbsolutePath.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                    || (item.ProjectName?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false));
+            return visible.OrderByDescending(item => item.Bytes).ToList();
+        }
+        var checks = new Dictionary<int, CheckBox>();
+        List<DeveloperItem> shown = [];
+        void PaintBar()
+        {
+            var selectable = shown.Where(Eligible).ToList();
+            var selected = selectable.Where(i => _checked.Contains(i.NodeID)).ToList();
+            ActionBar.Content = SelectionBar(selectable.Count, selected.Count, selected.Sum(i => i.Bytes),
+                () => { _checked.UnionWith(selectable.Select(i => i.NodeID)); SyncChecks(); },
+                () => { _checked.Clear(); SyncChecks(); },
+                () =>
+                {
+                    Model.ConfirmStageMany(selected.Select(i => i.NodeID), "developer storage",
+                        $"Add {selected.Count:N0} developer location{(selected.Count == 1 ? "" : "s")} to Cleanup?");
+                    _checked.Clear();
+                    repaint();
+                });
+        }
+        void SyncChecks()
+        {
+            foreach (var (id, box) in checks) box.IsChecked = _checked.Contains(id);
+            PaintBar();
+        }
+        void PaintItems()
+        {
+            itemsBody.Children.Clear();
+            checks.Clear();
+            shown = Visible();
+            var staged = Model.StagedItems.Select(item => item.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _checked.IntersectWith(shown.Select(i => i.NodeID));
+            shownSummary.Text = $"{shown.Count:N0} locations · {ByteFormat.Format(shown.Sum(i => i.Bytes))} · {shown.Count(Eligible):N0} removable";
+            foreach (var item in shown.Take(200))
+                itemsBody.Children.Add(ItemRow(item, staged.Contains(item.AbsolutePath), checks, PaintBar, repaint));
+            if (shown.Count > 200)
+                itemsBody.Children.Add(Ui.Faint($"Showing 200 of {shown.Count:N0} locations — Select all covers every one"));
+            if (shown.Count == 0)
+                itemsBody.Children.Add(Ui.EmptyState(Icons.Developer, "No developer storage matches",
+                    "Pick another folder above or clear the path filter.", allowDusty: false));
+            PaintBar();
+        }
+        searchInput.TextChanged += (_, _) => { _developerSearch = searchInput.Text; PaintItems(); };
+        PaintItems();
+        string where = current.Equals(rootKey, StringComparison.OrdinalIgnoreCase) ? "the whole scan" : Path.GetFileName(current);
+        return Ui.HeadedCard(Icons.Developer, Ui.DataTint(0), Ui.Data(0),
+            "Developer locations", $"Everything under {where} — tick rows or Select all, then add them in one go", locations);
+    }
+
+    private UIElement ItemRow(DeveloperItem item, bool staged, Dictionary<int, CheckBox> checks,
+        Action onChecked, Action repaint)
     {
         var outer = new Border
         {
             CornerRadius = new CornerRadius(6), Margin = new Thickness(0, 2, 0, 2),
-            Background = Brushes.Transparent,
+            Background = staged ? Ui.Brush("AppAccentSoft") : Brushes.Transparent,
         };
         var row = Ui.TableRowGrid(
-            new GridLength(1, GridUnitType.Star), new GridLength(150),
-            new GridLength(80), new GridLength(110));
+            new GridLength(28), new GridLength(1, GridUnitType.Star), new GridLength(140),
+            new GridLength(80), new GridLength(130));
         outer.Child = row;
-        Ui.Cell(row, Ui.NameCell(Icons.Developer, Ui.DataTint(0), Ui.Data(0),
-            item.DisplayName, Model.DisplayPath(item.NodeID), 26), 0);
-        Ui.Cell(row, Ui.Subtle(item.RebuildCost.Title(), 11), 1);
-        Ui.Cell(row, Ui.T(ByteFormat.Format(item.Bytes), 12, FontWeights.Medium), 2, right: true);
+        if (Eligible(item) && !staged)
+        {
+            var check = new CheckBox { IsChecked = _checked.Contains(item.NodeID), VerticalAlignment = VerticalAlignment.Center };
+            check.Checked += (_, _) => { if (_checked.Add(item.NodeID)) onChecked(); };
+            check.Unchecked += (_, _) => { if (_checked.Remove(item.NodeID)) onChecked(); };
+            checks[item.NodeID] = check;
+            Ui.Cell(row, check, 0);
+        }
+        Ui.Cell(row, Ui.NameCell(Icons.ForDeveloperItem(item), Ui.DataTint(0), Ui.Data(0),
+            item.DisplayName, Model.DisplayPath(item.NodeID), 26), 1);
+        Ui.Cell(row, Ui.Subtle(item.RebuildCost.Title(), 11), 2);
+        Ui.Cell(row, Ui.T(ByteFormat.Format(item.Bytes), 12, FontWeights.Medium), 3, right: true);
 
-        if (item.Recipe is { TrashIsUnsafe: true } recipe)
+        if (staged)
+        {
+            var inCleanup = Ui.Button("In Cleanup ✓", null, Ui.ButtonStyle.Outline, () => Model.ShowPage("Cleanup"));
+            inCleanup.Background = Ui.Brush("AppAccentSoft");
+            inCleanup.BorderBrush = Ui.Brush("AppAccent");
+            inCleanup.Padding = new Thickness(10, 3, 10, 3);
+            Ui.Cell(row, inCleanup, 4, right: true);
+        }
+        else if (item.Recipe is { TrashIsUnsafe: true } recipe)
         {
             // The tool owns this state — steer to its command, not the bin.
             var steer = Ui.T(recipe.Command, 11, null, Ui.Brush("AppAccent"));
@@ -412,19 +731,19 @@ public sealed class DeveloperStoragePage : ListPage
                 try { System.Windows.Clipboard.SetText(recipe.Command); } catch { }
                 steer.Text = "Copied ✓";
             };
-            Ui.Cell(row, steer, 3, right: true);
+            Ui.Cell(row, steer, 4, right: true);
         }
-        else if (!item.IsProtected && item.Reclaimability != DeveloperReclaimability.Keep)
+        else if (Eligible(item))
         {
             var stage = Ui.Button("Add to Cleanup", null, Ui.ButtonStyle.Outline,
-                () => { Model.Stage(item.NodeID, "developer storage"); });
+                () => { if (Model.Stage(item.NodeID, "developer storage")) repaint(); });
             stage.Padding = new Thickness(10, 3, 10, 3);
             stage.VerticalAlignment = VerticalAlignment.Center;
-            Ui.Cell(row, stage, 3, right: true);
+            Ui.Cell(row, stage, 4, right: true);
         }
         else
         {
-            Ui.Cell(row, Ui.Badge("keep", Ui.Brush("AppSubtle"), Ui.Brush("AppHover")), 3, right: true);
+            Ui.Cell(row, Ui.Badge("keep", Ui.Brush("AppSubtle"), Ui.Brush("AppHover")), 4, right: true);
         }
 
         outer.Cursor = System.Windows.Input.Cursors.Hand;
@@ -446,6 +765,7 @@ public sealed class DuplicatesPage : ListPage
     protected override void Refresh()
     {
         Root.Children.Clear();
+        ActionBar.Content = null;
         Root.Children.Add(Header("Duplicates",
             "Files whose content is byte-for-byte identical — keep one copy, review the rest.",
             glyph: Icons.Duplicates, iconBg: Ui.Brush("AppSuccessBg"), iconFg: Ui.Brush("AppSuccess")));
@@ -479,6 +799,20 @@ public sealed class DuplicatesPage : ListPage
                     ByteFormat.Format(recoverable), "Extra copies free",
                     $"{groups.Count:N0} groups · {groups.Sum(g => g.FileIDs.Count):N0} copies")));
 
+            // Extra copies start ticked (keep one, review the rest); the
+            // pinned bar adds every ticked copy in one go.
+            _dupChecked.Clear();
+            _dupGroups.Clear();
+            _dupChecks.Clear();
+            foreach (var group in groups.Take(60))
+            {
+                int? k = group.DefaultKeeperId(id => tree.ModifiedDay[id]);
+                foreach (var m in group.FileIDs.Where(m => m != k))
+                {
+                    _dupChecked.Add(m);
+                    _dupGroups[m] = group;
+                }
+            }
             foreach (var group in groups.Take(60))
             {
                 var body = new StackPanel();
@@ -501,10 +835,17 @@ public sealed class DuplicatesPage : ListPage
                     rowOuter.Child = row;
                     var check = new CheckBox
                     {
-                        IsChecked = !isKeeper,
+                        IsChecked = !isKeeper && _dupChecked.Contains(id),
                         IsEnabled = !isKeeper,
                         VerticalAlignment = VerticalAlignment.Center,
                     };
+                    if (!isKeeper)
+                    {
+                        int checkId = id;
+                        check.Checked += (_, _) => { if (_dupChecked.Add(checkId)) PaintDupBar(); };
+                        check.Unchecked += (_, _) => { if (_dupChecked.Remove(checkId)) PaintDupBar(); };
+                        _dupChecks[checkId] = check;
+                    }
                     Ui.Cell(row, check, 0);
                     UIElement tag = isKeeper
                         ? Ui.SafetyLabel(Ui.Brush("AppSuccess"), "Keeper", 11)
@@ -547,7 +888,45 @@ public sealed class DuplicatesPage : ListPage
                     (group.SharesStorage ? " · shares storage (clone/hard link)" : ""),
                     body));
             }
+            PaintDupBar();
         });
+    }
+
+    private readonly HashSet<int> _dupChecked = [];
+    private readonly Dictionary<int, DuplicateGroup> _dupGroups = [];
+    private readonly Dictionary<int, CheckBox> _dupChecks = [];
+
+    /// <summary>The pinned bar: every extra copy across the shown groups.</summary>
+    private void PaintDupBar()
+    {
+        var totals = Model.Totals;
+        var selected = _dupGroups.Keys.Where(_dupChecked.Contains).ToList();
+        void SetAll(bool on)
+        {
+            if (on) _dupChecked.UnionWith(_dupGroups.Keys); else _dupChecked.Clear();
+            foreach (var (id, box) in _dupChecks) box.IsChecked = _dupChecked.Contains(id);
+            PaintDupBar();
+        }
+        ActionBar.Content = SelectionBar(_dupGroups.Count, selected.Count,
+            selected.Sum(id => id < totals.Length ? totals[id] : 0),
+            () => SetAll(true), () => SetAll(false),
+            () =>
+            {
+                var confirmItems = selected.Select(id => new Dialogs.ConfirmItem(
+                    Model.Tree?.NameOf(id) ?? "", Model.PathOf(id), id < totals.Length ? totals[id] : 0)).ToList();
+                if (Model.ConfirmBulk?.Invoke($"Add {selected.Count:N0} extra copies to Cleanup?",
+                        "One copy of each file is kept where it is. Nothing is deleted yet — you confirm again on the Cleanup page.",
+                        confirmItems, null) != true)
+                    return;
+                // Group-aware staging: the queue needs each copy's group to
+                // keep "one copy frees nothing until the last" honest.
+                int added = 0;
+                foreach (var id in selected)
+                    if (Model.Stage(id, "duplicate", _dupGroups[id].Hash, _dupGroups[id].FileIDs.Count, notify: false))
+                        added++;
+                if (added > 0) Model.ToastAdded(added);
+                SetAll(false);
+            });
     }
 }
 
@@ -1173,7 +1552,11 @@ public sealed class CleanupQueuePage : ListPage
     private CleanupQueue.StagedItem? _lastRemoved;
     private System.Windows.Threading.DispatcherTimer? _removeUndoTimer;
     private CommitSuccess? _success;
-    private sealed record CommitSuccess(int Count, long FreedBytes, bool IsLowerBound, List<string> Paths);
+    private bool _busy;
+    /// <summary>Why an item is still here after the last commit — shown on its row.</summary>
+    private readonly Dictionary<Guid, string> _whyStayed = [];
+    private sealed record CommitSuccess(int Count, long FreedBytes, bool IsLowerBound, List<string> Paths,
+        int DeletedCount = 0, long DeletedBytes = 0, int LeftCount = 0);
 
     protected override void Refresh()
     {
@@ -1225,9 +1608,10 @@ public sealed class CleanupQueuePage : ListPage
         string reclaimable = estimate.IsCalculating ? $"~{ByteFormat.Format(estimate.Bytes)}"
             : estimate.IsLowerBound ? $"≥{ByteFormat.Format(estimate.Bytes)}"
             : ByteFormat.Format(estimate.Bytes);
+        var progress = Model.Cleanup.MeasurementProgress();
         var subline = $"{items.Count} items in Cleanup · freed when the Recycle Bin is emptied";
         if (estimate.IsCalculating)
-            subline = "Measuring sizes… · " + subline;
+            subline = $"Verifying reclaimable space · {progress.Measured} of {progress.Total} ready · " + subline;
         else if (estimate.HeldByUnqueuedCopies > 0)
             subline += $" · {ByteFormat.Format(estimate.HeldByUnqueuedCopies)} stays in use (hard-linked elsewhere)";
         Root.Children.Add(Ui.StatRow(
@@ -1244,12 +1628,13 @@ public sealed class CleanupQueuePage : ListPage
                     new GridLength(60), new GridLength(120));
                 row.Margin = new Thickness(0, 3, 0, 3);
                 var captured = item;
+                string subtitle = _whyStayed.TryGetValue(item.Id, out var why) ? $"{item.Path}  · ⚠ {why}"
+                    : item.IsMeasuring ? item.Path + "  · measuring…" : item.Path;
                 Ui.Cell(row, Ui.NameCell(Icons.File, Ui.Brush("AppHover"), Ui.Brush("AppSubtle"),
-                    Path.GetFileName(item.Path.TrimEnd('\\')),
-                    item.IsMeasuring ? item.Path + "  · measuring…" : item.Path, 24), 0);
+                    Path.GetFileName(item.Path.TrimEnd('\\')), subtitle, 24), 0);
                 long share = estimate.PerItem.GetValueOrDefault(item.Id);
                 Ui.Cell(row, Ui.T(
-                    item.IsMeasuring ? "…" : share != item.Size && share >= 0
+                    item.IsMeasuring ? $"~{ByteFormat.Format(item.Size)}" : share != item.Size && share >= 0
                         ? $"{ByteFormat.Format(share)} ↓" : ByteFormat.Format(share),
                     12, FontWeights.Medium), 1, right: true);
                 var reveal = Ui.T("Reveal", 11.5, FontWeights.Medium, Ui.Brush("AppAccent"));
@@ -1268,12 +1653,13 @@ public sealed class CleanupQueuePage : ListPage
                 ReasonLabel(group.Key), $"{group.Count()} items · {ByteFormat.Format(group.Sum(i => i.Size))}", body));
         }
 
-        // The destructive action is never offered on a provisional figure.
+        // Committing finishes verification first (with progress), so the
+        // button is never parked behind a background measurement.
         var commit = Ui.Button(
-            estimate.IsCalculating ? "Measuring sizes…" : $"Move {items.Count} items to the Recycle Bin…",
+            _busy ? "Working…" : $"Move {items.Count} items to the Recycle Bin…",
             Icons.Trash, Ui.ButtonStyle.Primary, Commit);
         commit.HorizontalAlignment = HorizontalAlignment.Left;
-        commit.IsEnabled = !estimate.IsCalculating;
+        commit.IsEnabled = !_busy;
         commit.Margin = new Thickness(0, 12, 0, 0);
         Root.Children.Add(commit);
     }
@@ -1347,6 +1733,23 @@ public sealed class CleanupQueuePage : ListPage
             12, null, Ui.Brush("AppSubtle"));
         freed.HorizontalAlignment = HorizontalAlignment.Center;
         stack.Children.Add(freed);
+        if (success.DeletedCount > 0)
+        {
+            var deleted = Ui.Mono(
+                $"{success.DeletedCount:N0} too-big regenerable folder{(success.DeletedCount == 1 ? "" : "s")} deleted permanently · {ByteFormat.Format(success.DeletedBytes)} freed now.",
+                12, null, Ui.Brush("AppSubtle"));
+            deleted.HorizontalAlignment = HorizontalAlignment.Center;
+            deleted.Margin = new Thickness(0, 4, 0, 0);
+            stack.Children.Add(deleted);
+        }
+        if (success.LeftCount > 0)
+        {
+            var left = Ui.Mono($"{success.LeftCount:N0} item{(success.LeftCount == 1 ? "" : "s")} stayed in Cleanup — see the list for why.",
+                12, null, Ui.Brush("AppWarning"));
+            left.HorizontalAlignment = HorizontalAlignment.Center;
+            left.Margin = new Thickness(0, 4, 0, 0);
+            stack.Children.Add(left);
+        }
         var note = Ui.Faint("Changed your mind? Put Back returns the items exactly where they were.", 12);
         note.TextAlignment = TextAlignment.Center;
         note.Margin = new Thickness(0, 8, 0, 14);
@@ -1389,38 +1792,139 @@ public sealed class CleanupQueuePage : ListPage
         _ => "Cleanup items",
     };
 
+    /// <summary>The pinned progress bar shown while committing — the page is locked meanwhile.</summary>
+    private Progress<CleanupQueue.CommitProgress> ShowProgress(string initial)
+    {
+        var status = Ui.T(initial, 12.5, FontWeights.Medium);
+        var detail = Ui.Mono("", 11, null, Ui.Brush("AppSubtle"));
+        var barHost = new ContentControl { Content = Ui.CapacityBar(0, Ui.Brush("AppAccent"), double.NaN) };
+        var panel = new StackPanel();
+        var line = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+        DockPanel.SetDock(detail, Dock.Right);
+        line.Children.Add(detail);
+        line.Children.Add(status);
+        panel.Children.Add(line);
+        panel.Children.Add(barHost);
+        ActionBar.Content = new Border
+        {
+            Background = Ui.Brush("AppBackground"),
+            BorderBrush = Ui.Brush("AppBorder"), BorderThickness = new Thickness(0, 1, 0, 0),
+            Padding = new Thickness(Ui.PageSide, 12, Ui.PageSide, 14),
+            Child = panel,
+        };
+        Root.IsEnabled = false;
+        return new Progress<CleanupQueue.CommitProgress>(p =>
+        {
+            status.Text = $"{p.Phase}…";
+            detail.Text = p.Total > 0 ? $"{p.Done:N0} of {p.Total:N0}" : "";
+            barHost.Content = Ui.CapacityBar(p.Total > 0 ? (double)p.Done / p.Total : 0, Ui.Brush("AppAccent"), double.NaN);
+        });
+    }
+
+    private void HideProgress()
+    {
+        ActionBar.Content = null;
+        Root.IsEnabled = true;
+    }
+
     private async void Commit()
     {
+        if (_busy) return;
         var items = Model.Cleanup.AllItems();
         if (items.Count == 0) return;
+        var owner = Window.GetWindow(this);
         var estimate = Model.Cleanup.Estimate();
-        var confirm = MessageBox.Show(
-            $"Move {items.Count} items to the Recycle Bin?\n\n" +
-            $"That frees {(estimate.IsLowerBound ? "at least " : "")}{ByteFormat.Format(estimate.Bytes)} " +
-            "once the bin is emptied.\n\nThey stay recoverable until then.",
-            "Commit cleanup", MessageBoxButton.YesNo, MessageBoxImage.Question);
-        if (confirm != MessageBoxResult.Yes) return;
-        // Folders recycle first; their staged children report "moved with
-        // the folder" instead of failing. Failures stay staged for retry.
-        var report = await Task.Run(() => Model.Cleanup.Commit());
+        string frees = $"{(estimate.IsLowerBound || estimate.IsCalculating ? "at least " : "")}{ByteFormat.Format(estimate.Bytes)}";
+        if (!Dialogs.Confirm(owner,
+                $"Move {items.Count:N0} item{(items.Count == 1 ? "" : "s")} to the Recycle Bin?",
+                "Everything below leaves its folder now. It stays recoverable — Put Back, or restore from the Recycle Bin — until you empty the bin.",
+                items.Select(i => new Dialogs.ConfirmItem(Path.GetFileName(i.Path.TrimEnd('\\')), i.Path, i.Size)).ToList(),
+                $"Move {items.Count:N0} to the Recycle Bin", danger: true,
+                footnote: $"Frees {frees} once the Recycle Bin is emptied."))
+            return;
+
+        _busy = true;
+        CleanupQueue.CommitReport report;
+        try
+        {
+            var progress = ShowProgress("Starting…");
+            // Folders recycle first; their staged children report "moved with
+            // the folder". Failures — including bin refusals — stay staged.
+            report = await Task.Run(() => Model.Cleanup.Commit(progress));
+        }
+        finally
+        {
+            HideProgress();
+            _busy = false;
+        }
         Model.RefreshStaged();
         var moved = report.Entries.Where(entry => entry.Error is null).ToList();
-        if (moved.Count == 0)
+        _whyStayed.Clear();
+        foreach (var failed in report.Entries.Where(e => e.Error is not null))
+            _whyStayed[failed.Item.Id] = failed.Error is DiskMap.Core.Native.RecycleRefusedException
+                ? (CleanupQueue.IsRegenerable(failed.Item.Path)
+                    ? "Too big for the Recycle Bin — nothing was deleted"
+                    : "Too big for the Recycle Bin and not regenerable — enlarge the bin or delete it yourself")
+                : $"Couldn't be moved: {failed.Error!.Message}";
+
+        // The bin refused some items as too big: ask ONCE. Regenerable ones
+        // (node_modules, build output, caches) may be deleted permanently;
+        // anything else stays in Cleanup.
+        int deletedCount = 0;
+        long deletedBytes = 0;
+        var refused = report.Entries.Where(e => e.Error is DiskMap.Core.Native.RecycleRefusedException).ToList();
+        if (refused.Count > 0)
+        {
+            var regenerable = refused.Where(e => CleanupQueue.IsRegenerable(e.Item.Path)).ToList();
+            int others = refused.Count - regenerable.Count;
+            if (regenerable.Count > 0 && Dialogs.Confirm(owner,
+                    $"The Recycle Bin can't hold {regenerable.Count:N0} folder{(regenerable.Count == 1 ? "" : "s")}",
+                    "They're bigger than the Recycle Bin allows on this drive, so Windows can't recycle them — nothing has been deleted. " +
+                    "They're regenerable (dependencies, build output, caches): your tools recreate them on the next install or build. " +
+                    "Delete them permanently? This can't be undone.",
+                    regenerable.Select(e => new Dialogs.ConfirmItem(Path.GetFileName(e.Item.Path.TrimEnd('\\')), e.Item.Path, e.Item.Size)).ToList(),
+                    $"Delete {regenerable.Count:N0} permanently", danger: true,
+                    footnote: others > 0
+                        ? $"{others} other item{(others == 1 ? " is" : "s are")} too big for the bin but not regenerable — they stay in Cleanup. Enlarge the bin (Recycle Bin → Properties) or delete them yourself."
+                        : null))
+            {
+                _busy = true;
+                try
+                {
+                    var progress = ShowProgress("Deleting permanently…");
+                    var ids = regenerable.Select(e => e.Item.Id).ToList();
+                    var deleted = await Task.Run(() => Model.Cleanup.DeletePermanently(ids, progress));
+                    deletedCount = deleted.Entries.Count(e => e.Error is null);
+                    deletedBytes = deleted.FreedWhenEmptied;
+                }
+                finally
+                {
+                    HideProgress();
+                    _busy = false;
+                }
+                Model.RefreshStaged();
+            }
+        }
+
+        int left = Model.Cleanup.AllItems().Count;
+        if (moved.Count == 0 && deletedCount == 0)
         {
             Refresh();
-            MessageBox.Show("Nothing could be moved. The items may be in use.",
-                "Cleanup", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Model.Toast(refused.Count > 0
+                ? "Nothing moved — the Recycle Bin refused these items; they're still in Cleanup"
+                : "Nothing could be moved — the items may be in use; they're still in Cleanup");
             return;
         }
         _success = new CommitSuccess(
             moved.Count,
             report.FreedWhenEmptied,
             report.IsLowerBound,
-            moved.Select(entry => entry.Item.Path).ToList());
+            moved.Select(entry => entry.Item.Path).ToList(),
+            deletedCount, deletedBytes, left);
         Refresh();
-        int failed = report.Entries.Count - moved.Count;
         Model.Toast($"Moved {moved.Count} items to the Recycle Bin" +
-            (failed > 0 ? $" · {failed} couldn't be moved" : ""));
+            (deletedCount > 0 ? $" · deleted {deletedCount} permanently" : "") +
+            (left > 0 ? $" · {left} still in Cleanup" : ""));
     }
 
     private async void PutBackNow(CleanupRecord record)

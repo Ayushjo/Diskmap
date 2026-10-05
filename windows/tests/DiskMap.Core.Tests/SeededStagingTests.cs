@@ -45,6 +45,44 @@ public class SeededStagingTests : IDisposable
     }
 
     [Fact]
+    public void BatchMeasurementsReadTheJournalOnce()
+    {
+        var tree = Scan();
+        var queue = new CleanupQueue();
+        queue.SetScanContext(tree, _dir, new UsnJournal.Marker(1, 1), []);
+        int reads = 0;
+        queue.JournalChangesForTest = _ => { reads++; return []; };
+
+        Assert.NotNull(queue.TrySeededProfile(Path.Combine(_dir, "sub")));
+        Assert.NotNull(queue.TrySeededProfile(Path.Combine(_dir, "other.bin")));
+        Assert.Equal(1, reads);
+    }
+
+    [Fact]
+    public async Task StagingWaveSharesOneJournalRead()
+    {
+        var tree = Scan();
+        var queue = new CleanupQueue();
+        queue.SetScanContext(tree, _dir, new UsnJournal.Marker(1, 1), []);
+        int reads = 0;
+        using var start = new ManualResetEventSlim(false);
+        queue.JournalChangesForTest = _ =>
+        {
+            start.Wait();
+            Interlocked.Increment(ref reads);
+            return [];
+        };
+
+        Assert.True(queue.Stage(Path.Combine(_dir, "sub"), 0, "test"));
+        Assert.True(queue.Stage(Path.Combine(_dir, "other.bin"), 0, "test"));
+        start.Set();
+        await queue.WaitForMeasurements();
+
+        Assert.Equal(1, reads);
+        Assert.All(queue.AllItems(), item => Assert.False(item.IsMeasuring));
+    }
+
+    [Fact]
     public void ChangedSubtreeFallsBackToTheWalk()
     {
         var tree = Scan();

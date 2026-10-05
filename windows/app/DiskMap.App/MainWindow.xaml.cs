@@ -41,6 +41,9 @@ public partial class MainWindow : Window
         Closed += (_, _) => _tray.Dispose();
         _model.PageRequested += SelectPage;
         _model.ToastRequested += ShowToast;
+        _model.ConfirmRisky = (name, verdict) => Dialogs.ConfirmRisky(this, name, verdict);
+        _model.ConfirmBulk = (title, message, items, footnote) =>
+            Dialogs.Confirm(this, title, message, items, $"Add {items.Count:N0} to Cleanup", footnote: footnote);
         _model.ScanRequested += async () => await PickAndScan();
         _model.StagedChanged += (_, _) => RefreshCleanupBadge();
         _model.PropertyChanged += OnModelChanged;
@@ -78,6 +81,18 @@ public partial class MainWindow : Window
                     await Task.Delay(
                         int.TryParse(Environment.GetEnvironmentVariable("DISKMAP_SHOT_SETTLE"), out int s) ? s : 1200);
                     SaveShot(shotPath);
+                    // The popups too: the tray flyout and the risky-item
+                    // warning, rendered next to the window shot.
+                    if (Environment.GetEnvironmentVariable("DISKMAP_SHOT_POPUPS") == "1")
+                    {
+                        string stem = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(shotPath))!,
+                            Path.GetFileNameWithoutExtension(shotPath));
+                        _tray?.SaveFlyoutShot(stem + "-tray.png");
+                        var wsl = StorageClassifier.Classify(@"C:\Users\you\AppData\Local\wsl\{id}\ext4.vhdx", false);
+                        var risky = Dialogs.RiskyWindow(this, "ext4.vhdx", wsl, _ => { });
+                        SaveWindowShot(risky, stem + "-risky.png");
+                        risky.Close();
+                    }
                     Trace("shot");
                     if (Environment.GetEnvironmentVariable("DISKMAP_SHOT_QUIT") != "0")
                         Close();
@@ -275,8 +290,8 @@ public partial class MainWindow : Window
             border.Background = selected ? Ui.Brush("AppNavSelected") : System.Windows.Media.Brushes.Transparent;
             if (border.Child is StackPanel row && row.Children.Count == 2)
             {
-                ((TextBlock)row.Children[0]).Foreground =
-                    selected ? Ui.Brush("AppAccent") : Ui.Brush("AppFaint");
+                Ui.SetIconBrush((FrameworkElement)row.Children[0],
+                    selected ? Ui.Brush("AppAccent") : Ui.Brush("AppFaint"));
                 ((TextBlock)row.Children[1]).FontWeight =
                     selected ? FontWeights.SemiBold : FontWeights.Normal;
             }
@@ -310,7 +325,8 @@ public partial class MainWindow : Window
         ToastText.Text = text;
         ToastHost.Visibility = Visibility.Visible;
         _toastTimer?.Stop();
-        _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.4) };
+        // Long toasts (skipped risky items) need time to read.
+        _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(text.Length > 60 ? 6 : 2.4) };
         _toastTimer.Tick += (_, _) =>
         {
             ToastHost.Visibility = Visibility.Collapsed;
@@ -326,6 +342,13 @@ public partial class MainWindow : Window
         if (e.Key is Key.K or Key.F && mods == ModifierKeys.Control)
         {
             OpenCommandPalette();
+            e.Handled = true;
+            return;
+        }
+        // Ctrl+O — Scan Folder… (the window menu's old duty).
+        if (e.Key == Key.O && mods == ModifierKeys.Control)
+        {
+            _ = PickAndScan();
             e.Handled = true;
             return;
         }
@@ -403,113 +426,38 @@ public partial class MainWindow : Window
 
     // ---- Top bar ----
 
-    /// <summary>
-    /// WIN-056: the File/Go menu — Scan, rescan quick/full, export, put
-    /// back, destinations, exit. The staging toast covers the transient
-    /// feedback side.
-    /// </summary>
-    private void MenuButton_Click(object sender, RoutedEventArgs e)
+    private async void DriveCard_Click(object sender, MouseButtonEventArgs e) => await PickAndScan();
+
+    /// <summary>Scan Folder… — the tray and Ctrl+O route here.</summary>
+    internal Task ScanFolder() => PickAndScan();
+
+    /// <summary>Export the current scan (JSON / NDJSON / CSV / ncdu) — the Snapshots header has the same.</summary>
+    internal void ExportScan()
     {
-        var menu = new ContextMenu();
-        var scan = new MenuItem { Header = "Scan Folder…" };
-        scan.Click += async (_, _) => await PickAndScan();
-        menu.Items.Add(scan);
-        var rescan = new MenuItem { Header = "Rescan\tCtrl+R", IsEnabled = _model.RootPath is not null };
-        rescan.Click += async (_, _) => await _model.RescanAsync();
-        menu.Items.Add(rescan);
-        var full = new MenuItem { Header = "Full Rescan\tCtrl+Shift+R", IsEnabled = _model.RootPath is not null };
-        full.Click += async (_, _) =>
+        if (_model.Tree is not { } t || _model.RootPath is not { } root) return;
+        var dlg = new Microsoft.Win32.SaveFileDialog
         {
-            if (_model.RootPath is { } rp) ScanCache.Remove(rp);
-            await _model.RescanAsync();
+            Title = "Export scan", FileName = "diskmap-scan",
+            Filter = "JSON (nested)|*.json|NDJSON|*.ndjson|CSV|*.csv|ncdu|*.ncdu",
         };
-        menu.Items.Add(full);
-        menu.Items.Add(new Separator());
-        var export = new MenuItem
+        if (dlg.ShowDialog(this) != true) return;
+        var format = dlg.FilterIndex switch
         {
-            Header = "Export Scan…",
-            IsEnabled = _model.Tree is not null,
+            2 => TreeExporter.Format.Ndjson,
+            3 => TreeExporter.Format.Csv,
+            4 => TreeExporter.Format.Ncdu,
+            _ => TreeExporter.Format.Json,
         };
-        export.Click += (_, _) =>
+        try
         {
-            // Same affordance as the Snapshots header.
-            if (_model.Tree is { } t && _model.RootPath is { } root)
-            {
-                var dlg = new Microsoft.Win32.SaveFileDialog
-                {
-                    Title = "Export scan", FileName = "diskmap-scan",
-                    Filter = "JSON (nested)|*.json|NDJSON|*.ndjson|CSV|*.csv|ncdu|*.ncdu",
-                };
-                if (dlg.ShowDialog() == true)
-                {
-                    var format = dlg.FilterIndex switch
-                    {
-                        2 => TreeExporter.Format.Ndjson,
-                        3 => TreeExporter.Format.Csv,
-                        4 => TreeExporter.Format.Ncdu,
-                        _ => TreeExporter.Format.Json,
-                    };
-                    try
-                    {
-                        File.WriteAllText(dlg.FileName, TreeExporter.Export(t, _model.Totals, root, format));
-                        _model.Toast($"Exported to {Path.GetFileName(dlg.FileName)}");
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show($"Couldn't write the export: {ex.Message}",
-                            "freedisk.space", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-                }
-            }
-        };
-        menu.Items.Add(export);
-        var putBack = new MenuItem { Header = "Put Back Last Cleanup", IsEnabled = CleanupRecord.Load() is { Items.Count: > 0 } };
-        putBack.Click += (_, _) => SelectPage("Cleanup");
-        menu.Items.Add(putBack);
-        menu.Items.Add(new Separator());
-        var go = new MenuItem { Header = "Go" };
-        foreach (var dest in DestinationOrder)
-        {
-            var item = new MenuItem { Header = dest };
-            string captured = dest;
-            item.Click += (_, _) => SelectPage(captured);
-            go.Items.Add(item);
+            File.WriteAllText(dlg.FileName, TreeExporter.Export(t, _model.Totals, root, format));
+            _model.Toast($"Exported to {Path.GetFileName(dlg.FileName)}");
         }
-        menu.Items.Add(go);
-        // WIN-058/059: View — appearance + text scale, applied live.
-        var view = new MenuItem { Header = "View" };
-        var appearance = new MenuItem { Header = "Appearance" };
-        foreach (var (id, label) in new[] { ("system", "Follow Windows"), ("light", "Light"), ("dark", "Dark") })
+        catch (Exception ex)
         {
-            var item = new MenuItem { Header = label };
-            string captured = id;
-            item.Click += (_, _) => SetAppearance(captured);
-            appearance.Items.Add(item);
+            MessageBox.Show($"Couldn't write the export: {ex.Message}",
+                "freedisk.space", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
-        view.Items.Add(appearance);
-        var textSize = new MenuItem { Header = "Text size" };
-        foreach (var (scale, label) in new[] { (0.9, "Smaller"), (1.0, "Default"), (1.15, "Larger"), (1.3, "Largest") })
-        {
-            var item = new MenuItem { Header = label };
-            double captured = scale;
-            item.Click += (_, _) => SetTextScale(captured);
-            textSize.Items.Add(item);
-        }
-        view.Items.Add(textSize);
-        menu.Items.Add(view);
-        menu.Items.Add(new Separator());
-        var settings = new MenuItem { Header = "Settings…\tCtrl+," };
-        settings.Click += (_, _) => OpenSettings();
-        menu.Items.Add(settings);
-        var about = new MenuItem { Header = "About freedisk.space" };
-        about.Click += (_, _) => OpenAbout();
-        menu.Items.Add(about);
-        menu.Items.Add(new Separator());
-        var exit = new MenuItem { Header = "Exit" };
-        exit.Click += (_, _) => Close();
-        menu.Items.Add(exit);
-        menu.PlacementTarget = (Button)sender;
-        menu.IsOpen = true;
     }
 
     /// <summary>WIN-080: launch-harness trace — one line per milestone when DISKMAP_TRACE is set.</summary>
@@ -520,6 +468,28 @@ public partial class MainWindow : Window
     }
 
     /// <summary>WIN-080: PNG of the whole window at device pixels — no z-order dependency.</summary>
+    /// <summary>Shows <paramref name="window"/> off to the side, lays it out and saves it as PNG (harness only).</summary>
+    internal static void SaveWindowShot(Window window, string path)
+    {
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Left = -10000;
+        window.Top = 0;
+        window.ShowActivated = false;
+        window.Show();
+        window.UpdateLayout();
+        var element = (FrameworkElement)window.Content;
+        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(window);
+        var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(
+            Math.Max(1, (int)Math.Ceiling(element.ActualWidth * dpi.DpiScaleX)),
+            Math.Max(1, (int)Math.Ceiling(element.ActualHeight * dpi.DpiScaleY)),
+            96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, System.Windows.Media.PixelFormats.Pbgra32);
+        bmp.Render(element);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+        using var stream = File.Create(path);
+        encoder.Save(stream);
+    }
+
     private void SaveShot(string path)
     {
         var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
@@ -539,7 +509,7 @@ public partial class MainWindow : Window
     /// <summary>WIN-060: the Settings window — one instance, re-activated if open.</summary>
     private SettingsWindow? _settingsWindow;
 
-    private void OpenSettings()
+    internal void OpenSettings()
     {
         if (_settingsWindow is not null)
         {
@@ -551,7 +521,7 @@ public partial class MainWindow : Window
         _settingsWindow.Show();
     }
 
-    private void OpenAbout()
+    internal void OpenAbout()
     {
         var body = new StackPanel
         {
@@ -684,7 +654,6 @@ public partial class MainWindow : Window
             SidebarBorder.Visibility = Visibility.Visible;
             SidebarColumn.Width = new GridLength(212 * Math.Max(1, _textScale));
         }
-        MenuButton.Content = compact ? "☰" : "☰  freedisk.space";
         if (_topSearchBox is not null) _topSearchBox.Width = compact ? 260 : 460;
         if (compactChanged && _topSearchBox is not null) RefreshScanButton();
     }

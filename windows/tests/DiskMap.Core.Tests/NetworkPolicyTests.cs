@@ -87,19 +87,21 @@ public class NetworkPolicyTests
     }
 
     [Fact]
-    public void MaterialIconFontIsBundledAndOffline()
+    public void ReactIconsAreBundledAsNativeOfflineGeometry()
     {
         string windows = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
         string appRoot = Path.Combine(windows, "app", "DiskMap.App");
-        string font = Path.Combine(appRoot, "Assets", "Fonts", "MaterialSymbolsRounded.ttf");
-        string license = Path.Combine(appRoot, "Assets", "Fonts", "LICENSE-material-symbols.txt");
-        Assert.True(File.Exists(font));
-        Assert.InRange(new FileInfo(font).Length, 1, 100_000);
-        Assert.True(File.Exists(license));
-        Assert.DoesNotContain("Segoe MDL2 Assets", File.ReadAllText(Path.Combine(appRoot, "Icons.cs")));
-        Assert.Contains("Assets\\Fonts\\MaterialSymbolsRounded.ttf",
-            File.ReadAllText(Path.Combine(appRoot, "DiskMap.App.csproj")));
+        string data = File.ReadAllText(Path.Combine(appRoot, "ReactIconData.cs"));
+        string icons = File.ReadAllText(Path.Combine(appRoot, "Icons.cs"));
+        string project = File.ReadAllText(Path.Combine(appRoot, "DiskMap.App.csproj"));
+        Assert.True(File.Exists(Path.Combine(appRoot, "Assets", "Icons", "LICENSE-react-icons.txt")));
+        Assert.Contains("BsSearch", data);
+        Assert.Contains("SiNextdotjs", data);
+        Assert.Contains("SiNodedotjs", icons);
+        Assert.Contains("SiNextdotjs", icons);
+        Assert.DoesNotContain("MaterialSymbols", project);
+        Assert.DoesNotContain("Segoe MDL2 Assets", icons);
     }
 
     [Fact]

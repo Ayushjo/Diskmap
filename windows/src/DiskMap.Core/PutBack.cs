@@ -67,7 +67,7 @@ public static class RecycleBinStore
     /// Entries currently sitting in the bin on the volume that holds
     /// <paramref name="pathOnVolume"/> for the current user.
     /// </summary>
-    public static IEnumerable<Entry> Entries(string pathOnVolume)
+    public static IEnumerable<Entry> Entries(string pathOnVolume, DateTime? createdSinceUtc = null)
     {
         string? root = Path.GetPathRoot(Path.GetFullPath(pathOnVolume));
         if (root is null) yield break;
@@ -76,13 +76,17 @@ public static class RecycleBinStore
         string store = Path.Combine(root, "$Recycle.Bin", sid);
         if (!Directory.Exists(store)) yield break;
 
-        IEnumerable<string> infoFiles;
-        try { infoFiles = Directory.EnumerateFiles(store, "$I*"); }
+        IEnumerable<FileInfo> infoFiles;
+        try { infoFiles = new DirectoryInfo(store).EnumerateFiles("$I*"); }
         catch { yield break; }
 
         foreach (var infoFile in infoFiles)
         {
-            Entry? entry = ReadInfoFile(infoFile);
+            // Creation time comes free with the listing; skipping old
+            // records avoids opening them — freshly recycled ones cost
+            // ~4 ms each to open (on-access scan), thousands per commit.
+            if (createdSinceUtc is { } since && infoFile.CreationTimeUtc < since) continue;
+            Entry? entry = ReadInfoFile(infoFile.FullName);
             if (entry is not null) yield return entry;
         }
     }
@@ -94,12 +98,48 @@ public static class RecycleBinStore
     /// </summary>
     public static Entry? Resolve(string originalPath)
     {
-        string normalized = Path.GetFullPath(originalPath).TrimEnd('\\');
-        return Entries(originalPath)
-            .Where(e => e.OriginalPath.Equals(normalized, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(e => e.DeletedFileTimeUtc)
-            .FirstOrDefault();
+        // Newest record first, stop at the first match: the newest match is
+        // the answer, so a full bin is never read for one path (each fresh
+        // $I open costs ~4 ms of on-access scanning).
+        string normalized = Normalize(originalPath);
+        string? root = Path.GetPathRoot(normalized);
+        string sid = System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value ?? "";
+        if (root is null || sid.Length == 0) return null;
+        string store = Path.Combine(root, "$Recycle.Bin", sid);
+        if (!Directory.Exists(store)) return null;
+        IEnumerable<FileInfo> infos;
+        try { infos = new DirectoryInfo(store).EnumerateFiles("$I*").OrderByDescending(f => f.CreationTimeUtc).ToList(); }
+        catch { return null; }
+        foreach (var info in infos)
+            if (ReadInfoFile(info.FullName) is { } e
+                && e.OriginalPath.Equals(normalized, StringComparison.OrdinalIgnoreCase))
+                return e;
+        return null;
     }
+
+    /// <summary>
+    /// <see cref="Resolve"/> for many paths, reading each volume's bin once
+    /// instead of once per path. Keyed by normalized full path; paths not
+    /// in the bin are absent.
+    /// </summary>
+    public static Dictionary<string, Entry> ResolveAll(IEnumerable<string> originalPaths, DateTime? recycledSinceUtc = null)
+    {
+        var result = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var volume in originalPaths.Select(Normalize)
+                     .GroupBy(p => Path.GetPathRoot(p) ?? "", StringComparer.OrdinalIgnoreCase))
+        {
+            var wanted = volume.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var e in Entries(volume.First(), recycledSinceUtc))
+            {
+                if (!wanted.Contains(e.OriginalPath)) continue;
+                if (!result.TryGetValue(e.OriginalPath, out var seen) || e.DeletedFileTimeUtc > seen.DeletedFileTimeUtc)
+                    result[e.OriginalPath] = e;
+            }
+        }
+        return result;
+    }
+
+    private static string Normalize(string path) => Path.GetFullPath(path).TrimEnd('\\');
 
     /// <summary>
     /// $I v1 (Win7/8): version(8)=1, size(8), deletedTime(8), name = 260

@@ -33,8 +33,11 @@
                     <StackPanel x:Name="NavPanel" Margin="10,0,10,0" />
                 </ScrollViewer>
 
-                <Border Grid.Row="2" Margin="12,0,12,12" Padding="6,12,6,0"
-                        Background="Transparent"
+                <!-- The scanned drive; click to scan another folder (Ctrl+O). -->
+                <Border x:Name="DriveCard" Grid.Row="2" Margin="12,0,12,12" Padding="6,12,6,0"
+                        Background="Transparent" Cursor="Hand"
+                        ToolTip="Scan another folder or drive… (Ctrl+O)"
+                        MouseLeftButtonUp="DriveCard_Click"
                         BorderBrush="{DynamicResource AppCardBorder}" BorderThickness="0,1,0,0">
                     <StackPanel>
                         <DockPanel Margin="0,0,0,6">
@@ -67,13 +70,8 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <!-- WIN-056: window menu — File / Go, the macOS menu bar's duties. -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal">
                         <ContentControl x:Name="SidebarButtonHost" Margin="0,0,4,0" />
-                        <Button x:Name="MenuButton" Content="☰  freedisk.space"
-                                HorizontalAlignment="Left" Padding="8,0" Cursor="Hand"
-                                Background="Transparent" BorderThickness="0" FontSize="12.5"
-                                Click="MenuButton_Click" />
                     </StackPanel>
                     <ContentControl x:Name="SearchHost" Grid.Column="1" Margin="12,0,0,0"
                                     HorizontalAlignment="Left" />

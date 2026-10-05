@@ -65,6 +65,36 @@ public class DeveloperCatalogTests
     }
 
     [Fact]
+    public void ParentHoldingOnlyItsMatchedChildCountsOnce()
+    {
+        // AppData\Local\Android holds only Sdk: both match, same bytes —
+        // the tie must keep the outer folder, not list 19 GB twice.
+        var tree = new FileTree();
+        int root = tree.AddNode("me", -1, true, 0, 0, 0);
+        int appData = tree.AddNode("AppData", root, true, 0, 0, 0);
+        int local = tree.AddNode("Local", appData, true, 0, 0, 0);
+        int android = tree.AddNode("Android", local, true, 0, 0, 0);
+        int sdk = tree.AddNode("Sdk", android, true, 0, 0, 0);
+        tree.AddNode("system.img", sdk, false, 50_000_000, 50_000_000, 10);
+        // Many same-size hits, as on a real drive: the sort is then truly
+        // unstable and only the tie-break keeps Android before Sdk.
+        int code = tree.AddNode("code", root, true, 0, 0, 0);
+        for (int p = 0; p < 40; p++)
+        {
+            int project = tree.AddNode($"p{p}", code, true, 0, 0, 0);
+            int nm = tree.AddNode("node_modules", project, true, 0, 0, 0);
+            tree.AddNode("dep.js", nm, false, 50_000_000, 50_000_000, 10);
+        }
+        var totals = tree.RollUpSizes(SizeBasis.Allocated);
+
+        var result = DeveloperCatalog.Build(tree, @"C:\Users\me", totals);
+        var androidItems = result.Items
+            .Where(i => i.AbsolutePath.Contains(@"\Android", StringComparison.OrdinalIgnoreCase)).ToList();
+        Assert.Single(androidItems);
+        Assert.Equal(41 * 50_000_000L, result.Summary.TotalBytes);
+    }
+
+    [Fact]
     public void HitsInsideKeptHitsCollapse()
     {
         var tree = new FileTree();

@@ -836,9 +836,10 @@ same spirit as the macOS "do better" list. Track here so they aren't lost.
   labels now use shared Calm spacing, row heights and vertical alignment.
   Page navigation resets stale scroll positions. The top bar exposes a
   visible light/dark toggle, while View and Settings retain System mode.
-  A licensed, 8 KB subset of Google Material Symbols Rounded is bundled
-  as a WPF resource, so file/folder/navigation icons are consistent and
-  remain fully offline. The fixed data and age palettes replace legacy
+  A licensed offline subset generated from react-icons 5.5.0 renders as
+  native WPF geometry: Bootstrap Icons for chrome/files and Simple Icons
+  for Next.js, Node.js, Python, Docker, Rust, Flutter, Android, .NET, JVM
+  and IDE/AI storage. The fixed data and age palettes replace legacy
   blue/green/red view colors; High Contrast uses the documented line/ink
   values. Staging is
   consistently called "Add to Cleanup", never navigates automatically,
@@ -859,6 +860,16 @@ same spirit as the macOS "do better" list. Track here so they aren't lost.
   breadcrumb; Age Map hides its irrelevant color control; Flame requests a
   four-level icicle hierarchy; all layout charts honor folder/type/age color
   modes. Developer legends wrap and Snapshots stack at narrow widths.
+
+- [x] **WIN-084: Developer cleanup at scale** — staging a batch now reads
+  the USN delta once and reuses one hard-link index instead of repeating
+  both per folder; fallback filesystem profiles are capped at two concurrent
+  walks to avoid random-I/O collapse. Cleanup shows provisional sizes plus
+  measured/total progress. Developer Storage filters by path and first-level
+  directory, offers "Add all shown to Cleanup" (never bypassing the queue),
+  moves staged rows below unstaged rows so repeated clicks stay under the
+  pointer, and gives In Cleanup rows/button an accent state. The excluded-
+  paths list is unchanged.
 
 ---
 

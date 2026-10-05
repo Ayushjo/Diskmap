@@ -24,6 +24,8 @@ public class IncrementalScanTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_dir, "keep.txt"), new string('k', 4096));
         File.WriteAllText(Path.Combine(_dir, "doomed.txt"), new string('d', 4096));
+        Directory.CreateDirectory(Path.Combine(_dir, "sub", "deep"));
+        File.WriteAllText(Path.Combine(_dir, "sub", "deep", "old.txt"), "o");
         var first = await _engine.ScanAsync(_dir, (IProgress<int>?)null);
 
         bool elevated = new WindowsPrincipal(WindowsIdentity.GetCurrent())
@@ -45,15 +47,23 @@ public class IncrementalScanTests : IDisposable
         // Touch the disk, let the journal settle, rescan.
         File.WriteAllText(Path.Combine(_dir, "new.bin"), new string('n', 8192));
         File.Delete(Path.Combine(_dir, "doomed.txt"));
+        File.WriteAllText(Path.Combine(_dir, "keep.txt"), new string('k', 16384));  // modified in place
+        File.WriteAllText(Path.Combine(_dir, "sub", "deep", "added.txt"), "a");        // deep create
         await Task.Delay(750);
 
         var second = await _engine.ScanAsync(_dir, (IProgress<int>?)null);
         Assert.Equal("usn", second.Backend);
         var names = Enumerable.Range(0, second.Tree.Count)
             .Select(second.Tree.NameOf).ToHashSet();
+        // All three changes sit directly under the scan root, whose node
+        // carries no file id — the replay must still place them.
         Assert.Contains("new.bin", names);
         Assert.Contains("keep.txt", names);
         Assert.DoesNotContain("doomed.txt", names);
+        int keep = Enumerable.Range(0, second.Tree.Count).Single(i => second.Tree.NameOf(i) == "keep.txt");
+        Assert.Equal(16384, second.Tree.LogicalSize[keep]);
+        Assert.Contains("added.txt", names);
+        Assert.Contains("old.txt", names);   // unchanged sibling copied from the baseline
     }
 
     [Fact]

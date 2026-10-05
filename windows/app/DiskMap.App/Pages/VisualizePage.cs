@@ -17,13 +17,13 @@ public sealed class VisualizePage : ListPage
     private static readonly (string Mode, string Glyph, string Blurb)[] Modes =
     [
         ("Treemap", Icons.Visualize, "See what's taking space"),
-        ("Sunburst", "\u25D0", "Breakdown by depth"),
-        ("Flame", "\u25B2", "Hierarchy view"),
-        ("Bubbles", "\u25CF", "Compare sizes"),
-        ("Mind Map", "\u25C8", "Relationship view"),
-        ("Age Map", "\u25F7", "What's been forgotten"),
-        ("Top Sizes", "\u2261", "Largest items"),
-        ("Folders", "\u25A4", "Browse folders"),
+        ("Sunburst", Icons.PieChart, "Breakdown by depth"),
+        ("Flame", Icons.BarChart, "Hierarchy view"),
+        ("Bubbles", Icons.Bubble, "Compare sizes"),
+        ("Mind Map", Icons.Diagram, "Relationship view"),
+        ("Age Map", Icons.Forgotten, "What's been forgotten"),
+        ("Top Sizes", Icons.List, "Largest items"),
+        ("Folders", Icons.Folder, "Browse folders"),
     ];
 
     private readonly WrapPanel _switcher = new();
@@ -85,11 +85,9 @@ public sealed class VisualizePage : ListPage
             12, FontWeights.SemiBold));
         var stage = Ui.Button("Add to Cleanup", Icons.Add, Ui.ButtonStyle.Dark, () =>
         {
-            int staged = 0;
-            foreach (int id in set.ToList())
-                if (Model.Stage(id, "visualize multi-select", notify: false)) staged++;
+            Model.ConfirmStageMany(set.ToList(), "visualize multi-select",
+                $"Add {set.Count:N0} selected item{(set.Count == 1 ? "" : "s")} to Cleanup?");
             Model.ClearMulti();
-            if (staged > 0) Model.ToastAdded(staged);
         });
         stage.Margin = new Thickness(10, 0, 0, 0);
         var copy = Ui.Button("Copy Path", Icons.Copy, Ui.ButtonStyle.Outline, () =>
@@ -264,14 +262,8 @@ public sealed class VisualizePage : ListPage
             bool selected = Model.VisualizeMode == mode;
             var content = new StackPanel();
             var titleRow = new StackPanel { Orientation = Orientation.Horizontal };
-            bool privateUseGlyph = glyph.Length > 0 && glyph[0] >= '';
-            titleRow.Children.Add(new TextBlock
-            {
-                Text = glyph, FontSize = 13,
-                FontFamily = privateUseGlyph ? Icons.FontFamily : FontFamily,
-                Foreground = selected ? Ui.Brush("AppAccent") : Ui.Brush("AppSubtle"),
-                VerticalAlignment = VerticalAlignment.Center,
-            });
+            titleRow.Children.Add(Ui.Glyph(glyph, 15,
+                selected ? Ui.Brush("AppAccent") : Ui.Brush("AppSubtle")));
             titleRow.Children.Add(new TextBlock
             {
                 Text = "  " + mode, FontSize = 12.5, FontWeight = FontWeights.SemiBold,

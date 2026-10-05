@@ -171,120 +171,18 @@ public sealed class AnalysisSnapshot
         };
     }
 
-    private static readonly HashSet<string> PersonalNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Documents", "Desktop", "Pictures", "Music", "Videos", "Movies",
-        "Saved Games", "Contacts", "Favorites", "Links", "Searches",
-        "OneDrive", "Dropbox", "iCloudDrive", "Users",
-    };
-    private static readonly HashSet<string> DeveloperNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Developer", "dev", "source", "repos", "projects", "code", "workspaces",
-        ".npm", ".nvm", ".yarn", ".pnpm-store", ".cache", ".cargo", ".rustup",
-        ".gradle", ".m2", ".nuget", ".dotnet", ".android", ".cursor",
-        ".codex", ".docker", ".pyenv", ".conda", ".vscode",
-    };
-    private static readonly HashSet<string> SystemNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Windows", "Program Files", "Program Files (x86)", "ProgramData",
-        "Recovery", "System Volume Information", "$Recycle.Bin", "PerfLogs",
-        "Boot", "Drivers",
-    };
-
     /// <summary>
-    /// Exclusive partition of the scan root's immediate children — one
-    /// child contributes to exactly one category. AppData peels cache and
-    /// developer subtrees out so the bytes stay exclusive, like the
-    /// macOS Library split (Caches/Logs/Developer carved out of Library).
+    /// Drive or home-folder mode: the preconfigured laptop categories
+    /// (StorageClassifier) — WSL and Docker disks, code, dependencies,
+    /// toolchains, AI models, personal folders, apps, system… exclusive
+    /// by construction, so the rows sum to the scanned total. Key = the
+    /// class id; NodeId = the biggest folder the class claimed.
     /// </summary>
-    private static List<StorageCategory> Categorize(FileTree tree, string rootPath, long[] totals)
-    {
-        var buckets = new Dictionary<string, (string Title, string Hint, long Bytes, int? Node)>
-        {
-            ["applications"] = ("Applications", "apps", 0, null),
-            ["appdata"] = ("App data", "library", 0, null),
-            ["downloads"] = ("Downloads", "downloads", 0, null),
-            ["documents"] = ("Personal", "documents", 0, null),
-            ["developer"] = ("Developer", "developer", 0, null),
-            ["caches"] = ("Caches & Temp", "caches", 0, null),
-            ["system"] = ("System", "system", 0, null),
-            ["other"] = ("Other", "other", 0, null),
-        };
-        void Add(string key, long bytes, int node)
-        {
-            if (bytes <= 0) return;
-            var b = buckets[key];
-            b.Bytes += bytes;
-            b.Node ??= node;
-            buckets[key] = b;
-        }
-
-        foreach (var child in tree.ChildrenOf(0, totals))
-        {
-            long bytes = child.Size;
-            if (bytes <= 0) continue;
-            string name = tree.NameOf(child.Id);
-            if (name.Equals("AppData", StringComparison.OrdinalIgnoreCase))
-            {
-                long appDataBytes = bytes;
-                // Peel user-level caches and dev caches out of AppData.
-                foreach (var mid in tree.ChildrenOf(child.Id, totals))   // Local/Roaming/LocalLow
-                {
-                    foreach (var g in tree.ChildrenOf(mid.Id, totals))
-                    {
-                        string gn = tree.NameOf(g.Id);
-                        if (gn.Equals("Temp", StringComparison.OrdinalIgnoreCase)
-                            || gn.EndsWith("cache", StringComparison.OrdinalIgnoreCase)
-                            || gn.Equals("pip", StringComparison.OrdinalIgnoreCase))
-                        {
-                            Add("caches", g.Size, g.Id);
-                            appDataBytes = Math.Max(0, appDataBytes - g.Size);
-                        }
-                        else if (gn.Equals("NuGet", StringComparison.OrdinalIgnoreCase))
-                        {
-                            Add("developer", g.Size, g.Id);
-                            appDataBytes = Math.Max(0, appDataBytes - g.Size);
-                        }
-                    }
-                }
-                Add("appdata", appDataBytes, child.Id);
-            }
-            else if (name.Equals("Downloads", StringComparison.OrdinalIgnoreCase))
-            {
-                Add("downloads", bytes, child.Id);
-            }
-            else if (PersonalNames.Contains(name))
-            {
-                Add("documents", bytes, child.Id);
-            }
-            else if (DeveloperNames.Contains(name)
-                     || name.StartsWith("Applications", StringComparison.OrdinalIgnoreCase))
-            {
-                Add("developer", bytes, child.Id);
-            }
-            else if (name.EndsWith(".cache", StringComparison.OrdinalIgnoreCase))
-            {
-                Add("caches", bytes, child.Id);
-            }
-            else if (SystemNames.Contains(name)
-                     || name.StartsWith("Program Files", StringComparison.OrdinalIgnoreCase))
-            {
-                Add("system", bytes, child.Id);
-            }
-            else
-            {
-                Add("other", bytes, child.Id);
-            }
-        }
-
-        var order = new[] { "applications", "appdata", "downloads", "documents", "developer", "caches", "system", "other" };
-        return order
-            .Where(k => buckets[k].Bytes > 0)
-            .Select(k => new StorageCategory(k, buckets[k].Title, buckets[k].Bytes, buckets[k].Hint, buckets[k].Node))
+    private static List<StorageCategory> Categorize(FileTree tree, string rootPath, long[] totals) =>
+        StorageClassifier.Rollup(tree, rootPath, totals)
+            .Select(t => new StorageCategory(t.Class.Id, t.Class.Title, t.Bytes, t.Class.Id,
+                t.LargestNode, t.Class.ColorHex))
             .ToList();
-        // sum(categories) == accounted root children, exclusive by
-        // construction — never inflate Other to fill the volume.
-    }
 
     /// <summary>
     /// Folder mode: one category per file type, biggest first, then

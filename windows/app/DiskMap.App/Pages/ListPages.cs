@@ -28,11 +28,91 @@ public abstract class ListPage : UserControl
 
     private int _generation;
 
+    /// <summary>
+    /// The page's selection bar, pinned under the scrolling content — the
+    /// "Select all · N selected · Add Selected to Cleanup" actions stay on
+    /// screen however long the list is, instead of sitting after its last
+    /// row. Empty on pages without selectable rows.
+    /// </summary>
+    protected readonly ContentControl ActionBar = new();
+
     protected ListPage()
     {
         Scroller.Content = Root;
-        Content = Scroller;
+        var dock = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(ActionBar, Dock.Bottom);
+        dock.Children.Add(ActionBar);
+        dock.Children.Add(Scroller);
+        Content = dock;
         ModelEvents.WhileLoaded(this, Refresh);
+    }
+
+    /// <summary>
+    /// The shared selection bar: a Select-all checkbox over everything the
+    /// page currently shows, the running selection, and one primary
+    /// "Add Selected to Cleanup". <paramref name="extra"/> buttons sit
+    /// before it (Copy Path, Reveal…).
+    /// </summary>
+    protected static Border SelectionBar(int selectable, int selected, long selectedBytes,
+        Action selectAll, Action clear, Action addSelected, params FrameworkElement[] extra)
+    {
+        var dock = new DockPanel();
+        var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        var all = new CheckBox
+        {
+            IsChecked = selectable > 0 && selected >= selectable ? true : selected > 0 ? null : false,
+            IsEnabled = selectable > 0,
+            VerticalAlignment = VerticalAlignment.Center,
+            Content = Ui.T(selectable > 0 ? $"Select all {selectable:N0}" : "Nothing to select", 12.5, FontWeights.Medium),
+            ToolTip = "Select every row this page is showing (Ctrl+A) — Esc clears",
+        };
+        // The box reflects state; a click always means "all" unless
+        // everything is already selected.
+        all.Click += (_, _) => { if (selected >= selectable && selectable > 0) clear(); else selectAll(); };
+        left.Children.Add(all);
+        var status = Ui.Mono(selected > 0
+                ? $"  ·  {selected:N0} selected · {ByteFormat.Format(selectedBytes)}"
+                : "  ·  or tick rows",
+            11.5, null, selected > 0 ? Ui.Brush("AppForeground") : Ui.Brush("AppSubtle"));
+        status.VerticalAlignment = VerticalAlignment.Center;
+        left.Children.Add(status);
+        DockPanel.SetDock(left, Dock.Left);
+        dock.Children.Add(left);
+
+        var right = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        if (selected > 0)
+        {
+            var clearButton = Ui.Button("Clear", null, Ui.ButtonStyle.Ghost, clear);
+            clearButton.Margin = new Thickness(0, 0, 6, 0);
+            right.Children.Add(clearButton);
+        }
+        // Secondary actions only once there's something to act on.
+        if (selected > 0)
+        {
+            foreach (var e in extra)
+            {
+                e.Margin = new Thickness(0, 0, 6, 0);
+                right.Children.Add(e);
+            }
+        }
+        var add = Ui.Button(selected > 0 ? $"Add {selected:N0} to Cleanup" : "Add Selected to Cleanup",
+            Icons.Cleanup, Ui.ButtonStyle.Primary, addSelected);
+        add.IsEnabled = selected > 0;
+        right.Children.Add(add);
+        dock.Children.Add(right);
+
+        return new Border
+        {
+            Background = Ui.Brush("AppBackground"),
+            BorderBrush = Ui.Brush("AppBorder"), BorderThickness = new Thickness(0, 1, 0, 0),
+            Padding = new Thickness(Ui.PageSide, 10, Ui.PageSide, 10),
+            MinHeight = 52,
+            Child = dock,
+        };
     }
 
     internal void ResetScrollPosition() =>
@@ -118,7 +198,21 @@ public abstract class FileListPage : ListPage
 {
     private string _filterText = "";
     private string _kindFilter = "all";
+    private string _classFilter = "all";
     protected string SortMode = "largest";
+
+    /// <summary>
+    /// Set before navigating to a list page to open it on one storage
+    /// category (Overview's "Where it's going" rows use it).
+    /// </summary>
+    public static string? PendingClassFilter { get; set; }
+
+    /// <summary>What each listed row is (WSL disk, AI model, cache…) — computed with the list, off the UI thread.</summary>
+    private Dictionary<int, StorageVerdict> _verdicts = [];
+
+    private StorageVerdict VerdictFor(FileTree tree, int id, string rootPath) =>
+        _verdicts.TryGetValue(id, out var v) ? v
+            : _verdicts[id] = StorageClassifier.Classify(tree.PathOf(id, rootPath), tree.IsDirectory[id]);
 
     /// <summary>Candidate node ids for this page (already basis-aware).</summary>
     protected abstract List<int> Collect(FileTree tree, long[] totals, string rootPath);
@@ -133,7 +227,6 @@ public abstract class FileListPage : ListPage
     private readonly ContentControl _heroHost = new();
     private readonly StackPanel _toolbar = new();
     private readonly StackPanel _table = new();
-    private readonly ContentControl _bottomHost = new();
     private readonly HashSet<int> _checked = [];
     private List<int> _filtered = [];
     private readonly Dictionary<int, Border> _rowBorders = [];
@@ -144,7 +237,6 @@ public abstract class FileListPage : ListPage
         Root.Children.Add(_heroHost);
         Root.Children.Add(_toolbar);
         Root.Children.Add(_table);
-        Root.Children.Add(_bottomHost);
     }
 
     /// <summary>Optional hero content (stat cards, breakdowns) between header and toolbar.</summary>
@@ -157,7 +249,7 @@ public abstract class FileListPage : ListPage
         _heroHost.Content = null;
         _toolbar.Children.Clear();
         _table.Children.Clear();
-        _bottomHost.Content = null;
+        ActionBar.Content = null;
         var tree = Model.Tree;
         if (tree is null || Model.Totals.Length != tree.Count || Model.RootPath is not { } rootPath)
         {
@@ -169,8 +261,19 @@ public abstract class FileListPage : ListPage
         var filterText = _filterText;
         var kindFilter = _kindFilter;
         var sort = SortMode;
-        Compute(() => Collect(tree, totals, rootPath), ids =>
+        if (PendingClassFilter is { } pending) { _classFilter = pending; PendingClassFilter = null; }
+        Compute(() =>
         {
+            var ids = Collect(tree, totals, rootPath);
+            // Classify up front (bounded) so the category pills can count.
+            var verdicts = new Dictionary<int, StorageVerdict>();
+            foreach (int id in ids.Take(20_000))
+                verdicts[id] = StorageClassifier.Classify(tree.PathOf(id, rootPath), tree.IsDirectory[id]);
+            return (ids, verdicts);
+        }, collected =>
+        {
+            var ids = collected.ids;
+            _verdicts = collected.verdicts;
             _table.Children.Clear();
             _rowBorders.Clear();
             var filtered = ApplyFilters(tree, totals, ids, filterText, kindFilter, sort);
@@ -256,43 +359,26 @@ public abstract class FileListPage : ListPage
 
     private void PaintSelected() { /* per-row closures handle hover; keyboard nav repaints via _rowBorders */ }
 
-    /// <summary>The review hint or the active selection toolbar (§13).</summary>
+    /// <summary>The pinned selection bar (§13): select all, running total, add in one go.</summary>
     protected void PaintBottomBar()
     {
         var totals = Model.Totals;
         var selected = _filtered.Where(_checked.Contains).ToList();
         long selBytes = selected.Sum(id => totals[id]);
-        if (selected.Count == 0)
-        {
-            var hint = new DockPanel();
-            hint.Children.Add(Ui.Subtle("Tick items to add them to Cleanup.", 12));
-            _bottomHost.Content = new Border
-            {
-                BorderBrush = Ui.Brush("AppBorder"), BorderThickness = new Thickness(0, 1, 0, 0),
-                MinHeight = 44, Padding = new Thickness(10, 0, 10, 0), Child = hint,
-            };
-            return;
-        }
-
-        var clear = Ui.Button("Clear", null, Ui.ButtonStyle.Ghost, ClearChecked);
         var copy = Ui.Button("Copy Path", Icons.Copy, Ui.ButtonStyle.Outline, () =>
         {
             var paths = selected.Select(id => TreeExporter.QuotePathIfNeeded(Model.PathOf(id)));
             Clipboard.SetText(string.Join(Environment.NewLine, paths));
         });
-        var add = Ui.Button("Add to Cleanup", Icons.Cleanup, Ui.ButtonStyle.Primary, () =>
-        {
-            int added = 0;
-            foreach (var id in selected)
-                if (Model.Stage(id, PageName.ToLowerInvariant(), notify: false)) added++;
-            _checked.Clear();
-            foreach (var cb in EnumerateCheckBoxes()) cb.IsChecked = false;
-            PaintBottomBar();
-            if (added > 0) Model.ToastAdded(added);
-        });
-        _bottomHost.Content = Ui.BottomBar(
-            Ui.Mono($"{selected.Count} selected · {ByteFormat.Format(selBytes)}", 12, FontWeights.Medium),
-            add, clear, copy);
+        ActionBar.Content = SelectionBar(_filtered.Count, selected.Count, selBytes,
+            SelectAll, ClearChecked,
+            () =>
+            {
+                Model.ConfirmStageMany(selected, PageName.ToLowerInvariant(),
+                    $"Add {selected.Count:N0} item{(selected.Count == 1 ? "" : "s")} from {PageName} to Cleanup?");
+                ClearChecked();
+            },
+            copy);
     }
 
     private void BuildToolbar(FileTree tree, long[] totals, List<int> ids)
@@ -347,6 +433,63 @@ public abstract class FileListPage : ListPage
         };
         row.Children.Add(sort);
         _toolbar.Children.Add(row);
+
+        // Category view: what the rows are (WSL & Docker disks, AI models,
+        // code, installers…) — a second way to slice the same list.
+        var classes = ids.Where(_verdicts.ContainsKey)
+            .GroupBy(id => _verdicts[id].Class)
+            .Select(g => (Class: g.Key, Bytes: g.Sum(id => totals[id])))
+            .OrderByDescending(c => c.Class == StorageClassifier.Other ? -1 : c.Bytes)
+            .ToList();
+        if (classes.Count > 1)
+        {
+            var catRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
+            var label = Ui.MonoLabel("CATEGORY", Ui.Brush("AppSubtle"));
+            label.VerticalAlignment = VerticalAlignment.Center;
+            label.Margin = new Thickness(0, 0, 10, 4);
+            catRow.Children.Add(label);
+            void Choose(string id)
+            {
+                _classFilter = id;
+                _toolbar.Children.Clear();
+                BuildToolbar(tree, totals, ids);
+                RefreshTableOnly(tree, totals, ids);
+            }
+            // The biggest few as pills (plus the active one); the long tail
+            // in a dropdown so the toolbar stays compact.
+            const int pillCount = 7;
+            var pillClasses = classes.Take(pillCount).ToList();
+            if (classes.FindIndex(c => c.Class.Id == _classFilter) is >= pillCount and var active)
+                pillClasses.Add(classes[active]);
+            var catPills = new List<(string Id, string Label)> { ("all", "All") };
+            catPills.AddRange(pillClasses.Select(c => (c.Class.Id, $"{c.Class.Title} · {ByteFormat.Format(c.Bytes)}")));
+            foreach (var (id, text) in catPills)
+            {
+                string captured = id;
+                var pill = Ui.Pill(text, _classFilter == id, () => Choose(captured));
+                pill.Margin = new Thickness(0, 0, 6, 4);
+                catRow.Children.Add(pill);
+            }
+            var rest = classes.Skip(pillCount).Where(c => c.Class.Id != _classFilter).ToList();
+            if (rest.Count > 0)
+            {
+                var more = new ComboBox
+                {
+                    Height = 28, FontSize = Ui.Scaled(12), MinWidth = 150,
+                    Margin = new Thickness(0, 0, 0, 4), VerticalAlignment = VerticalAlignment.Center,
+                };
+                more.Items.Add(new ComboBoxItem { Content = $"{rest.Count} more categories…", Tag = "" });
+                foreach (var c in rest)
+                    more.Items.Add(new ComboBoxItem { Content = $"{c.Class.Title} · {ByteFormat.Format(c.Bytes)}", Tag = c.Class.Id });
+                more.SelectedIndex = 0;
+                more.SelectionChanged += (_, _) =>
+                {
+                    if ((more.SelectedItem as ComboBoxItem)?.Tag is string { Length: > 0 } id) Choose(id);
+                };
+                catRow.Children.Add(more);
+            }
+            _toolbar.Children.Add(catRow);
+        }
     }
 
     protected void RefreshTableOnly(FileTree tree, long[] totals, List<int> ids)
@@ -368,6 +511,8 @@ public abstract class FileListPage : ListPage
         IEnumerable<int> q = ids;
         if (kindFilter != "all")
             q = q.Where(id => FileTypes.KindOf(tree, id) == kindFilter);
+        if (_classFilter != "all")
+            q = q.Where(id => _verdicts.TryGetValue(id, out var v) && v.Class.Id == _classFilter);
         if (filterText.Trim().Length > 0)
         {
             string needle = filterText.Trim();
@@ -391,7 +536,7 @@ public abstract class FileListPage : ListPage
         var table = new StackPanel();
         var headerRow = Ui.TableRowGrid(
             new GridLength(30), new GridLength(30), new GridLength(1, GridUnitType.Star),
-            new GridLength(110), new GridLength(110), new GridLength(90), new GridLength(36));
+            new GridLength(170), new GridLength(110), new GridLength(90), new GridLength(36));
         headerRow.MinHeight = 0;
         headerRow.Height = 28;
         headerRow.Margin = new Thickness(0);
@@ -415,7 +560,7 @@ public abstract class FileListPage : ListPage
         Ui.Cell(headerRow, selectAll, 0);
         Ui.Cell(headerRow, Ui.Mono("#", 10, null, Ui.Brush("AppFaint")), 1);
         Ui.Cell(headerRow, Ui.TableHead("Name"), 2);
-        Ui.Cell(headerRow, Ui.TableHead("Type"), 3);
+        Ui.Cell(headerRow, Ui.TableHead("Category"), 3);
         Ui.Cell(headerRow, Ui.TableHead("Modified"), 4);
         Ui.Cell(headerRow, Ui.TableHead("Size"), 5, right: true);
         table.Children.Add(headerRow);
@@ -463,7 +608,7 @@ public abstract class FileListPage : ListPage
         _rowBorders[id] = outer;
         var row = Ui.TableRowGrid(
             new GridLength(30), new GridLength(30), new GridLength(1, GridUnitType.Star),
-            new GridLength(110), new GridLength(110), new GridLength(90), new GridLength(36));
+            new GridLength(170), new GridLength(110), new GridLength(90), new GridLength(36));
         outer.Child = row;
         void PaintSelected() => outer.Background =
             Model.SelectedNode == id ? Ui.Brush("AppRowSelected") : Brushes.Transparent;
@@ -487,7 +632,7 @@ public abstract class FileListPage : ListPage
                 ? $"{Model.DisplayPath(id)}  ·  cloud-only — opening downloads it"
                 : Model.DisplayPath(id), 26);
         Ui.Cell(row, nameCell, 2);
-        Ui.Cell(row, Ui.KindBadge(kind), 3);
+        Ui.Cell(row, CategoryBadge(VerdictFor(tree, id, rootPath), kind), 3);
         Ui.Cell(row, Ui.Mono(Ui.RelativeDay(tree.ModifiedDay[id]), 11, null, Ui.Brush("AppSubtle")), 4);
         Ui.Cell(row, Ui.Mono(ByteFormat.Format(totals[id]), 12), 5, right: true);
         Ui.Cell(row, Ui.MoreButton(() => OpenRowMenu(outer, tree, id)), 6, right: true);
@@ -507,6 +652,25 @@ public abstract class FileListPage : ListPage
         outer.MouseEnter += (_, _) => { if (Model.SelectedNode != id) outer.Background = Ui.Brush("AppHover"); };
         outer.MouseLeave += (_, _) => PaintSelected();
         return outer;
+    }
+
+    /// <summary>
+    /// The row's category: the storage class in its color (⚠ and a tooltip
+    /// for risky ones — a WSL distro, an app, a browser profile); plain
+    /// rows that no rule recognizes fall back to the file-kind badge.
+    /// </summary>
+    private static FrameworkElement CategoryBadge(StorageVerdict verdict, string kind)
+    {
+        if (verdict.Class == StorageClassifier.Other) return Ui.KindBadge(kind);
+        var color = ((SolidColorBrush)Ui.Hex(verdict.Class.ColorHex)).Color;
+        bool risky = verdict.Advice is CleanupAdvice.Warn or CleanupAdvice.Never;
+        var badge = Ui.Badge((risky ? "⚠ " : "") + verdict.Class.Title,
+            risky ? Ui.Brush("AppWarning") : new SolidColorBrush(color),
+            risky ? Ui.Brush("AppWarningBg") : Ui.Tint(color, 36));
+        badge.HorizontalAlignment = HorizontalAlignment.Left;
+        if (verdict.Note is not null || verdict.Instead is not null)
+            badge.ToolTip = string.Join("\n\n", new[] { verdict.Note, verdict.Instead }.Where(t => t is not null));
+        return badge;
     }
 
     private void OpenRowMenu(UIElement anchor, FileTree tree, int id)
@@ -1474,9 +1638,16 @@ public sealed class OverviewPage : ListPage
         List<(string Name, long Bytes, Brush Brush, Action? Go)> rows = [];
         if (cats is { Count: > 0 })
         {
-            foreach (var cat in cats.Take(8))
+            foreach (var cat in cats.Take(18))
             {
-                Action? go = cat.NodeId is { } nodeId
+                bool isClass = StorageClassifier.All.Any(c => c.Id == cat.Key);
+                // Classified rows open the list on that category: file-shaped
+                // classes on Biggest Files, folder-shaped ones on Biggest Folders.
+                string listPage = cat.Key is "installers" or "ai" or "media" or "vms" or "downloads" or "documents"
+                    ? "Biggest Files" : "Biggest Folders";
+                Action? go = isClass
+                    ? () => { FileListPage.PendingClassFilter = cat.Key; Model.ShowPage(listPage); }
+                    : cat.NodeId is { } nodeId
                     ? () => Model.Visualize(nodeId)
                     : cat.FileKind is { } kind
                         ? () => { Model.SearchQuery = $"kind:{kind}"; Model.ShowPage("Find"); }
