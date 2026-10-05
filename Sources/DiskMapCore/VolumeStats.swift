@@ -8,6 +8,11 @@ public struct VolumeStats: Sendable, Equatable {
     public var totalBytes: UInt64
     public var freeBytes: UInt64
     public var usedBytes: UInt64
+    /// Space macOS can reclaim on demand (purgeable: caches, iCloud copies,
+    /// some snapshots). Finder's "available" is `freeBytes` plus this, so
+    /// it reads higher than statfs — 84.35 GB against 74.55 GB measured on a
+    /// real Mac. 0 when the system doesn't say.
+    public var purgeableBytes: UInt64 = 0
 
     public var usedFraction: Double {
         guard totalBytes > 0 else { return 0 }
@@ -25,7 +30,9 @@ public struct VolumeStats: Sendable, Equatable {
         self.usedBytes = usedBytes
     }
 
-    public static func forPath(_ path: String) -> VolumeStats? {
+    /// `includePurgeable` asks the system for purgeable space too: 20–90 ms
+    /// measured, so only off the main thread (Overview's build).
+    public static func forPath(_ path: String, includePurgeable: Bool = false) -> VolumeStats? {
         if let fixed { return fixed }
         var fs = statfs()
         let rc = path.withCString { statfs($0, &fs) }
@@ -46,6 +53,13 @@ public struct VolumeStats: Sendable, Equatable {
         } else {
             display = URL(fileURLWithPath: name).lastPathComponent
         }
-        return VolumeStats(volumeName: display, totalBytes: total, freeBytes: free, usedBytes: used)
+        var stats = VolumeStats(volumeName: display, totalBytes: total, freeBytes: free, usedBytes: used)
+        // The same figure Finder shows as available; local, no I/O beyond a
+        // volume query.
+        guard includePurgeable else { return stats }
+        let important = (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
+            .volumeAvailableCapacityForImportantUsage ?? 0
+        if important > 0, UInt64(important) > free { stats.purgeableBytes = UInt64(important) - free }
+        return stats
     }
 }

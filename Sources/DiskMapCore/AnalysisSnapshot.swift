@@ -170,7 +170,7 @@ public struct AnalysisSnapshot: Sendable, Equatable {
         guard tree.count > 0, totals.count == tree.count else {
             return .empty
         }
-        let volume = VolumeStats.forPath(root.path)
+        let volume = VolumeStats.forPath(root.path, includePurgeable: true)
         let scanned = totals[0]
         let mode = CategoryMode.detect(tree: tree, root: root)
         let cats: [StorageCategory]

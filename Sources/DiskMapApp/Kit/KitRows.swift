@@ -257,6 +257,37 @@ struct FileInspector: View {
 
 /// Used by every page that inspects a folder: header, composition, largest
 /// files, why, safety, actions.
+/// A folder whose size is mostly cloned copies (clone accounting off): what
+/// it really takes up, and the way to exact figures.
+struct CloneCopiesNote: View {
+    @ObservedObject var model: ScanModel
+    var counted: Int64
+    var shared: Int64
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            MonoLabel("Shared copies")
+            Text(Self.sentence(counted: counted, shared: shared))
+                .font(DiskMapType.secondary)
+                .foregroundStyle(DiskMapTheme.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Count clones once (rescan)") { model.countClonesOnce() }
+                .buttonStyle(LinkButtonStyle())
+                .font(DiskMapType.secondary)
+                .disabled(model.isScanning)
+                .help(CloneAccounting.explanation(.refcount))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("clone-copies-note")
+    }
+
+    static func sentence(counted: Int64, shared: Int64) -> String {
+        (Double(shared) >= Double(counted) * 0.5 ? "Most" : "Part") + " of this is APFS clones — copies that share one set of blocks. "
+            + "\(ByteFormat.string(counted)) of files, but only about \(ByteFormat.string(max(0, counted - shared))) on disk."
+    }
+}
+
 struct FolderInspector: View {
     @ObservedObject var model: ScanModel
     let tree: FileTree
@@ -319,6 +350,9 @@ struct FolderInspector: View {
             }
             Hairline()
             FactRow(label: "Location", value: insight.displayPath)
+            if let shared = model.cloneSharedBytes(of: id) {
+                CloneCopiesNote(model: model, counted: model.allocatedTotals[Int(id)], shared: shared)
+            }
             if !insight.composition.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     MonoLabel("Made of")

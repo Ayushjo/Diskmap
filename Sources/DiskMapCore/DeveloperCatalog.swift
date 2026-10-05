@@ -468,6 +468,12 @@ public enum DeveloperCatalog {
             return rule.projectFromParent
         case "xcode":
             return lower.contains("/developer/") || lower.contains("xcode")
+        // Common words: only the tools' own cache locations, never a project
+        // or package that happens to share the name (node_modules/pnpm).
+        case "pnpm":
+            return lower.hasSuffix("/library/pnpm") || lower.hasSuffix("/.local/share/pnpm")
+        case "uv", "pip", "rattler", "ccache", "go-build", "homebrew":
+            return lower.hasSuffix("/library/caches/\(name)") || lower.hasSuffix("/.cache/\(name)")
         default:
             return true
         }
@@ -503,6 +509,12 @@ public enum DeveloperCatalog {
         case "coresimulator": return "iOS Simulators"
         case "node_modules": return "node_modules"
         case ".docker": return "Docker data"
+        case "pnpm": return "pnpm store"
+        case "rattler": return "pixi / conda package cache"
+        case "uv": return "uv cache"
+        case "pip": return "pip cache"
+        case "go-build": return "Go build cache"
+        case "homebrew": return "Homebrew downloads"
         default: return name
         }
     }

@@ -4,7 +4,7 @@
       "id": "video",
       "label": "Video",
       "color": "#C78797",
-      "extensions": ["mp4","mov","m4v","avi","mkv","wmv","flv","webm","mpeg","mpg","m2ts","ts"]
+      "extensions": ["mp4","mov","m4v","avi","mkv","wmv","flv","webm","mpeg","mpg","m2ts","mts","3gp"]
     },
     {
       "id": "audio",
@@ -16,7 +16,7 @@
       "id": "image",
       "label": "Image",
       "color": "#8FACC0",
-      "extensions": ["png","jpg","jpeg","gif","webp","heic","heif","tif","tiff","bmp","svg","ico","raw","cr2","nef","dng"]
+      "extensions": ["png","jpg","jpeg","gif","webp","heic","heif","tif","tiff","bmp","svg","ico","cr2","cr3","nef","dng","arw","orf","rw2","raf"]
     },
     {
       "id": "document",

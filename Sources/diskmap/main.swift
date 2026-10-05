@@ -183,6 +183,18 @@ case "scan":
         if clones.bytes > 0 {
             say("  (APFS clones: \(HumanUnits.format(clones.bytes)) in \(clones.cloneCount.formatted()) copies counted once)")
         }
+        if !tree.hasSharingInfo {
+            let started = Date()
+            let survey = CloneSurvey.run(tree: tree, root: root, allocated: totals.allocated)
+            if let shared = survey.sharedBytes(of: 0, total: totals.allocated[0]) {
+                say("  (about \(HumanUnits.format(shared)) of that is cloned copies counted again — rerun with --clones for the exact figure;"
+                    + " \(survey.filesChecked.formatted()) files sampled in \(String(format: "%.2f", Date().timeIntervalSince(started))) s)")
+                for folder in survey.inflatedFolders(tree: tree, totals: totals.allocated) {
+                    let size = totals.allocated[Int(folder.id)]
+                    say("    \(display(tree.path(of: folder.id, root: root).path)): \(HumanUnits.format(size)) of files, about \(HumanUnits.format(size - folder.shared)) on disk")
+                }
+            }
+        }
         say("\nLargest folders")
         for child in children where tree.isDirectory[Int(child.id)] {
             say("  \(HumanUnits.format(child.size).padding(toLength: 10, withPad: " ", startingAt: 0))  \(display(tree.path(of: child.id, root: root).path))")
@@ -278,7 +290,7 @@ case "dup":
             "schema": 1, "root": root.path,
             "groups": sorted.map { g -> [String: Any] in
                 [
-                    "sizeEach": g.sizeEach, "sharesStorage": g.sharesStorage,
+                    "sizeEach": g.sizeEach, "sharesStorage": g.sharesStorage, "physicalCopies": g.physicalCopies,
                     "reclaimableIfAllButOneRemoved": g.reclaimableBytes(deleting: Set(g.fileIDs.dropFirst()), onDisk: onDisk),
                     "paths": g.fileIDs.map { result.tree.path(of: $0, root: root).path },
                 ]
@@ -288,7 +300,9 @@ case "dup":
         let total = sorted.reduce(Int64(0)) { $0 + $1.reclaimableBytes(deleting: Set($1.fileIDs.dropFirst()), onDisk: onDisk) }
         say("\(sorted.count) duplicate group\(sorted.count == 1 ? "" : "s"); keeping one of each frees \(HumanUnits.format(total))")
         for g in sorted.prefix(25) {
-            say("\n\(HumanUnits.format(g.sizeEach)) × \(g.fileIDs.count)\(g.sharesStorage ? "  (APFS clones — share storage; frees nothing unless all go)" : "")")
+            let note = g.sharesStorage ? "  (APFS clones — share storage; frees nothing unless all go)"
+                : g.cloneSets.isEmpty ? "" : "  (stored \(g.physicalCopies) times — some copies are APFS clones of each other)"
+            say("\n\(HumanUnits.format(g.sizeEach)) × \(g.fileIDs.count)\(note)")
             for id in g.fileIDs { say("  \(display(result.tree.path(of: id, root: root).path))") }
         }
     }

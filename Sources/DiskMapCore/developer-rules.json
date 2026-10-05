@@ -336,6 +336,102 @@
       "projectFromParent": false,
       "rebuildCost": "networked",
       "whyLarge": "Docker Desktop’s data: one disk image holding every image, container and volume. Often the largest single file on a developer’s Mac."
+    },
+    {
+      "names": [
+        "pnpm"
+      ],
+      "category": "caches",
+      "ecosystem": "node",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "pnpm's global content-addressable store (~/Library/pnpm). Projects hard-link or clone from it; pnpm store prune removes unused packages.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        "rattler"
+      ],
+      "category": "caches",
+      "ecosystem": "python",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Package cache for pixi / rattler (conda packages). Re-downloaded when an environment needs them.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        "ccache"
+      ],
+      "category": "caches",
+      "ecosystem": "other",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Compiler cache: speeds up rebuilds of C/C++ projects. Safe to clear; the next builds are slower.",
+      "rebuildCost": "cheap"
+    },
+    {
+      "names": [
+        "uv"
+      ],
+      "category": "caches",
+      "ecosystem": "python",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "uv's package cache (wheels and source archives). Re-downloaded when needed.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        "pip"
+      ],
+      "category": "caches",
+      "ecosystem": "python",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "pip's download and wheel cache. Re-downloaded when needed.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        "go-build"
+      ],
+      "category": "caches",
+      "ecosystem": "other",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Go build cache. Rebuilt on the next go build.",
+      "rebuildCost": "cheap"
+    },
+    {
+      "names": [
+        "Homebrew"
+      ],
+      "category": "caches",
+      "ecosystem": "other",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Downloaded Homebrew bottles and source archives. brew cleanup removes old ones.",
+      "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        ".pixi"
+      ],
+      "category": "dependencies",
+      "ecosystem": "python",
+      "reclaimability": "reviewFirst",
+      "isToolRoot": false,
+      "projectFromParent": true,
+      "whyLarge": "A pixi project's environments (conda packages). Recreated with pixi install.",
+      "rebuildCost": "networked"
     }
   ],
   "_rebuildCost": "free: regenerated automatically and offline the next time the tool runs. cheap: an offline rebuild (CPU time). networked: re-downloaded from a registry or vendor. A dependency folder whose project has no lockfile is reported as networked-unpinned: reinstalling may not reproduce what you have.",

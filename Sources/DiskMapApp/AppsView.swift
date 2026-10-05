@@ -487,11 +487,12 @@ private enum AppMetadata {
         let version = bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         var lastUsed: Date?
         var installed: Date?
-        if let values = try? url.resourceValues(forKeys: [.contentAccessDateKey, .creationDateKey, .contentModificationDateKey]) {
-            lastUsed = values.contentAccessDate
+        if let values = try? url.resourceValues(forKeys: [.creationDateKey]) {
             installed = values.creationDate
         }
-        // Spotlight last-used when available
+        // Spotlight's last-used date only. The bundle folder's access date is
+        // not a launch: on a real Mac it showed iMovie, never opened, as
+        // "used 1 y ago" (its install date). Unknown stays unknown.
         if let item = MDItemCreate(nil, url.path as CFString),
            let spot = MDItemCopyAttribute(item, kMDItemLastUsedDate) as? Date {
             lastUsed = spot

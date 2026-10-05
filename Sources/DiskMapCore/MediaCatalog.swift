@@ -323,6 +323,9 @@ public struct MediaCatalogResult: Sendable, Equatable {
     public var candidates: [MediaCandidate]
     public var summary: MediaSummary
     public var opportunities: [MediaCandidate]
+    /// More media matched than `limit`: `candidates` and `summary` cover the
+    /// largest `limit` only, and the UI must say so.
+    public var isTruncated = false
 
     public static let empty = MediaCatalogResult(candidates: [], summary: .empty, opportunities: [])
 
@@ -448,6 +451,10 @@ public enum MediaCatalog {
             var classified = classify(fileName: name, isDirectory: isDir)
             if classified == nil, isDir, finalCut[i] { classified = .project }
             guard let kind = classified else { continue }
+            // ".ts" is MPEG transport stream video and TypeScript source; no
+            // TypeScript file is anywhere near 20 MB (25k of them were listed
+            // as video on a real Desktop).
+            if kind == .video, name.lowercased().hasSuffix(".ts"), bytes < 20_000_000 { continue }
             // For directories, only keep media projects (already gated in classify).
             if isDir, kind != .project { continue }
             matches.append((id, bytes, kind, name))
@@ -496,7 +503,9 @@ public enum MediaCatalog {
         let summary = summarize(hits)
         let opportunities = Array(hits.filter { $0.bytes >= 1_000_000_000 }.prefix(5))
         let opp = opportunities.isEmpty ? Array(hits.prefix(5)) : opportunities
-        return MediaCatalogResult(candidates: hits, summary: summary, opportunities: opp)
+        var result = MediaCatalogResult(candidates: hits, summary: summary, opportunities: opp)
+        result.isTruncated = hits.count >= limit && matches.count > limit
+        return result
     }
 
     public static func classifyStatus(kind: MediaKind, ageDays: Int32, name: String) -> MediaStatus {

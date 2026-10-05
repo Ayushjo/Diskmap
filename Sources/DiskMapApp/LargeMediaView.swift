@@ -74,7 +74,9 @@ struct LargeMediaView: View {
             VStack(alignment: .leading, spacing: 18) {
                 PageHeader(eyebrow: "Clean", title: "Large Media",
                            subtitle: "The videos, photos, audio and media projects using the most space.") {
-                    HeaderSummary(parts: [ByteFormat.string(summary.totalBytes), countLabel(summary.totalCount, "file")])
+                    HeaderSummary(parts: catalog.isTruncated
+                                  ? ["largest " + countLabel(summary.totalCount, "file"), ByteFormat.string(summary.totalBytes)]
+                                  : [ByteFormat.string(summary.totalBytes), countLabel(summary.totalCount, "file")])
                 }
                 if filtersAreDefault && sort == .largest && !catalog.opportunities.isEmpty {
                     thumbnailStrip

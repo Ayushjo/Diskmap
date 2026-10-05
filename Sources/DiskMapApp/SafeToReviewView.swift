@@ -139,7 +139,7 @@ struct SafeToReviewView: View {
     static func shortTitle(_ category: ReviewableCategory) -> String {
         switch category {
         case .caches: return "Caches"
-        case .buildArtifacts: return "Build output"
+        case .buildArtifacts: return "Build & dependencies"
         case .packageCaches: return "Packages"
         case .other: return "Other"
         }

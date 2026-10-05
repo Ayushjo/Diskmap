@@ -11,7 +11,7 @@ public enum ReviewableCategory: String, Sendable, Equatable, CaseIterable, Ident
     public var title: String {
         switch self {
         case .caches: return "Caches"
-        case .buildArtifacts: return "Build artifacts"
+        case .buildArtifacts: return "Build & dependencies"
         case .packageCaches: return "Package caches"
         case .other: return "Other reviewable"
         }
@@ -417,6 +417,7 @@ public enum ReviewableCatalog {
         case .buildArtifacts:
             if name == "node_modules" { return "Project dependencies" }
             if name == "target" { return "Rust / Cargo build output" }
+            if name == ".venv" || name == "venv" { return "Python environment (installed packages)" }
             return "Generated development output"
         case .packageCaches: return "Downloaded package data"
         case .other: return "Reviewable storage"
