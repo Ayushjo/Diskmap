@@ -95,6 +95,12 @@ struct OldDownloadsView: View {
                         : "Try another age, size or type."
                 )
             } else {
+                SelectAllBar(
+                    shownCount: shown.count, checkedCount: checkedItems.count, checkedBytes: checkedBytes,
+                    onSelectAll: { checked = Set(shown.map(\.nodeID)) },
+                    onClear: { checked.removeAll() },
+                    note: visible.count > shown.count ? "Largest 200 of \(visible.count.formatted()) shown — narrow the filters for the rest" : nil
+                )
                 list
             }
             ReviewFooter(

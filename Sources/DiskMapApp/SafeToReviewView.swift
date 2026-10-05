@@ -81,6 +81,16 @@ struct SafeToReviewView: View {
                                       : "Try another category, or clear the search.",
                                   dusty: targets.isEmpty ? .proud : nil)
             } else {
+                SelectAllBar(
+                    shownCount: visible.filter { !$0.isProtected }.count,
+                    checkedCount: checkedTargets.count,
+                    checkedBytes: checkedTargets.reduce(0) { $0 + $1.bytes },
+                    onSelectAll: { checked = Set(visible.filter { !$0.isProtected }.map(\.id)) },
+                    onClear: { checked.removeAll() },
+                    quickTitle: "Select generally safe",
+                    quickEnabled: visible.contains(where: \.isGenerallySafe),
+                    onQuick: { checked = Set(visible.filter(\.isGenerallySafe).map(\.id)) }
+                )
                 list
             }
             ReviewSelectionFooter(
@@ -139,7 +149,7 @@ struct SafeToReviewView: View {
     static func shortTitle(_ category: ReviewableCategory) -> String {
         switch category {
         case .caches: return "Caches"
-        case .buildArtifacts: return "Build output"
+        case .buildArtifacts: return "Build & dependencies"
         case .packageCaches: return "Packages"
         case .other: return "Other"
         }

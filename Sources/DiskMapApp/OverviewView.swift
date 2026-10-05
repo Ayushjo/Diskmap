@@ -41,6 +41,7 @@ struct OverviewView: View {
             VStack(alignment: .leading, spacing: DiskMapSpace.xl) {
                 hero
                 unreadableNotice
+                cloneNotice
                 whereGoing
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: DiskMapSpace.xl) {
@@ -75,9 +76,13 @@ struct OverviewView: View {
                     .contentTransition(reduceMotion ? .identity : .numericText())
                     .accessibilityIdentifier("overview-free")
                 HStack(spacing: DiskMapSpace.sm) {
-                    Text("of \(ByteFormat.string(Int64(vol.totalBytes)))  ·  \(pct(vol.usedFraction)) used")
+                    Text("of \(ByteFormat.string(Int64(vol.totalBytes)))  ·  \(pct(vol.usedFraction)) used"
+                         + (vol.purgeableBytes >= 1_000_000_000 ? "  ·  +\(ByteFormat.string(Int64(vol.purgeableBytes))) purgeable" : ""))
                         .font(DiskMapType.figure)
                         .foregroundStyle(DiskMapTheme.ink2)
+                        .help(vol.purgeableBytes >= 1_000_000_000
+                              ? "macOS can free another \(ByteFormat.string(Int64(vol.purgeableBytes))) on its own when space runs low (caches, iCloud copies, snapshots), which is why Finder shows \(ByteFormat.string(Int64(vol.freeBytes + vol.purgeableBytes))) available."
+                              : "")
                     if snap.health != .healthy {
                         SafetyLabel(level: nil, title: snap.health.title, tint: healthColor)
                     }
@@ -158,7 +163,7 @@ struct OverviewView: View {
             }
         } else if model.rootURL.map({ StorageSharing.isAPFS($0.path) }) == true {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Cloned files are counted once per copy, so these totals can be higher than the disk really uses.")
+                Text(cloneOffText)
                     .font(DiskMapType.secondary)
                     .foregroundStyle(DiskMapTheme.ink2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -168,6 +173,40 @@ struct OverviewView: View {
             }
             .accessibilityIdentifier("clone-accounting-off")
         }
+    }
+
+    /// Clone accounting off: the totals count cloned copies again, and here
+    /// is roughly how much and where (sampled after the scan, CloneSurvey).
+    @ViewBuilder
+    private var cloneNotice: some View {
+        if let total = model.allocatedTotals.first,
+           let shared = model.cloneSurvey.sharedBytes(of: 0, total: total, minimumFraction: 0.02,
+                                                      minimumBytes: 2 * 1024 * 1024 * 1024),
+           let tree = model.tree, let root = model.rootURL {
+            let folders = model.cloneSurvey.inflatedFolders(tree: tree, totals: model.allocatedTotals, limit: 3)
+            DiskMapNoticeBanner(
+                symbol: "square.on.square",
+                tint: DiskMapTheme.accent,
+                title: "About \(ByteFormat.string(shared)) is counted more than once",
+                detail: "Cloned copies share one set of blocks on disk, but this scan counts each copy in full, so some folders look far bigger than they are.",
+                examples: folders.map { folder in
+                    let counted = model.allocatedTotals[Int(folder.id)]
+                    return CanonicalPath.displayPath(absolutePath: tree.path(of: folder.id, root: root).path)
+                        + " — \(ByteFormat.string(counted)) of files, about \(ByteFormat.string(max(0, counted - folder.shared))) on disk"
+                },
+                actionTitle: model.isScanning ? nil : "Count clones once",
+                action: { model.countClonesOnce() }
+            )
+            .help(CloneAccounting.explanation(.refcount))
+            .accessibilityIdentifier("clone-copies-notice")
+        }
+    }
+
+    private var cloneOffText: String {
+        let base = "Cloned files are counted once per copy, so these totals can be higher than the disk really uses."
+        guard let total = model.allocatedTotals.first,
+              let shared = model.cloneSurvey.sharedBytes(of: 0, total: total, minimumFraction: 0) else { return base }
+        return base + " In this scan, that is about \(ByteFormat.string(shared))."
     }
 
     /// TASK-039: say when the totals are short because folders were unreadable.

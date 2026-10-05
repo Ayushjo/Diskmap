@@ -33,6 +33,30 @@ struct OldDownloadsCatalogTests {
         #expect(built.summary.bytes365 > 0)
     }
 
+    /// Found on a real home: Homebrew's own downloads cache listed as the
+    /// user's Downloads, and the header counting the 500-row cap as files.
+    @Test func libraryDownloadsAreNotUserDownloadsAndTotalsIgnoreTheCap() {
+        var tree = FileTree()
+        let root = tree.addNode(name: "Users", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1000)
+        let user = tree.addNode(name: "alex", parent: root, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1000)
+        let dl = tree.addNode(name: "Downloads", parent: user, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1000)
+        for k in 0..<5 {
+            _ = tree.addNode(name: "f\(k).zip", parent: dl, isDirectory: false, logicalSize: 2_000_000, allocatedSize: 2_000_000, modifiedDaysSinceEpoch: 900)
+        }
+        let library = tree.addNode(name: "Library", parent: user, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1000)
+        let caches = tree.addNode(name: "Caches", parent: library, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1000)
+        let brew = tree.addNode(name: "Homebrew", parent: caches, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1000)
+        let brewDownloads = tree.addNode(name: "downloads", parent: brew, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1000)
+        _ = tree.addNode(name: "bottle.tar.gz", parent: brewDownloads, isDirectory: false, logicalSize: 9_000_000, allocatedSize: 9_000_000, modifiedDaysSinceEpoch: 900)
+
+        let built = OldDownloadsCatalog.build(tree: tree, root: URL(fileURLWithPath: "/Users", isDirectory: true),
+                                              totals: tree.rollUpBoth().allocated, today: 1000, limit: 3)
+        #expect(!built.candidates.contains { $0.name == "bottle.tar.gz" })
+        #expect(built.candidates.count == 3)
+        #expect(built.summary.totalCount == 5)
+        #expect(built.summary.totalBytes == 10_000_000)
+    }
+
     @Test func filtersByAgeAndType() {
         let items = [
             OldDownloadsCandidate(

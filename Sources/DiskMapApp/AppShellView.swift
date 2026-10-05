@@ -195,6 +195,9 @@ struct AppShellView: View {
                 .layoutPriority(1)
                 .accessibilityElement(children: .combine)
             }
+            // Light / Dark / Match System, one click away (it was only in
+            // View ▸ Appearance after the Calm UI pass, and nobody found it).
+            AppearanceMenuButton()
             Button {
                 model.isCleanupQueuePresented = true
             } label: {

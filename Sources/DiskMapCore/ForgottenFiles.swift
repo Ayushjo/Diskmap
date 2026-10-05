@@ -320,6 +320,14 @@ public enum ForgottenFiles {
     }
 
     private static func isPersonalLocation(_ lower: String) -> Bool {
+        // ~/Library and /Library hold app data even when a folder inside is
+        // called "downloads" (~/Library/Caches/Homebrew/downloads was listed
+        // as forgotten files "located in Downloads").
+        if lower.hasPrefix("/library/") || lower.hasPrefix("/system/volumes/data/library/") { return false }
+        if let range = lower.range(of: "/users/") {
+            let parts = lower[range.upperBound...].split(separator: "/", maxSplits: 2)
+            if parts.count > 2, parts[1] == "library" { return false }
+        }
         // Prefer user firmlink paths and Data twins.
         let markers = [
             "/downloads/", "/movies/", "/desktop/", "/documents/",

@@ -57,6 +57,13 @@ struct AgeMapView: View {
                                       message: untouched.isEmpty ? "Every file in this scan was modified in the last year."
                                           : "Pick another age.")
                 } else {
+                    SelectAllBar(
+                        shownCount: filteredUntouched.count, checkedCount: checked.count,
+                        checkedBytes: checked.reduce(0) { $0 + size($1) },
+                        onSelectAll: { checked = Set(filteredUntouched) },
+                        onClear: { checked.removeAll() },
+                        leadingInset: 8, trailingInset: 0
+                    )
                     candidateList
                     ReviewFooter(
                         checkedCount: checked.count,

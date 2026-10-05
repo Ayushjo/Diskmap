@@ -87,21 +87,18 @@ struct DuplicatesView: View {
                     dusty: model.duplicateDidRun ? .happy : nil
                 )
             } else {
+                // "All" here means every extra copy: one per group is always
+                // kept, so the box can never tick a file's last copy.
+                let extras = duplicateFileIDs.count - model.duplicateGroups.count
+                SelectAllBar(
+                    shownCount: extras, checkedCount: checked.count, checkedBytes: reclaimable,
+                    onSelectAll: { selectOtherCopies() },
+                    onClear: { checked.removeAll() },
+                    note: "Keeps the oldest copy in each group"
+                )
+                .help("Selects every copy except the oldest in each group")
                 list
-                if checked.isEmpty {
-                    HStack {
-                        Text("Tick copies to remove, or")
-                            .font(DiskMapType.secondary)
-                            .foregroundStyle(DiskMapTheme.ink3)
-                        Button("Select extra copies") { selectOtherCopies() }
-                            .buttonStyle(LinkButtonStyle())
-                            .font(DiskMapType.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 28)
-                    .frame(height: 44)
-                    .overlay(alignment: .top) { Hairline() }
-                } else {
+                if !checked.isEmpty {
                     SelectionToolbar(
                         selectedCount: checked.count,
                         selectedBytes: reclaimable,
@@ -148,11 +145,10 @@ struct DuplicatesView: View {
             if duplicateFileIDs.contains(id), let group = model.duplicateGroups.first(where: { $0.fileIDs.contains(id) }) {
                 FileInspector(
                     model: model, tree: tree, rootURL: rootURL, id: id, size: tree.allocatedSize[Int(id)],
-                    reason: group.sharesStorage ? "Shared APFS copy" : "Duplicate copy",
-                    extraFacts: [("Copies", "\(group.fileIDs.count) with the same contents")],
-                    note: group.sharesStorage
-                        ? (label: "Shared storage", text: "These copies are APFS clones. Removing one frees nothing; the space returns only when every copy is gone.")
-                        : (label: "Same contents", text: "Every copy in this group is byte-for-byte identical. Keep one."),
+                    reason: group.cloneSet(of: id) != nil ? "Shared APFS copy" : "Duplicate copy",
+                    extraFacts: [("Copies", "\(group.fileIDs.count) with the same contents"
+                                  + (group.physicalCopies < group.fileIDs.count ? ", stored \(countLabel(group.physicalCopies, "time"))" : ""))],
+                    note: Self.copyNote(group, id),
                     // Keep at least one copy: no staging the last one left.
                     allowStage: !otherCopiesStaged(id, in: group)
                 )
@@ -223,17 +219,30 @@ struct DuplicatesView: View {
         }
     }
 
+    /// What removing this copy does, given the clone sets in its group.
+    static func copyNote(_ group: DuplicateGroup, _ id: Int32) -> (label: String, text: String) {
+        if group.sharesStorage {
+            return ("Shared storage", "These copies are APFS clones. Removing one frees nothing; the space returns only when every copy is gone.")
+        }
+        if let set = group.cloneSet(of: id) {
+            return ("Shared storage", "This copy is an APFS clone of \(countLabel(set.count - 1, "other copy", "other copies")) here. Removing it frees nothing unless they go too.")
+        }
+        return ("Same contents", "Every copy in this group is byte-for-byte identical. Keep one.")
+    }
+
     private func groupSection(_ group: DuplicateGroup) -> some View {
         let keeper = group.defaultKeeperID { tree.modifiedDay[Int($0)] }
         let title = countLabel(group.fileIDs.count, "copy", "copies") + "  ·  " + diskByteString(onDisk(group)) + " each"
-            + (group.sharesStorage ? "  ·  APFS clone" : "")
+            + (group.sharesStorage ? "  ·  APFS clone" : group.cloneSets.isEmpty ? "" : "  ·  stored \(countLabel(group.physicalCopies, "time"))")
         return VStack(alignment: .leading, spacing: 0) {
             SectionHeader(label: title)
                 .padding(.horizontal, 10)
                 .padding(.top, 18)
                 .padding(.bottom, 4)
-            if group.sharesStorage {
-                Text("Shares storage: removing one copy frees nothing until every copy is gone.")
+            if !group.cloneSets.isEmpty {
+                Text(group.sharesStorage
+                     ? "Shares storage: removing one copy frees nothing until every copy is gone."
+                     : "Some copies are APFS clones of each other: removing one of them frees nothing until its clones go too.")
                     .font(DiskMapType.secondary)
                     .foregroundStyle(DiskMapTheme.ink3)
                     .padding(.horizontal, 10)
@@ -330,15 +339,16 @@ struct DuplicatesView: View {
         for group in model.duplicateGroups {
             let selected = group.fileIDs.filter { checked.contains($0) }
             guard !selected.isEmpty else { continue }
-            let key = group.sharesStorage ? "clone-\(group.fileIDs.map(String.init).joined(separator: "-"))" : nil
             for id in selected {
                 let url = tree.path(of: id, root: rootURL)
+                // Each clone set is its own shared-storage group.
+                let set = group.cloneSet(of: id)
                 requests.append(CleanupStageRequest(
                     url: url,
                     size: tree.allocatedSize[Int(id)],
-                    reason: group.sharesStorage ? "Shared APFS copy" : "Duplicate copy",
-                    sharesStorageGroup: key,
-                    groupCopyCount: group.fileIDs.count
+                    reason: set != nil ? "Shared APFS copy" : "Duplicate copy",
+                    sharesStorageGroup: set.map { "clone-" + $0.map(String.init).joined(separator: "-") },
+                    groupCopyCount: set?.count ?? group.fileIDs.count
                 ))
             }
         }

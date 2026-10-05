@@ -249,7 +249,9 @@ public enum OldDownloadsCatalog {
         root: URL,
         totals: [Int64],
         today: Int32 = AgeMap.today(),
-        limit: Int = 500
+        // Every match is built anyway (the summary needs them); the screen
+        // draws 200 rows. A 500 cap made its filters count 500 of 810.
+        limit: Int = 20_000
     ) -> OldDownloadsCatalogResult {
         guard totals.count == tree.count else { return .empty }
 
@@ -261,6 +263,11 @@ public enum OldDownloadsCatalog {
         let underDownloads = tree.folderChainFlags(rootMatches: isUnderDownloads(root.path)) {
             $0.lowercased().hasPrefix("downloads")
         }
+        // A "Downloads" folder inside a Library is a tool's own cache
+        // (~/Library/Caches/Homebrew/downloads), not the user's Downloads.
+        let underLibrary = tree.folderChainFlags(rootMatches: root.path.lowercased().contains("/library")) {
+            $0.lowercased() == "library"
+        }
         var hits: [OldDownloadsCandidate] = []
         for id in 0..<Int32(tree.count) {
             let i = Int(id)
@@ -271,6 +278,7 @@ public enum OldDownloadsCatalog {
             let parentID = Int(tree.parent[i])
             let inFolder = parentID >= 0 && parentID < underDownloads.count && underDownloads[parentID]
             guard inFolder || name.lowercased().hasPrefix("downloads") else { continue }
+            if parentID >= 0, parentID < underLibrary.count, underLibrary[parentID] { continue }
             let abs = tree.path(of: id, root: root).path
             let day = tree.modifiedDay[i]
             let age = day > 0 ? max(0, today - day) : 0
@@ -300,8 +308,10 @@ public enum OldDownloadsCatalog {
         }
 
         hits.sort { $0.bytes > $1.bytes }
-        if hits.count > limit { hits = Array(hits.prefix(limit)) }
+        // Totals cover every match; only the list is capped (the header
+        // said "500 files" for the cap on a Downloads holding 52k items).
         let summary = summarize(hits)
+        if hits.count > limit { hits = Array(hits.prefix(limit)) }
         return OldDownloadsCatalogResult(candidates: hits, summary: summary)
     }
 

@@ -188,8 +188,11 @@ struct BiggestFoldersView: View {
         let stage: (() -> Void)? = safety.level == .protected ? nil : {
             model.stageRow(path: abs, size: row.size, reason: "Biggest folder: " + name)
         }
-        let subtitle = isDir ? countLabel(fileCount, "file") + " · " + countLabel(folderCount, "folder")
+        var subtitle = isDir ? countLabel(fileCount, "file") + " · " + countLabel(folderCount, "folder")
             : FileKind.classify(fileName: name, path: abs).title
+        if isDir, let shared = model.cloneSharedBytes(of: row.id), i < model.allocatedTotals.count {
+            subtitle += " · about \(ByteFormat.string(max(0, model.allocatedTotals[i] - shared))) on disk (shared copies)"
+        }
         return HStack(spacing: 0) {
             Button {
                 selectedID = row.id

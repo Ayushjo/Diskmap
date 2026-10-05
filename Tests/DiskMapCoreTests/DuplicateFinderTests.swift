@@ -29,6 +29,33 @@ struct DuplicateFinderTests {
         #expect(copies.groups[0].reclaimableBytes(deleting: [3]) == fixture.byteCount)
     }
 
+    /// A clone family and a plain copy of the same file are one group (on a
+    /// real Desktop, pnpm clones and npm copies of typescript.js were split
+    /// into two groups and the reclaim figure lost a copy).
+    @Test func cloneFamilyAndPlainCopyAreOneGroup() async throws {
+        let fixture = try DuplicateFixture()
+        defer { fixture.tearDown() }
+
+        let result = try await DuplicateFinder.scan([
+            (0, URL(fileURLWithPath: fixture.original), fixture.byteCount),
+            (1, URL(fileURLWithPath: fixture.clone), fixture.byteCount),
+            (2, URL(fileURLWithPath: fixture.unrelated), fixture.byteCount),
+        ])
+        #expect(result.fullContentHashCalls == 2, "one hash for the family, one for the copy")
+        #expect(result.groups.count == 1)
+        let group = try #require(result.groups.first)
+        #expect(group.fileIDs == [0, 1, 2])
+        #expect(group.cloneSets == [[0, 1]])
+        #expect(group.sharesStorage == false)
+        #expect(group.physicalCopies == 2)
+        #expect(group.cloneSet(of: 1) == [0, 1])
+        #expect(group.cloneSet(of: 2) == nil)
+        #expect(group.reclaimableBytes(deleting: [2]) == fixture.byteCount)
+        #expect(group.reclaimableBytes(deleting: [1]) == 0, "its clone still holds the blocks")
+        #expect(group.reclaimableBytes(deleting: [0, 1]) == fixture.byteCount)
+        #expect(group.reclaimableBytes(deleting: [1, 2]) == fixture.byteCount)
+    }
+
     @Test func cowDivergedCloneIsHashedAndNotGrouped() async throws {
         let fixture = try DuplicateFixture()
         defer { fixture.tearDown() }

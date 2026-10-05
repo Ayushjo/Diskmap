@@ -5,28 +5,52 @@ public struct DuplicateGroup: Sendable, Equatable {
     public let hash: String
     public let fileIDs: [Int32]
     public let sizeEach: Int64
+    /// Members that are APFS clones of each other (sorted ids, two or more
+    /// each). A clone set is ONE physical copy: its blocks stay until every
+    /// member is gone. Files in no set occupy their own blocks.
+    public let cloneSets: [[Int32]]
+
     /// True when every file shares one physical extent map. Deleting one
     /// copy does not free `sizeEach` — the blocks stay until the last
     /// copy in this group is gone.
-    public let sharesStorage: Bool
+    public var sharesStorage: Bool {
+        cloneSets.count == 1 && cloneSets[0].count == fileIDs.count
+    }
 
-    public init(hash: String, fileIDs: [Int32], sizeEach: Int64, sharesStorage: Bool) {
+    /// Distinct sets of blocks among the copies.
+    public var physicalCopies: Int {
+        fileIDs.count - cloneSets.reduce(0) { $0 + $1.count - 1 }
+    }
+
+    public init(hash: String, fileIDs: [Int32], sizeEach: Int64, cloneSets: [[Int32]]) {
         self.hash = hash
         self.fileIDs = fileIDs
         self.sizeEach = sizeEach
-        self.sharesStorage = sharesStorage
+        self.cloneSets = cloneSets.map { $0.sorted() }.filter { $0.count > 1 }.sorted { $0[0] < $1[0] }
+    }
+
+    public init(hash: String, fileIDs: [Int32], sizeEach: Int64, sharesStorage: Bool) {
+        self.init(hash: hash, fileIDs: fileIDs, sizeEach: sizeEach, cloneSets: sharesStorage ? [fileIDs] : [])
+    }
+
+    /// The clone set `id` belongs to, or nil when it has its own blocks.
+    public func cloneSet(of id: Int32) -> [Int32]? {
+        cloneSets.first { $0.contains(id) }
+    }
+
+    /// Physical copies: each clone set, then each file on its own.
+    private var physicalSets: [[Int32]] {
+        let cloned = Set(cloneSets.joined())
+        return cloneSets + fileIDs.filter { !cloned.contains($0) }.map { [$0] }
     }
 
     /// Bytes a later confirm would actually free. Content copies each
     /// occupy their own blocks. Shared extents count once, and only when
-    /// every copy in the group is being deleted.
+    /// every member of that clone set is being deleted.
     public func reclaimableBytes(deleting selected: Set<Int32>) -> Int64 {
-        let removing = fileIDs.filter { selected.contains($0) }
-        guard !removing.isEmpty, sizeEach > 0 else { return 0 }
-        if sharesStorage {
-            return removing.count == fileIDs.count ? sizeEach : 0
-        }
-        return sizeEach * Int64(removing.count)
+        guard sizeEach > 0 else { return 0 }
+        let freed = physicalSets.filter { set in set.allSatisfy(selected.contains) }.count
+        return sizeEach * Int64(freed)
     }
 
     /// Same rule on the on-disk basis the treemap and cleanup queue use
@@ -36,13 +60,10 @@ public struct DuplicateGroup: Sendable, Equatable {
     /// compressed or sparse files. Callers showing a reclaim figure should use
     /// this with `tree.allocatedSize`.
     public func reclaimableBytes(deleting selected: Set<Int32>, onDisk: (Int32) -> Int64) -> Int64 {
-        let removing = fileIDs.filter { selected.contains($0) }
-        guard !removing.isEmpty else { return 0 }
-        if sharesStorage {
-            guard removing.count == fileIDs.count else { return 0 }
-            return fileIDs.map(onDisk).max() ?? 0
+        physicalSets.reduce(Int64(0)) { total, set in
+            guard set.allSatisfy(selected.contains) else { return total }
+            return total + max(0, set.map(onDisk).max() ?? 0)
         }
-        return removing.reduce(Int64(0)) { $0 + max(0, onDisk($1)) }
     }
 
     /// Oldest modified day, then lowest id. That file stays unchecked so
@@ -253,28 +274,32 @@ public enum DuplicateFinder {
         var fullContentHashCalls = 0
         for (_, collision) in byPartialHash where collision.count > 1 {
             let partitioned = partitionClones(collision)
-            for cluster in partitioned.clusters {
-                groups.append(DuplicateGroup(
-                    hash: "shared-extents",
-                    fileIDs: cluster.map(\.id).sorted(),
-                    sizeEach: size,
-                    sharesStorage: true
-                ))
+            // Only one clone family and nothing else: identical by their
+            // extent maps, no hashing needed.
+            if partitioned.needsFullHash.isEmpty, partitioned.clusters.count == 1, let cluster = partitioned.clusters.first {
+                groups.append(DuplicateGroup(hash: "shared-extents", fileIDs: cluster.map(\.id).sorted(),
+                                             sizeEach: size, cloneSets: [cluster.map(\.id)]))
+                continue
             }
-            var byFullHash: [String: [Int32]] = [:]
-            for file in partitioned.needsFullHash {
+            // Otherwise hash one member per clone family (they share blocks,
+            // so contents) and every other file, and group by contents: a
+            // family and a plain copy of the same file are one group. Kept
+            // apart, the plain copies were reported without the family, and
+            // copies in different families never met at all.
+            var byFullHash: [String: (ids: [Int32], sets: [[Int32]])] = [:]
+            let units: [[(id: Int32, url: URL)]] = partitioned.clusters + partitioned.needsFullHash.map { [$0] }
+            for unit in units {
                 try Task.checkCancellation()
+                guard let representative = unit.first else { continue }
                 fullContentHashCalls += 1
-                guard let full = try fullHash(url: file.url) else { continue }
-                byFullHash[full, default: []].append(file.id)
+                guard let full = try fullHash(url: representative.url) else { continue }
+                var entry = byFullHash[full] ?? ([], [])
+                entry.ids += unit.map(\.id)
+                if unit.count > 1 { entry.sets.append(unit.map(\.id)) }
+                byFullHash[full] = entry
             }
-            for (hash, ids) in byFullHash where ids.count > 1 {
-                groups.append(DuplicateGroup(
-                    hash: hash,
-                    fileIDs: ids.sorted(),
-                    sizeEach: size,
-                    sharesStorage: false
-                ))
+            for (hash, entry) in byFullHash where entry.ids.count > 1 {
+                groups.append(DuplicateGroup(hash: hash, fileIDs: entry.ids.sorted(), sizeEach: size, cloneSets: entry.sets))
             }
         }
         return DuplicateScanResult(groups: groups, fullContentHashCalls: fullContentHashCalls)

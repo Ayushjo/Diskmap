@@ -1042,3 +1042,35 @@ Rejected: restyling page by page without shared parts (the copies were the
 problem), a second accent for "safe" actions (green buttons read as "go"
 next to a destructive flow), and cards as the default container (hairlines
 and space separate sections; a box now means a different kind of thing).
+
+### Clone survey: sample after the walk when clone facts are off (2026-10-05)
+
+With clone accounting off (the default, because reading clone facts costs
++14% median), a real home showed `~/Library/Group Containers/…WhatsApp.shared`
+at 70.8 GB; its clones (66.75 GB in 173k copies) really used about 4 GB.
+`CloneSurvey` samples the finished tree instead of the walk: about 3,000
+byte-weighted, systematic points, one `getattrlist` (CLONE_REFCNT) per
+distinct file hit, read in parallel. A file in a family of `r` adds
+`step × (1 − 1/r)` to every folder above it. Measured: 78.9 GB estimated vs
+78.53 GB exact for the home, 66.4 vs 66.75 GB for WhatsApp, in 0.8 s
+(release, ~2,000 files read). Overview shows a notice with the inflated
+folders and "Count clones once" (turns on refcount mode and rescans);
+folder inspectors and Biggest Folders say "about X on disk". Folders need
+12 points and ≥10% / ≥512 MB shared before anything is said.
+
+### Audit against local ground truth (2026-10-05)
+
+Every screen was checked on a real home against du, find, shasum, mdls and
+statfs. Fixed: `.ts` (TypeScript) counted as Video (25k files on a Desktop);
+`.raw` (Docker.raw, 11 GB) as Image; duplicate groups split by clone family,
+so plain copies of a pnpm-cloned file lost the family and the reclaim figure
+lost a copy; Developer Storage missing pnpm's store, rattler, ccache, uv, pip,
+Go and Homebrew caches (and listing 146 packages inside them as projects);
+Old Downloads and Forgotten Files treating `~/Library/Caches/Homebrew/downloads`
+as Downloads; Old Downloads totals taken after the 500-row cap; Large Media's
+2,000-row cap shown as the file count; Applications "last used" falling back
+to the bundle's access date (an unopened iMovie showed "1 y"); Overview not
+explaining why Finder's "available" is higher (purgeable, now shown).
+Matched exactly: folder totals vs du (except tiny decmpfs-inline files, which
+count their logical size), item counts vs find, biggest files, Find queries,
+duplicate contents vs SHA-256, app bundle sizes, volume free vs df.

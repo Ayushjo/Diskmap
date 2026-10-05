@@ -35,6 +35,46 @@ struct DeveloperCatalogTests {
         #expect(built.opportunities.isEmpty == false)
     }
 
+    /// Tool caches found on a real home were missed (ccache, ~/.cache/uv) or
+    /// split into 145 fake "projects" (site-packages inside rattler's cache).
+    @Test func toolCachesAreOneItemEachAndLookalikesAreIgnored() {
+        var tree = FileTree()
+        func dir(_ name: String, _ parent: Int32) -> Int32 {
+            tree.addNode(name: name, parent: parent, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 100)
+        }
+        func file(_ parent: Int32, _ bytes: Int64) {
+            _ = tree.addNode(name: "f", parent: parent, isDirectory: false, logicalSize: bytes, allocatedSize: bytes, modifiedDaysSinceEpoch: 100)
+        }
+        let root = dir("Users", -1)
+        let user = dir("dev", root)
+        let library = dir("Library", user)
+        let caches = dir("Caches", library)
+        let rattler = dir("rattler", caches)
+        let pkgs = dir("pkgs", rattler)
+        let pkg = dir("numpy-2.0", pkgs)
+        file(dir("site-packages", pkg), 3_000_000_000)
+        file(dir("ccache", caches), 2_000_000_000)
+        let pnpm = dir("pnpm", library)
+        file(dir("node_modules", dir("store", pnpm)), 1_000_000_000)
+        file(dir("uv", dir(".cache", user)), 500_000_000)
+        // A project's own "uv" folder and the pnpm package are not tool caches.
+        let app = dir("app", user)
+        file(dir("uv", app), 400_000_000)
+        file(dir("pnpm", dir("node_modules", app)), 300_000_000)
+
+        let built = DeveloperCatalog.build(tree: tree, root: URL(fileURLWithPath: "/Users", isDirectory: true),
+                                           totals: tree.rollUpBoth().allocated)
+        let byPath = Dictionary(built.items.map { ($0.absolutePath, $0) }, uniquingKeysWith: { a, _ in a })
+        #expect(byPath["/Users/dev/Library/Caches/rattler"]?.category == .caches)
+        #expect(byPath["/Users/dev/Library/Caches/ccache"]?.reclaimability == .reclaimable)
+        #expect(byPath["/Users/dev/Library/pnpm"]?.category == .caches)
+        #expect(byPath["/Users/dev/.cache/uv"]?.category == .caches)
+        #expect(byPath["/Users/dev/app/uv"] == nil)
+        #expect(byPath["/Users/dev/app/node_modules"] != nil)
+        #expect(!built.items.contains { $0.absolutePath.contains("/rattler/") || $0.absolutePath.contains("/pnpm/") })
+        #expect(!built.projects.contains { $0.name == "numpy-2.0" })
+    }
+
     @Test func prefersOuterDirectoryOverNestedHit() {
         var tree = FileTree()
         _ = tree.addNode(name: "home", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1)

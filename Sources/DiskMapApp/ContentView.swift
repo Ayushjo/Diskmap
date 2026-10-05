@@ -178,6 +178,10 @@ final class ScanModel: ObservableObject {
     @Published var multiSelection: Set<Int32> = []
     var selectionAnchor: Int32?
     @Published var analysis: AnalysisSnapshot = .empty
+    /// With clone accounting off (the default): where cloned copies probably
+    /// inflate the totals, sampled after each scan. Allocated bytes.
+    @Published var cloneSurvey: CloneSurvey = .empty
+    private var cloneSurveyTask: Task<Void, Never>?
     /// When set, Biggest Files filters to files under this absolute path prefix.
     @Published var folderFilterPath: String? = nil
     /// Precomputed after scan — Forgotten Files must not re-walk the tree on every click.
@@ -362,6 +366,7 @@ final class ScanModel: ObservableObject {
         cachedQuickWins = prepared.quickWins
         cachedFileTypes = prepared.fileTypes
         analysis = prepared.analysis
+        startCloneSurvey(tree: scannedTree, root: url, allocated: prepared.allocated)
         // New tree: every per-screen catalog is stale. Screens rebuild theirs
         // on first visit (and any open screen immediately, via the generation).
         invalidateCatalogs()
@@ -608,6 +613,44 @@ final class ScanModel: ObservableObject {
             duplicatePhase = .cancelled
             duplicateDidRun = true
         }
+    }
+
+    /// Samples the new tree for cloned copies when the scan didn't read clone
+    /// facts. Off the main actor, after the first screen is up; ~1 s on a home.
+    private func startCloneSurvey(tree: FileTree, root: URL, allocated: [Int64]) {
+        cloneSurveyTask?.cancel()
+        cloneSurvey = .empty
+        // Deterministic harness runs skip it (it reads the live disk) unless
+        // `--clone-survey` asks for it.
+        guard !tree.hasSharingInfo,
+              !SnapshotHarness.isDeterministic || CommandLine.arguments.contains("--clone-survey") else { return }
+        let scan = scanID
+        cloneSurveyTask = Task { [weak self] in
+            let worker = Task.detached(priority: .utility) {
+                CloneSurvey.run(tree: tree, root: root, allocated: allocated, isCancelled: { Task.isCancelled })
+            }
+            let survey = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+            guard let self, !Task.isCancelled, self.scanID == scan else { return }
+            self.cloneSurvey = survey
+            if let shared = survey.sharedBytes(of: 0, total: allocated.first ?? 0) {
+                self.log("clone survey: about \(shared) bytes counted again, \(survey.filesChecked) files sampled")
+            }
+        }
+    }
+
+    /// Bytes `id` counts in full but probably occupies once (cloned copies),
+    /// or nil when the survey has nothing worth saying about it.
+    func cloneSharedBytes(of id: Int32) -> Int64? {
+        guard Int(id) < allocatedTotals.count else { return nil }
+        return cloneSurvey.sharedBytes(of: id, total: allocatedTotals[Int(id)])
+    }
+
+    /// Turns on counting each clone family once and rescans in full, so the
+    /// estimate is replaced by exact figures.
+    func countClonesOnce() {
+        UserDefaults.standard.set(SharingMode.refcount.rawValue, forKey: CloneAccounting.key)
+        guard let root = rootURL, !isScanning else { return }
+        Task { await scan(root, mode: .full) }
     }
 
     func rebuildAnalysis() {

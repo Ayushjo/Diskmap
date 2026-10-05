@@ -35,6 +35,22 @@ struct ForgottenFilesTests {
         #expect(hit?.isReviewable == true)
     }
 
+    /// ~/Library/Caches/Homebrew/downloads is a tool's cache, not Downloads.
+    @Test func aDownloadsFolderInsideLibraryIsNotPersonal() {
+        var tree = FileTree()
+        _ = tree.addNode(name: "Users", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        let user = tree.addNode(name: "alex", parent: 0, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        let library = tree.addNode(name: "Library", parent: user, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        let caches = tree.addNode(name: "Caches", parent: library, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        let brew = tree.addNode(name: "Homebrew", parent: caches, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        let downloads = tree.addNode(name: "downloads", parent: brew, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
+        _ = tree.addNode(name: "x.bottle.tar.gz", parent: downloads, isDirectory: false, logicalSize: 2_000_000,
+                         allocatedSize: 2_000_000, modifiedDaysSinceEpoch: todayOffset(500))
+        let candidates = ForgottenFiles.candidates(tree: tree, root: URL(fileURLWithPath: "/Users", isDirectory: true),
+                                                   totals: tree.rollUpBoth().allocated, today: AgeMap.today(), limit: 50)
+        #expect(!candidates.contains { $0.isReviewable })
+    }
+
     @Test func appBundleFrameworkIsOldImportant() {
         var tree = FileTree()
         _ = tree.addNode(name: "Applications", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 0)
