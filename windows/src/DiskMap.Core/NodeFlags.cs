@@ -28,4 +28,12 @@ public static class NodeFlags
     /// without opening the file.
     /// </summary>
     public const byte NotDownloaded = 1 << 3;
+
+    /// <summary>
+    /// The volume reported 0 allocated bytes for a non-empty file and the
+    /// scan used the logical size instead. A figure built from the tree
+    /// must ask the volume about these files rather than trust it
+    /// (mirrors the macOS TASK-082 flag).
+    /// </summary>
+    public const byte AllocatedEstimated = 1 << 4;
 }

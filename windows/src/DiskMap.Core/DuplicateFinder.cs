@@ -53,19 +53,42 @@ public static class DuplicateFinder
     /// Regular files under root, skipping directories, empty files, and
     /// cloud placeholders (opening those would recall the content).
     /// </summary>
-    public static List<(int Id, string Path, long Size)> Candidates(FileTree tree, string root)
+    public static List<(int Id, string Path, long Size)> Candidates(FileTree tree, string root) =>
+        Candidates(tree, root, collidingSizesOnly: false);
+
+    /// <summary>
+    /// <see cref="Candidates(FileTree, string)"/> restricted to sizes seen
+    /// at least twice — the only files that can collide (macOS PR #16).
+    /// PathOf is string work per node, so a drive scan of millions of files
+    /// skips nearly all of it. Produces the same groups.
+    /// </summary>
+    public static List<(int Id, string Path, long Size)> SizeCollidingCandidates(FileTree tree, string root) =>
+        Candidates(tree, root, collidingSizesOnly: true);
+
+    private static bool IsCandidate(FileTree tree, int id) =>
+        !tree.IsDirectory[id]
+        && (tree.Flags[id] & NodeFlags.NotDownloaded) == 0
+        && tree.LogicalSize[id] > 0;
+
+    private static List<(int Id, string Path, long Size)> Candidates(FileTree tree, string root, bool collidingSizesOnly)
     {
+        var countsBySize = new Dictionary<long, int>();
+        if (collidingSizesOnly)
+        {
+            for (int id = 1; id < tree.Count; id++)
+                if (IsCandidate(tree, id))
+                    countsBySize[tree.LogicalSize[id]] = countsBySize.GetValueOrDefault(tree.LogicalSize[id]) + 1;
+        }
         var result = new List<(int, string, long)>();
         var stack = new Stack<int>();
         if (tree.Count > 0) stack.Push(0);
         while (stack.Count > 0)
         {
             int id = stack.Pop();
-            if (id > 0)
+            if (id > 0 && IsCandidate(tree, id)
+                && (!collidingSizesOnly || countsBySize.GetValueOrDefault(tree.LogicalSize[id]) > 1))
             {
-                bool notDownloaded = (tree.Flags[id] & NodeFlags.NotDownloaded) != 0;
-                if (!tree.IsDirectory[id] && !notDownloaded && tree.LogicalSize[id] > 0)
-                    result.Add((id, tree.PathOf(id, root), tree.LogicalSize[id]));
+                result.Add((id, tree.PathOf(id, root), tree.LogicalSize[id]));
             }
             int child = tree.FirstChild[id];
             while (child != -1)
@@ -91,13 +114,16 @@ public static class DuplicateFinder
 
         var groups = new List<DuplicateGroup>();
         int fullContentHashCalls = 0;
-        var gate = new object();
 
-        var tasks = bySize
-            .Where(kv => kv.Value.Count > 1)
-            .Select(kv => Task.Run(() => HashAndGroup(kv.Value, kv.Key)))
-            .ToArray();
-        foreach (var partial in await Task.WhenAll(tasks))
+        // Bounded: a task per size group flooded the thread pool with
+        // blocking file reads, starving every other background job.
+        var bySizeGroups = bySize.Where(kv => kv.Value.Count > 1).ToList();
+        var partials = new DuplicateScanResult[bySizeGroups.Count];
+        await Task.Run(() => Parallel.For(
+            0, bySizeGroups.Count,
+            new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+            i => partials[i] = HashAndGroup(bySizeGroups[i].Value, bySizeGroups[i].Key)));
+        foreach (var partial in partials)
         {
             groups.AddRange(partial.Groups);
             fullContentHashCalls += partial.FullContentHashCalls;

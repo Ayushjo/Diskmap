@@ -11,7 +11,15 @@ public sealed record AppLeftovers(
     List<string> LeftoverPaths,
     long LeftoverSize);
 
-public sealed record InstalledApp(string Name, string? Publisher, string? InstallLocation, string? RegistryKeyName);
+public sealed record InstalledApp(
+    string Name,
+    string? Publisher,
+    string? InstallLocation,
+    string? RegistryKeyName,
+    /// <summary>The registry's own uninstall command line — revealable, never auto-run.</summary>
+    string? UninstallString = null,
+    /// <summary>True for MSIX/Store packages (from the AppModel hive, not Uninstall).</summary>
+    bool IsStorePackage = false);
 
 /// <summary>
 /// Finds files an app scattered outside its install directory when it was
@@ -73,11 +81,63 @@ public static class AppLeftoverFinder
                 name.Trim(),
                 (sub.GetValue("Publisher") as string)?.Trim(),
                 (sub.GetValue("InstallLocation") as string)?.Trim(),
-                subName));
+                subName,
+                // Quiet or classic — prefer the quiet form when present.
+                ((sub.GetValue("QuietUninstallString") as string)
+                    ?? (sub.GetValue("UninstallString") as string))?.Trim()));
         }
     }
 
-    public static AppLeftovers FindLeftovers(InstalledApp app)
+    /// <summary>
+    /// MSIX / Microsoft Store packages from the per-user AppModel
+    /// repository — the no-WinRT enumeration (PackageManager needs a
+    /// versioned Windows SDK TFM this port deliberately avoids). Each
+    /// subkey name is the package full name; PackageRootFolder points at
+    /// the immutable install under Program Files\WindowsApps.
+    /// </summary>
+    public static List<InstalledApp> StoreApplications()
+    {
+        var apps = new List<InstalledApp>();
+        try
+        {
+            using var packages = Registry.CurrentUser.OpenSubKey(
+                @"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages");
+            if (packages is null) return apps;
+            foreach (var fullName in packages.GetSubKeyNames())
+            {
+                using var sub = packages.OpenSubKey(fullName);
+                if (sub is null) continue;
+                // Full name is Name_Version_Arch_ResourceId_PublisherHash.
+                string display = fullName.Split('_')[0];
+                if (display.StartsWith("Microsoft.", StringComparison.OrdinalIgnoreCase)
+                    || display.StartsWith("Windows.", StringComparison.OrdinalIgnoreCase))
+                    continue;   // OS plumbing — not user-facing apps
+                string? installRoot = (sub.GetValue("PackageRootFolder") as string)?.Trim();
+                apps.Add(new InstalledApp(
+                    display,
+                    Publisher: null,
+                    InstallLocation: installRoot,
+                    RegistryKeyName: fullName,
+                    UninstallString: null,
+                    IsStorePackage: true));
+            }
+        }
+        catch { /* the AppModel hive is per-user; absence is normal */ }
+        return apps
+            .GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public static AppLeftovers FindLeftovers(InstalledApp app) =>
+        FindLeftovers(app, measureSizes: true);
+
+    /// <param name="measureSizes">
+    /// When false, returns just the matched leftover paths — no recursive
+    /// walks. Use for a fast listing pass; measure per-app later.
+    /// </param>
+    public static AppLeftovers FindLeftovers(InstalledApp app, bool measureSizes)
     {
         var matches = new List<string>();
         // Match tokens: display name and publisher are the closest thing
@@ -105,10 +165,14 @@ public static class AppLeftoverFinder
             }
         }
 
-        long installSize = !string.IsNullOrWhiteSpace(app.InstallLocation) && Directory.Exists(app.InstallLocation)
-            ? AllocatedSize(app.InstallLocation)
-            : 0;
-        long leftoverSize = matches.Sum(AllocatedSize);
+        long installSize = 0, leftoverSize = 0;
+        if (measureSizes)
+        {
+            installSize = !string.IsNullOrWhiteSpace(app.InstallLocation) && Directory.Exists(app.InstallLocation)
+                ? AllocatedSize(app.InstallLocation)
+                : 0;
+            leftoverSize = matches.Sum(AllocatedSize);
+        }
 
         return new AppLeftovers(
             AppId: app.RegistryKeyName,

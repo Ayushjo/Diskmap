@@ -27,11 +27,55 @@ public static class NodeColors
     /// <summary>Collapsed "Other" slices — gray at 55% like the macOS build.</summary>
     public static readonly Brush OtherBrush = Freeze(new SolidColorBrush(Color.FromArgb(140, 128, 128, 128)));
 
-    public static Brush BrushFor(int nodeId)
+    // Hues are whole degrees, so 360 frozen brushes cover every node — the
+    // charts used to allocate a brush per cell per render.
+    private static readonly Brush[] HueBrushes = Enumerable.Range(0, 360)
+        .Select(h => (Brush)Freeze(new SolidColorBrush(Hsv(h, 0.55, 0.82)))).ToArray();
+
+    public static Brush BrushFor(int nodeId) =>
+        HueBrushes[unchecked((uint)((ulong)nodeId * 2654435761UL) % 360)];
+
+    public static Brush BrushFor(int nodeId, ScanModel model)
     {
-        var brush = new SolidColorBrush(ColorFor(nodeId));
-        brush.Freeze();
-        return brush;
+        var tree = model.Tree;
+        if (tree is null || model.Totals.Length != tree.Count || nodeId < 0 || nodeId >= tree.Count)
+            return BrushFor(nodeId);
+        return model.ColoringMode switch
+        {
+            "type" => Ui.Hex(FileTypes.TileColorOf(FileTypes.DominantKind(tree, model.Totals, nodeId))),
+            "age" => DominantAgeBrush(tree, model.Totals, nodeId),
+            "folder" => FolderBrush(tree.NameOf(nodeId)),
+            _ => BrushFor(nodeId),
+        };
+    }
+
+    private static Brush FolderBrush(string name)
+    {
+        int hash = 0;
+        foreach (char c in name) hash = unchecked(hash * 31 + char.ToLowerInvariant(c));
+        return Ui.Data((int)((uint)hash % Ui.DataPalette.Length));
+    }
+
+    private static Brush DominantAgeBrush(FileTree tree, long[] totals, int node)
+    {
+        var buckets = new Dictionary<AgeBucket, long>();
+        var stack = new Stack<int>([node]);
+        while (stack.TryPop(out int id))
+        {
+            if (tree.IsDirectory[id])
+            {
+                int child = tree.FirstChild[id];
+                while (child != -1) { stack.Push(child); child = tree.NextSibling[child]; }
+            }
+            else
+            {
+                var bucket = Core.AgeMap.Bucket(tree.ModifiedDay[id], Core.AgeMap.Today());
+                buckets[bucket] = buckets.GetValueOrDefault(bucket) + totals[id];
+            }
+        }
+        return buckets.Count == 0
+            ? OtherBrush
+            : AgeBucket(buckets.OrderByDescending(pair => pair.Value).First().Key);
     }
 
     private static Color Hsv(double h, double s, double v)
@@ -54,6 +98,14 @@ public static class NodeColors
 
     public static readonly Brush DirectoryOverlay = Freeze(new SolidColorBrush(Color.FromArgb(0x20, 0, 0, 0)));
     public static readonly Brush Stroke = Freeze(new SolidColorBrush(Color.FromArgb(0x59, 0, 0, 0)));
+    public static readonly Pen StrokePen = Freeze(new Pen(Stroke, 1));
+    public static readonly Pen ConnectorPen = Freeze(new Pen(Stroke, 1.5));
+
+    /// <summary>Focused-cell ring — the white stroke the treemap draws (WIN-061).</summary>
+    public static readonly Pen SelectionPen = Freeze(new Pen(Brushes.White, 2.5));
+
+    /// <summary>Multi-select ring — the accent pen; resolved per render so theme swaps follow.</summary>
+    public static Pen MultiPen() => new(Ui.Brush("AppAccent"), 2);
 
     /// <summary>Age-map bucket colors — ported from macOS AgeMapView.</summary>
     public static Brush AgeBucket(AgeBucket bucket) => Freeze(new SolidColorBrush(bucket switch
@@ -69,21 +121,42 @@ public static class NodeColors
     private static T Freeze<T>(T freezable) where T : Freezable { freezable.Freeze(); return freezable; }
 }
 
+/// <summary>
+/// How every page and chart listens to <see cref="ScanModel"/>: only while
+/// on screen (they used to subscribe forever, so every page ever opened
+/// kept re-rendering in the background), refreshed each time it appears,
+/// and coalesced into one callback queued below input priority so a burst
+/// of changes can't starve clicks.
+/// </summary>
+public static class ModelEvents
+{
+    public static void WhileLoaded(FrameworkElement element, Action onChange)
+    {
+        bool queued = false;
+        void Queue()
+        {
+            if (queued) return;
+            queued = true;
+            element.Dispatcher.InvokeAsync(() =>
+            {
+                queued = false;
+                onChange();
+            }, System.Windows.Threading.DispatcherPriority.Background);
+        }
+        EventHandler handler = (_, _) => Queue();
+        element.Loaded += (_, _) =>
+        {
+            ScanModel.Shared.StateChanged += handler;
+            Queue();
+        };
+        element.Unloaded += (_, _) => ScanModel.Shared.StateChanged -= handler;
+    }
+}
+
 public static class ByteFormat
 {
     /// <summary>Same scale as macOS ByteCountFormatter (decimal units).</summary>
-    public static string Format(long bytes)
-    {
-        const long kb = 1000, mb = kb * 1000, gb = mb * 1000, tb = gb * 1000;
-        return bytes switch
-        {
-            >= tb => $"{bytes / (double)tb:0.##} TB",
-            >= gb => $"{bytes / (double)gb:0.##} GB",
-            >= mb => $"{bytes / (double)mb:0.##} MB",
-            >= kb => $"{bytes / (double)kb:0.#} KB",
-            _ => $"{bytes} B",
-        };
-    }
+    public static string Format(long bytes) => Core.HumanUnits.Format(bytes);
 }
 
 /// <summary>
@@ -101,11 +174,5 @@ public static class Explorer
                 Process.Start("explorer.exe", $"\"{Path.GetDirectoryName(path) ?? path}\"");
         }
         catch { /* explorer missing is not fatal */ }
-    }
-
-    public static void Open(string path)
-    {
-        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
-        catch { }
     }
 }

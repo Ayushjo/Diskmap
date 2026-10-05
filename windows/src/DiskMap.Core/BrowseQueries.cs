@@ -7,18 +7,28 @@ namespace DiskMap.Core;
 /// </summary>
 public static class TopSizes
 {
-    public static List<int> Ranked(long[] totals, int limit = 500)
+    public static List<int> Ranked(long[] totals, int limit = 500) =>
+        Largest(1, totals.Length, limit, id => totals[id], id => totals[id] > 0);
+
+    /// <summary>
+    /// The <paramref name="limit"/> largest ids in [from, to) passing
+    /// <paramref name="include"/>, largest first: a bounded min-heap, so a
+    /// multi-million-node scan costs O(n log limit) instead of a full sort.
+    /// </summary>
+    public static List<int> Largest(int from, int to, int limit, Func<int, long> size, Func<int, bool> include)
     {
         var result = new List<int>();
-        if (totals.Length <= 1 || limit <= 0) return result;
-        var ids = Enumerable.Range(1, totals.Length - 1).ToList();
-        ids.Sort((a, b) => totals[b].CompareTo(totals[a]));
-        foreach (int id in ids)
+        if (limit <= 0) return result;
+        var heap = new PriorityQueue<int, long>(limit + 1);
+        for (int id = from; id < to; id++)
         {
-            if (totals[id] <= 0) break;
-            result.Add(id);
-            if (result.Count == limit) break;
+            if (!include(id)) continue;
+            long s = size(id);
+            if (heap.Count < limit) heap.Enqueue(id, s);
+            else if (heap.TryPeek(out _, out long smallest) && s > smallest) heap.EnqueueDequeue(id, s);
         }
+        while (heap.Count > 0) result.Add(heap.Dequeue());
+        result.Reverse();
         return result;
     }
 }
@@ -66,18 +76,13 @@ public static class AgeMap
     /// </summary>
     public static List<int> Untouched(FileTree tree, long[] totals, int today, int limit = 100)
     {
-        var result = new List<int>();
-        if (tree.Count != totals.Length || limit <= 0) return result;
-        for (int id = 1; id < tree.Count; id++)
+        if (tree.Count != totals.Length) return [];
+        return TopSizes.Largest(1, tree.Count, limit, id => totals[id], id =>
         {
-            if (tree.IsDirectory[id]) continue;
+            if (tree.IsDirectory[id]) return false;
             int day = tree.ModifiedDay[id];
-            if (day <= 0 || today - day <= 365 || totals[id] <= 0) continue;
-            result.Add(id);
-        }
-        result.Sort((a, b) => totals[b].CompareTo(totals[a]));
-        if (result.Count > limit) result.RemoveRange(limit, result.Count - limit);
-        return result;
+            return day > 0 && today - day > 365 && totals[id] > 0;
+        });
     }
 
     public static Dictionary<AgeBucket, long> BucketSizes(FileTree tree, long[] totals, int today)

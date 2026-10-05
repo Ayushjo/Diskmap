@@ -15,16 +15,26 @@ public readonly record struct SnapshotChange(string Path, long Before, long Afte
 /// packed arrays plus an interned name table, and SQLite would be a second
 /// data model for the same bytes.
 ///
-/// The file is little-endian and byte-compatible with the macOS DMAP v1
-/// format: magic "DMAP", version UInt32 1, timestamp seconds, root path,
-/// node count, name-table count, then the packed arrays (nameIndex,
-/// parent, firstChild, nextSibling, logicalSize, allocatedSize,
-/// modifiedDay, isDirectory flags, node flags) and the name table.
+/// The file is little-endian and byte-compatible with the macOS DMAP
+/// format: magic "DMAP", version UInt32, timestamp seconds, root path,
+/// node count, name-table count, then the packed arrays and the name
+/// table. Version history (shared with the macOS codec):
+///   v1: nameIndex/parent/firstChild/nextSibling/logical/allocated/
+///       modifiedDay/isDirectory/flags
+///   v2: + createdDay (Int32 per node)
+///   v3: + fileID (UInt64 per node)
+///   v4: + sharing-mode byte + sharing table (clone rows: node ids,
+///       clone ids, private bytes, refcounts). Windows writes the same
+///       layout when the opt-in ReFS block-clone pass ran (mode 2), and
+///       decodes rows from either platform — the row semantics are
+///       identical.
+/// Older files decode with createdDay/fileID 0 ("unknown"); the hard-link
+/// correction treats unknown as "nothing to correct".
 /// </summary>
 public static class SnapshotCodec
 {
     public static readonly byte[] Magic = "DMAP"u8.ToArray();
-    public const uint Version = 1;
+    public const uint Version = 4;
 
     public static byte[] Encode(DiskSnapshot snapshot)
     {
@@ -43,8 +53,20 @@ public static class SnapshotCodec
         writer.I64s(tree.LogicalSize);
         writer.I64s(tree.AllocatedSize);
         writer.I32s(tree.ModifiedDay);
+        writer.I32s(tree.CreatedDay);
         writer.Bytes(tree.IsDirectory.Select(b => (byte)(b ? 1 : 0)).ToArray());
         writer.Bytes(tree.Flags);
+        writer.I64s(tree.FileId);
+        // v4 sharing table: the mode byte records whether the block-clone
+        // pass measured this tree (2 = full extent facts), not whether it
+        // found clones — a profiled zero-clone scan still writes mode 2.
+        var sharing = tree.Sharing;
+        writer.Write([(byte)tree.SharingMode]);
+        writer.I32(sharing.Count);
+        writer.I32s(sharing.Node);
+        writer.I64s(sharing.CloneId);
+        writer.I64s(sharing.PrivateBytes);
+        writer.I32s(sharing.RefCount);
         foreach (var name in tree.NameTable) writer.String(name);
         return writer.ToArray();
     }
@@ -53,7 +75,8 @@ public static class SnapshotCodec
     {
         var reader = new Reader(data);
         if (!reader.Bytes(4).Span.SequenceEqual(Magic)) throw new SnapshotException(SnapshotError.BadMagic);
-        if (reader.U32() != Version) throw new SnapshotException(SnapshotError.BadVersion);
+        uint fileVersion = reader.U32();
+        if (fileVersion < 1 || fileVersion > Version) throw new SnapshotException(SnapshotError.BadVersion);
         var capturedAt = DateTimeOffset.FromUnixTimeSeconds(reader.I64());
         string rootPath = reader.String();
         int count = reader.I32();
@@ -67,17 +90,42 @@ public static class SnapshotCodec
         long[] logicalSize = reader.I64s(count);
         long[] allocatedSize = reader.I64s(count);
         int[] modifiedDay = reader.I32s(count);
+        int[] createdDay = fileVersion >= 2 ? reader.I32s(count) : new int[count];
         bool[] isDirectory = reader.U8s(count).Select(b => b != 0).ToArray();
         byte[] flags = reader.U8s(count);
+        long[] fileId = fileVersion >= 3 ? reader.I64s(count) : new long[count];
+        var sharing = new FileTree.SharingTable();
+        var sharingMode = FileTree.CloneSharingMode.Off;
+        if (fileVersion >= 4)
+        {
+            sharingMode = reader.U8s(1)[0] switch
+            {
+                1 => FileTree.CloneSharingMode.Refcount,
+                2 => FileTree.CloneSharingMode.Full,
+                _ => FileTree.CloneSharingMode.Off,
+            };
+            int rows = reader.I32();
+            if (rows < 0 || rows > count) throw new SnapshotException(SnapshotError.Corrupt);
+            sharing.Node = reader.I32s(rows);
+            sharing.CloneId = reader.I64s(rows);
+            sharing.PrivateBytes = reader.I64s(rows);
+            sharing.RefCount = reader.I32s(rows);
+        }
         var nameTable = new List<string>(nameCount);
         for (int i = 0; i < nameCount; i++) nameTable.Add(reader.String());
 
         var tree = new FileTree();
         if (!tree.ReplacePacked(nameTable, nameIndex, parent, firstChild, nextSibling,
-                logicalSize, allocatedSize, modifiedDay, isDirectory, flags))
+                logicalSize, allocatedSize, modifiedDay, createdDay, isDirectory, flags, fileId))
         {
             throw new SnapshotException(SnapshotError.Corrupt);
         }
+        // Rows carry macOS-APFS or Windows-ReFS facts identically — either
+        // way the rollup's family math applies unchanged. Mode 0 means
+        // "not measured": phantom rows under it are dropped, not trusted.
+        if (sharingMode == FileTree.CloneSharingMode.Off) sharing = new FileTree.SharingTable();
+        if (!tree.ReplaceSharing(sharing, sharingMode))
+            throw new SnapshotException(SnapshotError.Corrupt);
         return new DiskSnapshot(rootPath, capturedAt, tree);
     }
 
@@ -188,7 +236,7 @@ public static class SnapshotStore
         if (read < 20 || !data.Slice(0, 4).Span.SequenceEqual(SnapshotCodec.Magic))
             throw new SnapshotException(SnapshotError.BadMagic);
         uint version = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(4, 4).Span);
-        if (version != SnapshotCodec.Version) throw new SnapshotException(SnapshotError.BadVersion);
+        if (version < 1 || version > SnapshotCodec.Version) throw new SnapshotException(SnapshotError.BadVersion);
         var capturedAt = DateTimeOffset.FromUnixTimeSeconds(BinaryPrimitives.ReadInt64LittleEndian(data.Slice(8, 8).Span));
         uint len = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(16, 4).Span);
         if (len > int.MaxValue || 20 + len > read) throw new SnapshotException(SnapshotError.Corrupt);

@@ -253,6 +253,46 @@ public class ChartLayoutTests
         Assert.Contains(slices, s => s.Label == "big" && s.Drillable);
         Assert.Contains(slices, s => s.NodeID is null && !s.Drillable && s.Label.Contains("Other"));
     }
+
+    [Fact]
+    public void RequestedLevelsBuildADeeperIcicleHierarchy()
+    {
+        var tree = new FileTree();
+        int root = tree.AddNode("root", -1, true, 0, 0, 0);
+        int one = tree.AddNode("one", root, true, 0, 0, 0);
+        int two = tree.AddNode("two", one, true, 0, 0, 0);
+        int three = tree.AddNode("three", two, true, 0, 0, 0);
+        int leaf = tree.AddNode("leaf", three, false, 10_000, 10_000, 0);
+        var totals = tree.RollUpSizes();
+
+        var slices = ChartLayout.SlicesOf(root, tree, totals, levels: 4);
+
+        Assert.Equal(one, slices.Single().NodeID);
+        Assert.Equal(two, slices.Single().Children.Single().NodeID);
+        Assert.Equal(three, slices.Single().Children.Single().Children.Single().NodeID);
+        Assert.Equal(leaf, slices.Single().Children.Single().Children.Single().Children.Single().NodeID);
+    }
+}
+
+public class TopSizesTests
+{
+    [Fact]
+    public void HeapRankingMatchesAFullSort()
+    {
+        var random = new Random(7);
+        var totals = Enumerable.Range(0, 20_000).Select(_ => (long)random.Next(-5, 5_000)).ToArray();
+
+        var ranked = TopSizes.Ranked(totals, 300);
+
+        var expected = Enumerable.Range(1, totals.Length - 1)
+            .Where(id => totals[id] > 0)
+            .Select(id => totals[id])
+            .OrderDescending()
+            .Take(300);
+        Assert.Equal(expected, ranked.Select(id => totals[id]));
+        Assert.Equal(ranked.Count, ranked.Distinct().Count());
+        Assert.DoesNotContain(0, ranked);
+    }
 }
 
 public class CirclePackTests

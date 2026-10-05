@@ -15,80 +15,131 @@ namespace DiskMap.App.Controls;
 public sealed class MindMapControl : FrameworkElement
 {
     private readonly List<(int? NodeId, Rect Rect)> _hit = [];
+    /// <summary>"+N more" cards — WIN-049: single-click always opens their parent.</summary>
+    private readonly List<(int ParentId, Rect Rect)> _more = [];
+    private List<(ChartSlice Slice, ChartSlice? Parent)> _nav = [];
     private ToolTip? _tooltip;
+    private Pen? _multiPen;
     private const double NodeHeight = 34;
     private const double ColumnWidth = 170;
     private const double HGap = 70;
     private const double VGap = 8;
     private const int MaxDepth = 4;
 
+    /// <summary>WIN-061: announces itself + its biggest slices to UIA.</summary>
+    protected override System.Windows.Automation.Peers.AutomationPeer OnCreateAutomationPeer() =>
+        new ChartPeer(this, "Mind map", () => ChartNavigation.AccessibleIds(_nav, ScanModel.Shared));
+
+    /// <summary>WIN-061: arrow keys move the selection (siblings/parent/child); Enter drills.</summary>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (ChartNavigation.OnKey(e, _nav, ScanModel.Shared))
+        {
+            e.Handled = true;
+            InvalidateVisual();
+        }
+        base.OnKeyDown(e);
+    }
+
     public MindMapControl()
     {
-        ScanModel.Shared.StateChanged += (_, _) => Dispatcher.InvokeAsync(InvalidateVisual);
+        ModelEvents.WhileLoaded(this, InvalidateVisual);
         MouseLeftButtonDown += OnClick;
         MouseMove += OnMove;
         MouseLeave += (_, _) => { if (_tooltip is not null) _tooltip.IsOpen = false; };
         MouseRightButtonDown += OnRightClick;
+        Focusable = true;   // WIN-061: arrow-key chart navigation
     }
 
     protected override void OnRender(DrawingContext dc)
     {
         _hit.Clear();
+        _more.Clear();
         var model = ScanModel.Shared;
         var tree = model.Tree;
-        if (tree is null || model.Totals.Length == 0) return;
+        if (tree is null || model.Totals.Length == 0) { _nav = []; return; }
+        _multiPen = model.MultiSelection.Count > 0 ? NodeColors.MultiPen() : null;
 
-        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals);
+        var slices = ChartLayout.SlicesOf(model.ZoomedNode, tree, model.Totals, model.ChartDepth);
+        _nav = ChartNavigation.Flatten(slices);
         long total = Math.Max(1, model.Totals[model.ZoomedNode]);
 
         double cy = ActualHeight / 2;
         var rootRect = new Rect(20, cy - NodeHeight / 2, ColumnWidth, NodeHeight);
-        dc.DrawRectangle(NodeColors.BrushFor(model.ZoomedNode), new Pen(NodeColors.Stroke, 1), rootRect);
+        dc.DrawRectangle(NodeColors.BrushFor(model.ZoomedNode, model), NodeColors.StrokePen, rootRect);
         DrawLabel(dc, rootRect, tree.NameOf(model.ZoomedNode), model.Totals[model.ZoomedNode]);
         _hit.Add((model.ZoomedNode, rootRect));
 
-        DrawChildren(dc, slices, total, 20 + ColumnWidth + HGap, cy, 20 + ColumnWidth + ColumnWidth + HGap, tree, depth: 1, availableHeight: ActualHeight - 40, parentX: 20 + ColumnWidth, parentY: cy);
+        DrawChildren(dc, slices, total, 20 + ColumnWidth + HGap, cy, 20 + ColumnWidth + ColumnWidth + HGap, tree, depth: 1, availableHeight: ActualHeight - 40, parentX: 20 + ColumnWidth, parentY: cy, parentId: model.ZoomedNode);
     }
 
     private void DrawChildren(DrawingContext dc, List<ChartSlice> slices, long total,
         double x, double centerY, double nextX, FileTree tree,
-        int depth, double availableHeight, double parentX, double parentY)
+        int depth, double availableHeight, double parentX, double parentY, int parentId)
     {
         if (depth > MaxDepth || slices.Count == 0) return;
+        var model = ScanModel.Shared;
         double usable = Math.Max(NodeHeight, availableHeight - (slices.Count - 1) * VGap);
         double y = centerY - usable / 2;
         foreach (var slice in slices)
         {
             double h = Math.Max(NodeHeight, usable * slice.Size / Math.Max(1, total) - VGap);
             var rect = new Rect(x, y, ColumnWidth, Math.Min(h, NodeHeight * 1.5));
-            var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id) : NodeColors.OtherBrush;
-            dc.DrawRectangle(fill, new Pen(NodeColors.Stroke, 1), rect);
+            var fill = slice.NodeID is { } id ? NodeColors.BrushFor(id, model) : NodeColors.OtherBrush;
+            dc.DrawRectangle(fill, NodeColors.StrokePen, rect);
+            // Selection outlines — multi in accent, focused cell in white.
+            if (slice.NodeID is { } sid)
+            {
+                if (sid == model.SelectedNode)
+                    dc.DrawRectangle(null, NodeColors.SelectionPen, rect);
+                else if (_multiPen is { } mp && model.MultiSelection.Contains(sid))
+                    dc.DrawRectangle(null, mp, rect);
+            }
 
             // Elbow connector from parent's right edge to child's left.
             double childMidY = rect.Y + rect.Height / 2;
-            var pen = new Pen(NodeColors.Stroke, 1.5);
+            var pen = NodeColors.ConnectorPen;
             dc.DrawLine(pen, new Point(parentX, parentY), new Point(parentX + HGap / 2, parentY));
             dc.DrawLine(pen, new Point(parentX + HGap / 2, parentY), new Point(parentX + HGap / 2, childMidY));
             dc.DrawLine(pen, new Point(parentX + HGap / 2, childMidY), new Point(rect.X, childMidY));
 
             if (slice.NodeID is { } nid)
-                DrawLabel(dc, rect, tree.NameOf(nid), slice.Size);
-            _hit.Add((slice.NodeID, rect));
+            {
+                // v2 labels: folders announce the real total + item count.
+                int items = tree.IsDirectory[nid] && nid < model.Counts.Files.Length
+                    ? model.Counts.Files[nid] + model.Counts.Folders[nid] : 0;
+                string label = items > 0
+                    ? $"{tree.NameOf(nid)} — {ByteFormat.Format(slice.Size)} · {items:N0} items"
+                    : $"{tree.NameOf(nid)} — {ByteFormat.Format(slice.Size)}";
+                DrawLabelText(dc, rect, label);
+                _hit.Add((nid, rect));
+            }
+            else
+            {
+                // WIN-049: the collapsed remainder is a "+N more — open"
+                // card that drills into its parent, not a dead tile.
+                DrawLabelText(dc, rect,
+                    $"+{slice.HiddenCount:N0} more · {ByteFormat.Format(slice.Size)} — open");
+                _more.Add((parentId, rect));
+            }
 
-            if (slice.Children.Count > 0)
+            if (slice.Children.Count > 0 && slice.NodeID is { } pid)
             {
                 DrawChildren(dc, slice.Children, Math.Max(1, slice.Size),
                     nextX, childMidY, nextX + ColumnWidth + HGap, tree,
-                    depth + 1, h, rect.Right, childMidY);
+                    depth + 1, h, rect.Right, childMidY, pid);
             }
             y += h + VGap;
         }
     }
 
     private void DrawLabel(DrawingContext dc, Rect rect, string name, long size)
+        => DrawLabelText(dc, rect, $"{name} — {ByteFormat.Format(size)}");
+
+    private void DrawLabelText(DrawingContext dc, Rect rect, string textContent)
     {
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var text = new FormattedText($"{name} — {ByteFormat.Format(size)}",
+        var text = new FormattedText(textContent,
             System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
             new Typeface("Segoe UI"), 11, Brushes.White, dpi);
         text.MaxTextWidth = Math.Max(10, rect.Width - 8);
@@ -105,8 +156,26 @@ public sealed class MindMapControl : FrameworkElement
 
     private void OnClick(object sender, MouseButtonEventArgs e)
     {
-        if (HitAt(e.GetPosition(this)) is { } id && ScanModel.Shared.Tree?.IsDirectory[id] == true)
-            ScanModel.Shared.DrillTo(id);
+        var pos = e.GetPosition(this);
+        // "+N more" cards open their parent on a single click (WIN-049).
+        foreach (var (parentId, rect) in _more)
+            if (rect.Contains(pos)) { ScanModel.Shared.DrillTo(parentId); return; }
+        if (HitAt(pos) is not { } id) return;
+        var model = ScanModel.Shared;
+        if (e.ClickCount >= 2)
+        {
+            if (model.Tree?.IsDirectory[id] == true) model.DrillTo(id);
+            return;
+        }
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            model.ToggleMulti(id);
+            InvalidateVisual();
+            return;
+        }
+        model.ClearMulti();
+        model.Select(id);
+        InvalidateVisual();
     }
 
     private void OnMove(object sender, MouseEventArgs e)
@@ -130,7 +199,7 @@ public sealed class MindMapControl : FrameworkElement
         var reveal = new MenuItem { Header = "Reveal in Explorer" };
         reveal.Click += (_, _) => Explorer.Reveal(model.PathOf(id));
         menu.Items.Add(reveal);
-        var stage = new MenuItem { Header = "Stage for cleanup" };
+        var stage = new MenuItem { Header = "Add to Cleanup" };
         stage.Click += (_, _) => model.Stage(id, "from mind map");
         menu.Items.Add(stage);
         menu.IsOpen = true;

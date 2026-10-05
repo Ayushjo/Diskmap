@@ -1,0 +1,8 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  DiskMap.Core -> C:\Users\kkfah\Documents\codes\Diskmap\windows\src\DiskMap.Core\bin\Debug\net10.0\DiskMap.Core.dll
+  DiskMap.Core.Tests -> C:\Users\kkfah\Documents\codes\Diskmap\windows\tests\DiskMap.Core.Tests\bin\Debug\net10.0\DiskMap.Core.Tests.dll
+Test run for C:\Users\kkfah\Documents\codes\Diskmap\windows\tests\DiskMap.Core.Tests\bin\Debug\net10.0\DiskMap.Core.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:    56, Skipped:     0, Total:    56, Duration: 480 ms - DiskMap.Core.Tests.dll (net10.0)

@@ -63,6 +63,10 @@ public static class QuickWins
         while (stack.Count > 0)
         {
             int id = stack.Pop();
+            // Never look inside the Recycle Bin or restore points.
+            if (tree.IsDirectory[id] && tree.Parent[id] == 0
+                && StorageClassifier.IsSystemHolding("\\" + tree.NameOf(id)))
+                continue;
             if (id != 0 && tree.IsDirectory[id] && Match(id, names, suffixTails, patterns, root, tree) is { } matched)
             {
                 hits.Add(new Hit(id, tree.NameOf(id), CategoryOf(matched, patterns)));

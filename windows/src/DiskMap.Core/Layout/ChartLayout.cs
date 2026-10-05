@@ -10,23 +10,33 @@ public sealed record ChartSlice(
     long Size,
     string Label,
     bool Drillable,
-    List<ChartSlice> Children);
+    List<ChartSlice> Children,
+    /// <summary>For the collapsed Other slice: how many items it hides.</summary>
+    int HiddenCount = 0);
 
 /// <summary>
-/// One level of <paramref name="node"/>'s children, plus at most one more
-/// level for the children that are large enough to draw. Anything smaller
-/// than 0.5% of its parent collapses into a single Other slice so a home
-/// scan cannot draw every descendant.
+/// <c>levels</c> levels of <paramref name="node"/>'s descendants (two by
+/// default), each only for items large enough to draw. Anything smaller than
+/// 0.5% of its parent collapses into a single Other slice.
 /// </summary>
 public static class ChartLayout
 {
+    /// <summary>Default depth: items under 0.5% of their parent collapse into Other.</summary>
     public const double OtherFraction = 0.005;
 
-    public static List<ChartSlice> SlicesOf(int node, FileTree tree, long[] totals)
+    /// <summary>
+    /// <paramref name="otherFraction"/> is the depth control: smaller
+    /// values draw deeper (a slice must exceed parentSize × fraction to
+    /// show). The UI slider maps to this.
+    /// </summary>
+    public static List<ChartSlice> SlicesOf(
+        int node, FileTree tree, long[] totals, double otherFraction = OtherFraction,
+        int levels = 2)
     {
-        if (node < 0 || node >= tree.Count || totals.Length != tree.Count)
+        if (node < 0 || node >= tree.Count || totals.Length != tree.Count || levels < 1)
             return [];
-        return Collapse(tree.ChildrenOf(node, totals), totals[node], tree, totals, includeChildren: true, idPrefix: node.ToString());
+        return Collapse(tree.ChildrenOf(node, totals), totals[node], tree, totals,
+            depth: levels - 1, idPrefix: node.ToString(), otherFraction);
     }
 
     private static List<ChartSlice> Collapse(
@@ -34,10 +44,11 @@ public static class ChartLayout
         long parentSize,
         FileTree tree,
         long[] totals,
-        bool includeChildren,
-        string idPrefix)
+        int depth,
+        string idPrefix,
+        double otherFraction)
     {
-        double threshold = parentSize * OtherFraction;
+        double threshold = parentSize * otherFraction;
         var visible = new List<(int Id, long Size)>();
         long otherSize = 0;
         int otherCount = 0;
@@ -52,11 +63,11 @@ public static class ChartLayout
         var slices = visible.Select(item =>
         {
             List<ChartSlice> nested = [];
-            if (includeChildren && tree.IsDirectory[item.Id])
+            if (depth > 0 && tree.IsDirectory[item.Id])
             {
                 nested = Collapse(
                     tree.ChildrenOf(item.Id, totals), item.Size, tree, totals,
-                    includeChildren: false, idPrefix: $"{idPrefix}.{item.Id}");
+                    depth: depth - 1, idPrefix: $"{idPrefix}.{item.Id}", otherFraction);
             }
             return new ChartSlice(
                 Id: $"{idPrefix}.{item.Id}",
@@ -75,7 +86,8 @@ public static class ChartLayout
                 Size: otherSize,
                 Label: $"Other ({otherCount})",
                 Drillable: false,
-                Children: []));
+                Children: [],
+                HiddenCount: otherCount));
         }
         return slices;
     }

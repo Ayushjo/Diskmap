@@ -17,6 +17,9 @@ xcuserdata/
 dist/
 /build/
 
+# Generated scratch data (visual-fixture trees, harness output)
+/tmp/
+
 # Design workspace: keep sources, not copies or generated output
 design/website-motion-v*/
 design/website-concepts-backup-*/
