@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage(ScanModel.keepHistoryKey) private var keepHistory = true
     @AppStorage(TextSize.storageKey) private var textSize = TextSize.standard.rawValue
     @AppStorage(DustyPreference.key) private var showDusty = true
+    @AppStorage(AppAppearance.storageKey) private var appearance = AppAppearance.system.rawValue
 
     var body: some View {
         Form {
@@ -36,6 +37,10 @@ struct SettingsView: View {
             }
             UpdateSettingsSection()
             Section {
+                Picker("Appearance", selection: $appearance) {
+                    ForEach(AppAppearance.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                .onChange(of: appearance) { _, value in (AppAppearance(rawValue: value) ?? .system).apply() }
                 Picker("Text size", selection: Binding(
                     get: { TextSize(rawValue: textSize) ?? .standard },
                     set: { DiskMapType.scale = $0.scale; textSize = $0.rawValue }

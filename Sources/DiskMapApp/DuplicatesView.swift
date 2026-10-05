@@ -87,21 +87,18 @@ struct DuplicatesView: View {
                     dusty: model.duplicateDidRun ? .happy : nil
                 )
             } else {
+                // "All" here means every extra copy: one per group is always
+                // kept, so the box can never tick a file's last copy.
+                let extras = duplicateFileIDs.count - model.duplicateGroups.count
+                SelectAllBar(
+                    shownCount: extras, checkedCount: checked.count, checkedBytes: reclaimable,
+                    onSelectAll: { selectOtherCopies() },
+                    onClear: { checked.removeAll() },
+                    note: "Keeps the oldest copy in each group"
+                )
+                .help("Selects every copy except the oldest in each group")
                 list
-                if checked.isEmpty {
-                    HStack {
-                        Text("Tick copies to remove, or")
-                            .font(DiskMapType.secondary)
-                            .foregroundStyle(DiskMapTheme.ink3)
-                        Button("Select extra copies") { selectOtherCopies() }
-                            .buttonStyle(LinkButtonStyle())
-                            .font(DiskMapType.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 28)
-                    .frame(height: 44)
-                    .overlay(alignment: .top) { Hairline() }
-                } else {
+                if !checked.isEmpty {
                     SelectionToolbar(
                         selectedCount: checked.count,
                         selectedBytes: reclaimable,

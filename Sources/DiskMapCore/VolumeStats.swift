@@ -48,8 +48,11 @@ public struct VolumeStats: Sendable, Equatable {
             }
         }
         let display: String
-        if name == "/" {
-            display = "Macintosh HD"
+        if name == "/" || name == "/System/Volumes/Data" {
+            // The data volume behind ~ is mounted as "Data"; people know the
+            // pair by the boot volume's name.
+            display = (try? URL(fileURLWithPath: "/").resourceValues(forKeys: [.volumeLocalizedNameKey]))?
+                .volumeLocalizedName ?? "Macintosh HD"
         } else {
             display = URL(fileURLWithPath: name).lastPathComponent
         }

@@ -97,6 +97,15 @@ struct AppsView: View {
                                   message: apps.isEmpty ? "freedisk.space couldn’t find installed applications in the usual places."
                                       : "Try another name or filter.")
             } else {
+                SelectAllBar(
+                    shownCount: visible.filter(\.canStageForCleanup).count,
+                    checkedCount: checkedApps.count, checkedBytes: checkedBytes,
+                    onSelectAll: { checked = Set(visible.filter(\.canStageForCleanup).map(\.id)) },
+                    onClear: { checked.removeAll() },
+                    quickTitle: "Select not recently used",
+                    quickEnabled: visible.contains { $0.isNotRecentlyUsed && $0.canStageForCleanup },
+                    onQuick: { checked = Set(visible.filter { $0.isNotRecentlyUsed && $0.canStageForCleanup }.map(\.id)) }
+                )
                 appList
             }
             ReviewFooter(

@@ -249,7 +249,9 @@ public enum OldDownloadsCatalog {
         root: URL,
         totals: [Int64],
         today: Int32 = AgeMap.today(),
-        limit: Int = 500
+        // Every match is built anyway (the summary needs them); the screen
+        // draws 200 rows. A 500 cap made its filters count 500 of 810.
+        limit: Int = 20_000
     ) -> OldDownloadsCatalogResult {
         guard totals.count == tree.count else { return .empty }
 

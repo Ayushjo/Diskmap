@@ -276,6 +276,18 @@ struct DeveloperStorageView: View {
             if shown.isEmpty {
                 DiskMapEmptyState(symbol: "shippingbox", title: "Nothing here", message: "No matching developer items.")
             } else {
+                let stageable = shown.filter(canStage)
+                let ticked = shown.filter { checked.contains($0.id) }
+                SelectAllBar(
+                    shownCount: stageable.count, checkedCount: ticked.count,
+                    checkedBytes: ticked.reduce(0) { $0 + $1.bytes },
+                    onSelectAll: { checked = Set(stageable.map(\.id)) },
+                    onClear: { checked.removeAll() },
+                    quickTitle: "Select reclaimable",
+                    quickEnabled: stageable.contains { $0.reclaimability == .reclaimable },
+                    onQuick: { checked = Set(stageable.filter { $0.reclaimability == .reclaimable }.map(\.id)) },
+                    note: items.count > shown.count ? "Largest 120 of \(items.count.formatted()) shown" : nil
+                )
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(shown) { item in
@@ -425,7 +437,8 @@ struct DeveloperStorageView: View {
                     onStage: { stageTools(Array(checkedTools), category: nil) },
                     onClear: { checkedTools.removeAll() },
                     onReveal: { revealNodes(Array(checkedTools)) },
-                    paths: checkedTools.compactMap(path(of:))
+                    paths: checkedTools.compactMap(path(of:)),
+                    hidesWhenEmpty: false
                 )
             }
         } else if tableTab != .projects {

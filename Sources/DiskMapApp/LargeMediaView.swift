@@ -100,6 +100,12 @@ struct LargeMediaView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                SelectAllBar(
+                    shownCount: shown.count, checkedCount: checkedItems.count, checkedBytes: checkedBytes,
+                    onSelectAll: { checked = Set(shown.map(\.nodeID)) },
+                    onClear: { checked.removeAll() },
+                    note: visible.count > shown.count ? "Largest 300 of \(visible.count.formatted()) shown — narrow the filters for the rest" : nil
+                )
                 list
             }
             ReviewFooter(

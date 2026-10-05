@@ -79,6 +79,8 @@ enum SnapshotHarness {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         guard let window = mainWindow() else {
+            print("harness: no window (\(NSApp.windows.count) windows: \(NSApp.windows.map { "\(type(of: $0)) visible=\($0.isVisible)" }))")
+            fflush(stdout)
             NSApp.terminate(nil)
             return
         }
@@ -112,6 +114,55 @@ enum SnapshotHarness {
         // `--start-mode "Mind Map"`: the Visualize mode to open with.
         if let mode = value(after: "--start-mode").flatMap(ExploreViewMode.init(rawValue:)) { model.exploreMode = mode }
 
+        // `--stress-resize`: every screen, at sizes from the minimum to the
+        // whole screen and back (testers reported a crash after choosing a
+        // sidebar item and maximizing). Logs each step, so a crash names it.
+        if arguments.contains("--stress-resize") {
+            let screen = window.screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1728, height: 1080)
+            let sizes: [NSSize] = [NSSize(width: 880, height: 600), screen.size, NSSize(width: 999, height: 700),
+                                   NSSize(width: 1001, height: 700), screen.size, NSSize(width: 1199, height: 760),
+                                   NSSize(width: 1201, height: 900), NSSize(width: 880, height: 600)]
+            for destination in destinations() {
+                model.destination = destination
+                for size in sizes {
+                    print("stress: \(key(destination)) \(Int(size.width))x\(Int(size.height))"); fflush(stdout)
+                    window.setFrame(NSRect(origin: screen.origin, size: size), display: true, animate: false)
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                }
+                if arguments.contains("--fullscreen") {
+                    print("stress: \(key(destination)) fullscreen"); fflush(stdout)
+                    window.toggleFullScreen(nil)
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    window.toggleFullScreen(nil)
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                }
+            }
+            // The compact sidebar: open it, pick each item, then maximize
+            // with the overlay still up — the testers' sequence.
+            let rows: [CGFloat] = [170, 235, 264, 293, 322, 351, 416, 445, 474, 503, 568]
+            for row in rows {
+                window.setFrame(NSRect(origin: screen.origin, size: NSSize(width: 880, height: 640)), display: true, animate: false)
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                print("stress: compact sidebar row \(Int(row))"); fflush(stdout)
+                await click(window: window, x: 26, y: 22)
+                await click(window: window, x: 110, y: row)
+                print("stress: maximize after row \(Int(row)) → \(key(model.destination))"); fflush(stdout)
+                window.setFrame(NSRect(origin: screen.origin, size: screen.size), display: true, animate: true)
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                if arguments.contains("--fullscreen") {
+                    window.setFrame(NSRect(origin: screen.origin, size: NSSize(width: 880, height: 640)), display: true, animate: false)
+                    await click(window: window, x: 26, y: 22)
+                    await click(window: window, x: 110, y: row)
+                    window.toggleFullScreen(nil)
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    window.toggleFullScreen(nil)
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                }
+            }
+            print("stress: done"); fflush(stdout)
+            NSApp.terminate(nil)
+            return
+        }
         for destination in destinations() {
             model.destination = destination
             // Wait for a lazily built catalog to be ready rather than a fixed
@@ -178,6 +229,23 @@ enum SnapshotHarness {
         // from it (quick rescan screenshots).
         await model.waitForCacheSave()
         NSApp.terminate(nil)
+    }
+
+    /// One plain click at window points from the top left.
+    private static func click(window: NSWindow, x: CGFloat, y: CGFloat) async {
+        guard let height = window.contentView?.bounds.height else { return }
+        let point = NSPoint(x: x, y: height - y)
+        func make(_ type: NSEvent.EventType) -> NSEvent? {
+            NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                               timestamp: ProcessInfo.processInfo.systemUptime,
+                               windowNumber: window.windowNumber, context: nil,
+                               eventNumber: 0, clickCount: 1, pressure: 1)
+        }
+        if let down = make(.leftMouseDown), let up = make(.leftMouseUp) {
+            NSApp.postEvent(up, atStart: false)
+            window.sendEvent(down)
+        }
+        try? await Task.sleep(nanoseconds: UInt64((NSEvent.doubleClickInterval + 0.3) * 1_000_000_000))
     }
 
     private static func sendInput(to window: NSWindow) async {

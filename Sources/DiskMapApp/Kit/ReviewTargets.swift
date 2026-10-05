@@ -151,6 +151,85 @@ struct ReviewSelectionFooter: View {
     }
 }
 
+/// Above a checkbox list, lined up with the row checkboxes: one tri-state
+/// box that ticks every row shown (or clears), what is ticked, and the
+/// page's quick pick ("Select generally safe"). ⌘A does the same.
+struct SelectAllBar: View {
+    var shownCount: Int
+    var checkedCount: Int
+    var checkedBytes: Int64
+    var onSelectAll: () -> Void
+    var onClear: () -> Void
+    var quickTitle: String? = nil
+    var quickEnabled = true
+    var onQuick: (() -> Void)? = nil
+    /// A quiet note on the right ("Largest 300 of 2,000 shown").
+    var note: String? = nil
+    /// Where the row checkboxes start: lists pad 18, each CheckRow 8 more.
+    var leadingInset: CGFloat = 18 + 8
+    var trailingInset: CGFloat = 28
+
+    private var allChecked: Bool { shownCount > 0 && checkedCount >= shownCount }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Button { checkedCount > 0 ? onClear() : onSelectAll() } label: {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(checkedCount > 0 ? DiskMapTheme.accent : DiskMapTheme.raised)
+                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(checkedCount > 0 ? DiskMapTheme.accent : DiskMapTheme.ink3.opacity(0.7), lineWidth: 1))
+                    .overlay {
+                        if checkedCount > 0 {
+                            Image(systemName: allChecked ? "checkmark" : "minus")
+                                .font(.system(size: DiskMapType.scaled(8.5), weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .frame(width: DiskMapType.scaled(14), height: DiskMapType.scaled(14))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(shownCount == 0)
+            .help(checkedCount > 0 ? "Clear the selection (Esc)" : "Select all \(shownCount.formatted()) shown (⌘A)")
+            .accessibilityLabel(checkedCount > 0 ? "Clear selection" : "Select all")
+            .accessibilityValue(allChecked ? "all checked" : checkedCount > 0 ? "some checked" : "none checked")
+
+            Button { checkedCount > 0 ? onClear() : onSelectAll() } label: {
+                Text(checkedCount == 0 ? "Select all"
+                     : "\(checkedCount.formatted()) of \(shownCount.formatted()) selected · \(ByteFormat.string(checkedBytes))")
+                    .font(DiskMapType.secondary)
+                    .foregroundStyle(checkedCount == 0 ? DiskMapTheme.ink2 : DiskMapTheme.ink)
+                    .monospacedDigit()
+            }
+            .buttonStyle(.plain)
+            .disabled(shownCount == 0)
+            .accessibilityHidden(true)
+            .padding(.leading, 6)
+
+            if let quickTitle, let onQuick, checkedCount == 0 {
+                Text("·").font(DiskMapType.secondary).foregroundStyle(DiskMapTheme.ink3).padding(.horizontal, 6)
+                Button(quickTitle, action: onQuick)
+                    .buttonStyle(LinkButtonStyle())
+                    .font(DiskMapType.secondary)
+                    .disabled(!quickEnabled)
+            }
+            Spacer(minLength: 8)
+            if let note {
+                Text(note)
+                    .font(DiskMapType.figureSmall)
+                    .foregroundStyle(DiskMapTheme.ink3)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.leading, leadingInset)
+        .padding(.trailing, trailingInset)
+        .frame(height: 34)
+        .overlay(alignment: .bottom) { Hairline() }
+    }
+}
+
 /// The checkbox-list footer for any item type: a hint with a quick-select
 /// link, or the selection toolbar once something is checked.
 struct ReviewFooter: View {
@@ -165,8 +244,14 @@ struct ReviewFooter: View {
     var onReveal: () -> Void
     var paths: [String]
 
+    /// Lists with a `SelectAllBar` above them carry the hint and quick pick
+    /// there; the footer then appears only once something is ticked.
+    var hidesWhenEmpty = true
+
     var body: some View {
-        if checkedCount == 0 {
+        if checkedCount == 0, hidesWhenEmpty {
+            EmptyView()
+        } else if checkedCount == 0 {
             HStack(spacing: 6) {
                 Text(hint)
                     .font(DiskMapType.secondary)
