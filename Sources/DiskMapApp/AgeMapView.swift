@@ -210,12 +210,10 @@ struct AgeMapView: View {
     }
 
     private func stageSelected() async {
-        let summary = await model.stageForCleanup(checked.compactMap { id in
+        guard let summary = await model.confirmStageMany(checked.compactMap { id in
             guard id >= 0, Int(id) < totals.count else { return nil }
             return CleanupStageRequest(url: tree.path(of: id, root: rootURL), size: totals[Int(id)], reason: "Untouched for over a year")
-        })
-        model.showToast(summary.added > 0 ? "Added \(countLabel(summary.added, "file")) to Cleanup — ⇧⌘⌫ to review"
-                        : summary.alreadyPresent > 0 ? "Already in Cleanup" : "Nothing could be added")
+        }, title: "Age Map") else { return }
         if summary.added > 0 { checked.removeAll() }
     }
 }

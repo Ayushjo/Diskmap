@@ -519,11 +519,9 @@ struct DeveloperStorageView: View {
             return
         }
         Task {
-            let summary = await model.stageForCleanup(allowed.map {
+            guard await model.confirmStageMany(allowed.map {
                 CleanupStageRequest(url: URL(fileURLWithPath: $0.absolutePath), size: $0.bytes, reason: "Developer: \($0.displayName)")
-            })
-            model.showToast(summary.added > 0 ? "Added \(countLabel(summary.added, "item")) to Cleanup — ⇧⌘⌫ to review"
-                            : summary.alreadyPresent > 0 ? "Already in Cleanup" : "Blocked by safety rules")
+            }, title: "Developer Storage") != nil else { return }
             checked.subtract(allowed.map(\.id))
         }
     }
@@ -531,12 +529,11 @@ struct DeveloperStorageView: View {
     private func stageTools(_ ids: [Int32], category: String?) {
         guard let tree = model.tree, let root = model.rootURL else { return }
         Task {
-            let summary = await model.stageForCleanup(ids.map { id in
+            // Same reason prefix as the other tabs, so Cleanup groups them together.
+            guard await model.confirmStageMany(ids.map { id in
                 let cat = category ?? toolHits?.first { $0.id == id }?.categoryID ?? "dev"
-                return CleanupStageRequest(url: tree.path(of: id, root: root), size: toolSize(id), reason: "dev: \(cat)")
-            })
-            model.showToast(summary.added > 0 ? "Added \(countLabel(summary.added, "folder")) to Cleanup — ⇧⌘⌫ to review"
-                            : summary.alreadyPresent > 0 ? "Already in Cleanup" : "Nothing could be added")
+                return CleanupStageRequest(url: tree.path(of: id, root: root), size: toolSize(id), reason: "Developer: \(cat)")
+            }, title: "Developer Storage") != nil else { return }
             checkedTools.subtract(ids)
         }
     }

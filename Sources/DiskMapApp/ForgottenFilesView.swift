@@ -314,12 +314,10 @@ struct ForgottenFilesView: View {
 
     private func stageSelected() async {
         let items = checkedReviewable
-        let summary = await model.stageForCleanup(items.map {
+        guard let summary = await model.confirmStageMany(items.map {
             CleanupStageRequest(url: URL(fileURLWithPath: $0.absolutePath).standardizedFileURL, size: $0.bytes,
                                 reason: "Forgotten: " + $0.confidence.title)
-        })
-        model.showToast(summary.added > 0 ? "Added \(summary.added) to Cleanup — ⇧⌘⌫ to review"
-                        : summary.alreadyPresent > 0 ? "Already in Cleanup" : "Nothing could be added")
+        }, title: "Forgotten Files") else { return }
         if summary.added > 0 { model.clearMultiSelection() }
     }
 

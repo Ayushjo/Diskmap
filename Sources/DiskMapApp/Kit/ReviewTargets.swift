@@ -289,9 +289,7 @@ extension ScanModel {
                                                     size: size, reason: reason(target)))
             }
         }
-        let summary = await stageForCleanup(requests)
-        showToast(summary.added > 0 ? "Added \(countLabel(targets.count, "item")) to Cleanup — ⇧⌘⌫ to review"
-                  : summary.alreadyPresent > 0 ? "Already in Cleanup" : "Nothing could be added")
+        guard let summary = await confirmStageMany(requests, title: "Review targets") else { return 0 }
         return summary.added
     }
 }

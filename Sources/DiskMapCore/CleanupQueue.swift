@@ -186,16 +186,47 @@ public actor CleanupQueue {
         let measuredPath = standardized.path
         let context = scanContext
         Task {
+            // At most `measurementLimit` walks at once: each is a thread, and
+            // staging 200 folders used to start 200 (MAC-FIXES-FROM-WINDOWS §2.3).
+            await self.acquireMeasurementSlot()
             // The tree first: exact when it can be, nil otherwise.
             if let context, let seeded = await StorageSharing.seededProfileOffPool(context: context, path: measuredPath) {
                 self.recordMeasurement(seeded, source: .scan(context.capturedAt), for: id)
-                return
+            } else {
+                let sharing = await StorageSharing.profileOffPool(atPath: measuredPath)
+                self.recordMeasurement(sharing, source: .walk, for: id)
             }
-            let sharing = await StorageSharing.profileOffPool(atPath: measuredPath)
-            self.recordMeasurement(sharing, source: .walk, for: id)
+            self.releaseMeasurementSlot()
         }
         return true
     }
+
+    static let measurementLimit = 8
+    private var activeMeasurements = 0
+    private var measurementSlotWaiters: [CheckedContinuation<Void, Never>] = []
+    /// The most measurements that ever ran at once (tests check the limit).
+    private(set) var peakActiveMeasurements = 0
+
+    private func acquireMeasurementSlot() async {
+        if activeMeasurements >= Self.measurementLimit {
+            await withCheckedContinuation { measurementSlotWaiters.append($0) }
+        } else {
+            activeMeasurements += 1
+        }
+        peakActiveMeasurements = max(peakActiveMeasurements, activeMeasurements)
+    }
+
+    private func releaseMeasurementSlot() {
+        if measurementSlotWaiters.isEmpty {
+            activeMeasurements -= 1
+        } else {
+            // Hand the slot straight to the next waiter.
+            measurementSlotWaiters.removeFirst().resume()
+        }
+    }
+
+    /// How many staged items still have their size being measured.
+    public func measuringCount() -> Int { items.filter(\.isMeasuring).count }
 
     private func recordMeasurement(_ sharing: StorageSharing.Profile?, source: MeasurementSource, for id: UUID) {
         if let index = items.firstIndex(where: { $0.id == id }) {
@@ -358,8 +389,15 @@ public actor CleanupQueue {
     /// `commit()` plus what it freed. Folders go first; an item inside a
     /// folder that moved successfully went with it, so it is reported as
     /// moved rather than retried and shown as a failure.
-    public func commitReport() async -> CommitReport {
-        await commitReport(movingToTrash: Self.moveToTrash)
+    public func commitReport(progress: (@Sendable (CommitProgress) -> Void)? = nil) async -> CommitReport {
+        await commitReport(movingToTrash: Self.moveToTrash, progress: progress)
+    }
+
+    /// What a commit is doing, for a progress bar (MAC-FIXES-FROM-WINDOWS §2.3).
+    public enum CommitProgress: Sendable, Equatable {
+        /// Finishing size measurements before anything moves.
+        case verifying(done: Int, total: Int)
+        case moving(done: Int, total: Int)
     }
 
     /// The only function in the app that removes anything from its place on
@@ -374,9 +412,19 @@ public actor CleanupQueue {
     /// filling the developer's real Trash. Production code must go through
     /// `commitReport()`, whose mover is `moveToTrash` — never pass a deleting
     /// function here.
-    func commitReport(movingToTrash move: (URL) throws -> URL?) async -> CommitReport {
+    func commitReport(movingToTrash move: (URL) throws -> URL?,
+                      progress: (@Sendable (CommitProgress) -> Void)? = nil) async -> CommitReport {
         // The receipt must be computed from real measurements, and a moved
-        // item can no longer be measured — so finish measuring first.
+        // item can no longer be measured — so finish measuring first, and
+        // say so while it happens.
+        let total = items.count
+        if let progress {
+            while items.contains(where: \.isMeasuring) {
+                progress(.verifying(done: total - measuringCount(), total: total))
+                try? await Task.sleep(nanoseconds: 150_000_000)
+            }
+            progress(.verifying(done: total, total: total))
+        }
         await waitForMeasurements()
         let ordered = items.sorted {
             $0.url.pathComponents.count == $1.url.pathComponents.count
@@ -399,6 +447,7 @@ public actor CleanupQueue {
         }
         var outcomes: [(item: StagedItem, error: Error?, withFolder: Bool, trashed: URL?)] = []
         for item in ordered {
+            defer { progress?(.moving(done: outcomes.count, total: ordered.count)) }
             let path = item.url.path
             if insideMovedFolder(path) {
                 outcomes.append((item, nil, true, nil))

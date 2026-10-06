@@ -352,9 +352,8 @@ struct DuplicatesView: View {
                 ))
             }
         }
-        let result = await model.stageForCleanup(requests)
+        guard let result = await model.confirmStageMany(requests, title: "Duplicates") else { return }
         let rejected = Set(result.rejectedURLs.map(\.standardizedFileURL.path))
         checked = Set(checked.filter { rejected.contains(tree.path(of: $0, root: rootURL).standardizedFileURL.path) })
-        model.showToast(result.added > 0 ? "Added \(result.added) copies to Cleanup" : "Nothing new added")
     }
 }

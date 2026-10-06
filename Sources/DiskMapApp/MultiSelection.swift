@@ -75,8 +75,7 @@ extension ScanModel {
             CleanupStageRequest(url: tree.path(of: id, root: rootURL), size: selectedTotals[Int(id)],
                                 reason: "Selected in \(destination.label)")
         }
-        let result = await stageForCleanup(requests)
-        showToast(result.added > 0 ? "Added \(result.added) to Cleanup" : result.rejected > 0 ? "Blocked by safety rules" : "Already in Cleanup")
+        guard let result = await confirmStageMany(requests, title: "Selected in \(destination.label)") else { return }
         if result.added > 0 { clearMultiSelection() }
     }
 }

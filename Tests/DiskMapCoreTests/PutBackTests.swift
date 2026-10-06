@@ -144,6 +144,30 @@ struct PutBackTests {
         #expect(CleanupQueue.plainReason(NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError)).contains("no longer there"))
     }
 
+    /// Progress only moves forward and ends with every item moved; sizes are
+    /// measured at most eight at a time (MAC-FIXES-FROM-WINDOWS §2.3).
+    @Test func commitReportsProgressAndMeasuringIsBounded() async throws {
+        let f = try Fixture()
+        let queue = CleanupQueue()
+        for k in 0..<20 {
+            try f.put("d\(k)/x.bin", 1_000)
+            #expect(await queue.stage(f.url("d\(k)"), size: 1_000, reason: "test"))
+        }
+        final class Log: @unchecked Sendable {
+            var steps: [CleanupQueue.CommitProgress] = []
+            let lock = NSLock()
+            func add(_ step: CleanupQueue.CommitProgress) { lock.lock(); steps.append(step); lock.unlock() }
+        }
+        let log = Log()
+        _ = await queue.commitReport(movingToTrash: { _ in nil }, progress: { log.add($0) })
+        let moving = log.steps.compactMap { step -> Int? in
+            if case let .moving(done, total) = step { #expect(total == 20); return done } else { return nil }
+        }
+        #expect(moving == Array(1...20))
+        #expect(log.steps.contains(.verifying(done: 20, total: 20)) || log.steps.first.map { if case .moving = $0 { return true } else { return false } } == true)
+        #expect(await queue.peakActiveMeasurements <= CleanupQueue.measurementLimit)
+    }
+
     @Test func theRecordSurvivesARelaunch() throws {
         let f = try Fixture()
         let file = f.base.appendingPathComponent("support/last-cleanup.json")

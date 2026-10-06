@@ -174,6 +174,11 @@ final class ScanModel: ObservableObject {
     @Published var findSort: FileQuery.Sort = .largest
     /// The cleanup queue sheet; published so ⇧⌘⌫ can open it from the menu.
     @Published var isCleanupQueuePresented = false
+    /// A bulk add or a risky single add waiting for an answer (StageConfirmation.swift).
+    @Published var pendingBulkStage: BulkStageProposal?
+    @Published var pendingRiskyStage: RiskyStageProposal?
+    /// What Move to Trash is doing, while it runs.
+    @Published var commitProgress: CleanupQueue.CommitProgress?
     /// Nodes ⌘/⇧-selected together (MultiSelection.swift).
     @Published var multiSelection: Set<Int32> = []
     var selectionAnchor: Int32?
@@ -859,7 +864,11 @@ final class ScanModel: ObservableObject {
     }
 
     func commitCleanup() async {
-        let report = await cleanupQueue.commitReport()
+        commitProgress = .verifying(done: 0, total: stagedItems.count)
+        defer { commitProgress = nil }
+        let report = await cleanupQueue.commitReport { [weak self] step in
+            Task { @MainActor in if self?.commitProgress != nil { self?.commitProgress = step } }
+        }
         let record = CleanupRecord(report: report)
         if !record.items.isEmpty {
             lastCleanup = record

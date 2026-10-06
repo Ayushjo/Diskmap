@@ -97,6 +97,8 @@ struct AppShellView: View {
             CleanupQueueView(model: model)
                 .frame(minWidth: 640, minHeight: 480)
         }
+        .sheet(item: $model.pendingBulkStage) { BulkStageSheet(proposal: $0) }
+        .sheet(item: $model.pendingRiskyStage) { RiskyStageSheet(proposal: $0) }
         .sheet(isPresented: $showExplain) {
             ExplainStorageSheet(model: model)
                 .frame(minWidth: 520, minHeight: 420)
