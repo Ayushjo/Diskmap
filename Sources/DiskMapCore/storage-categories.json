@@ -27,7 +27,7 @@
   },
   {
    "id": "vms",
-   "title": "Docker, VMs & emulators",
+   "title": "Docker & VMs",
    "color": "C78797",
    "blurb": "Virtual disks of Docker, OrbStack, UTM, Parallels and emulators."
   },

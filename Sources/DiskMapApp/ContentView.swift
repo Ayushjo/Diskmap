@@ -184,6 +184,9 @@ final class ScanModel: ObservableObject {
     private var cloneSurveyTask: Task<Void, Never>?
     /// When set, Biggest Files filters to files under this absolute path prefix.
     @Published var folderFilterPath: String? = nil
+    /// When set, Biggest Files shows one storage category (a StorageClass id);
+    /// Overview's category rows set it (MAC-FIXES-FROM-WINDOWS §4.5).
+    @Published var categoryFilter: String? = nil
     /// Precomputed after scan — Forgotten Files must not re-walk the tree on every click.
     @Published var cachedForgotten: [ForgottenCandidate] = []
     @Published var cachedForgottenSummary: ForgottenSummary = .empty
@@ -382,6 +385,7 @@ final class ScanModel: ObservableObject {
         duplicateError = nil
         duplicateDidRun = false
         folderFilterPath = nil
+        categoryFilter = nil
         selectedNode = 0
         currentNode = 0
         clearMultiSelection()   // node ids from the old tree mean nothing now
