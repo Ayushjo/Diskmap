@@ -277,6 +277,11 @@ final class ScanModel: ObservableObject {
             let base = tree.flatMap { current in
                 treeBaseline.map { IncrementalScan.Base(tree: current, baseline: $0) }
             }
+            // Without an in-memory base the update reads the cache from disk:
+            // let a save still writing it finish first, so it never reads a
+            // new tree with an old baseline (MAC-FIXES-FROM-WINDOWS §1.1).
+            if base == nil { await cacheSave?.value }
+            guard generation == scanGeneration else { return }
             switch await IncrementalScan.update(root: url, cache: scanCache, base: base, sharing: CloneAccounting.mode) {
             case .updated(let update): quickUpdate = update
             case .fullScanNeeded(let reason): fallbackReason = reason
