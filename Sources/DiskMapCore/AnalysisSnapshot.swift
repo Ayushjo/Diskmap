@@ -180,7 +180,7 @@ public struct AnalysisSnapshot: Sendable, Equatable {
             let types = fileTypes ?? FileTypeCatalog.totals(in: tree, sizes: totals, categories: FileTypeCatalog.loadBundled())
             cats = categorizeByType(types, scanned: scanned)
         } else {
-            cats = categorize(tree: tree, root: root, totals: totals)
+            cats = categorize(tree: tree, root: root, totals: totals, mode: mode)
         }
         let topFiles = topFileHits(tree: tree, root: root, totals: totals, limit: 12)
         let topFolders = topFolderHits(tree: tree, root: root, totals: totals, limit: 12)
@@ -233,89 +233,16 @@ public struct AnalysisSnapshot: Sendable, Equatable {
         return .healthy
     }
 
-    /// Exclusive partition of **immediate children** of the scan root.
-    /// One child contributes to exactly one category. Library peels Caches/Logs
-    /// into caches (subtracted from library) so bytes stay exclusive.
-    /// Skips empty Data-volume firmlink twin dirs (size 0 after skip-descend).
-    private static func categorize(tree: FileTree, root: URL, totals: [Int64]) -> [StorageCategory] {
-        var buckets: [String: (title: String, hint: String, bytes: Int64, node: Int32?)] = [
-            "applications": ("Applications", "apps", 0, nil),
-            "library": ("Library", "library", 0, nil),
-            "downloads": ("Downloads", "downloads", 0, nil),
-            "documents": ("Personal", "documents", 0, nil),
-            "developer": ("Developer", "developer", 0, nil),
-            "caches": ("Caches & Logs", "caches", 0, nil),
-            "system": ("System", "system", 0, nil),
-            "other": ("Other", "other", 0, nil),
-        ]
-
-        func add(_ key: String, bytes: Int64, node: Int32) {
-            guard bytes > 0, var b = buckets[key] else { return }
-            b.bytes += bytes
-            if b.node == nil { b.node = node }
-            buckets[key] = b
+    /// Every byte of the scan in one of the storage categories
+    /// (`StorageClassifier`, rules in storage-categories.json). It used to
+    /// bucket only the root's direct children, so a whole-disk scan showed all
+    /// of /Users as "Personal" and developer storage only where it sat at the
+    /// top (MAC-FIXES-FROM-WINDOWS §3.1). The rows sum to the scan total.
+    private static func categorize(tree: FileTree, root: URL, totals: [Int64], mode: CategoryMode) -> [StorageCategory] {
+        StorageClassifier.rollup(tree: tree, root: root, totals: totals, rootIsHome: mode == .home).map {
+            StorageCategory(key: $0.storageClass.id, title: $0.storageClass.title, bytes: $0.bytes,
+                            colorHint: $0.storageClass.id, nodeID: $0.largestNode, colorHex: $0.storageClass.colorHex)
         }
-
-        let children = tree.children(of: 0, totals: totals)
-        for entry in children {
-            let child = entry.id
-            let name = tree.name(of: child)
-            let bytes = entry.size
-            guard bytes > 0 else { continue }
-            let lower = name.lowercased()
-            let path = tree.path(of: child, root: root).path
-
-            // Ignore empty firmlink-twin shells under Data if present.
-            if CanonicalPath.shouldSkipDescend(absolutePath: path, scanRootPath: root.path) {
-                continue
-            }
-
-            if lower == "library" {
-                var libBytes = bytes
-                for gentry in tree.children(of: child, totals: totals) {
-                    let gn = tree.name(of: gentry.id).lowercased()
-                    if gn == "caches" || gn == "logs" {
-                        add("caches", bytes: gentry.size, node: gentry.id)
-                        libBytes = max(0, libBytes - gentry.size)
-                    } else if gn == "developer" {
-                        // Xcode under ~/Library/Developer
-                        add("developer", bytes: gentry.size, node: gentry.id)
-                        libBytes = max(0, libBytes - gentry.size)
-                    }
-                }
-                add("library", bytes: libBytes, node: child)
-            } else if lower == "downloads" {
-                add("downloads", bytes: bytes, node: child)
-            } else if lower == "documents" || lower == "desktop" || lower == "movies" || lower == "music" || lower == "pictures" {
-                add("documents", bytes: bytes, node: child)
-            } else if lower == "applications" || lower == "applications (parallels)" {
-                add("applications", bytes: bytes, node: child)
-            } else if lower.hasPrefix(".") && isDeveloperDot(lower) {
-                add("developer", bytes: bytes, node: child)
-            } else if lower == "developer" || lower == "dev" {
-                add("developer", bytes: bytes, node: child)
-            } else if lower == "caches" || lower.hasSuffix(".cache") {
-                add("caches", bytes: bytes, node: child)
-            } else if lower == "system" || lower == "private" || path.hasPrefix("/System") {
-                add("system", bytes: bytes, node: child)
-            } else if lower == "users" {
-                // Whole-disk scan: attribute Users to personal/other breakdown via its children if shallow;
-                // otherwise count as Personal container.
-                add("documents", bytes: bytes, node: child)
-            } else {
-                add("other", bytes: bytes, node: child)
-            }
-        }
-
-        let order = ["applications", "library", "downloads", "documents", "developer", "caches", "system", "other"]
-        let cats = order.compactMap { key -> StorageCategory? in
-            guard let b = buckets[key], b.bytes > 0 else { return nil }
-            return StorageCategory(key: key, title: b.title, bytes: b.bytes, colorHint: b.hint, nodeID: b.node)
-        }
-        // Guarantee sum(categories) == sum of positive root children accounted
-        // (exclusive by construction). Callers must use sum as bar denominator
-        // when comparing to volume used — never inflate Other to fill volume.
-        return cats
     }
 
     /// Folder mode: one category per file type, biggest first, then "Other"
@@ -342,13 +269,6 @@ public struct AnalysisSnapshot: Sendable, Equatable {
         return url.lastPathComponent
     }
 
-    private static func isDeveloperDot(_ lower: String) -> Bool {
-        [
-            ".npm", ".nvm", ".yarn", ".pnpm", ".cache", ".cargo", ".rustup",
-            ".gradle", ".cocoapods", ".pub-cache", ".local", ".cursor", ".codex",
-            ".docker", ".pyenv", ".conda", ".vscode"
-        ].contains(lower)
-    }
 
     private static func topFileHits(tree: FileTree, root: URL, totals: [Int64], limit: Int) -> [StorageFileHit] {
         var ids: [Int32] = []

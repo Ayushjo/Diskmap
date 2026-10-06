@@ -174,6 +174,11 @@ final class ScanModel: ObservableObject {
     @Published var findSort: FileQuery.Sort = .largest
     /// The cleanup queue sheet; published so ⇧⌘⌫ can open it from the menu.
     @Published var isCleanupQueuePresented = false
+    /// A bulk add or a risky single add waiting for an answer (StageConfirmation.swift).
+    @Published var pendingBulkStage: BulkStageProposal?
+    @Published var pendingRiskyStage: RiskyStageProposal?
+    /// What Move to Trash is doing, while it runs.
+    @Published var commitProgress: CleanupQueue.CommitProgress?
     /// Nodes ⌘/⇧-selected together (MultiSelection.swift).
     @Published var multiSelection: Set<Int32> = []
     var selectionAnchor: Int32?
@@ -184,6 +189,9 @@ final class ScanModel: ObservableObject {
     private var cloneSurveyTask: Task<Void, Never>?
     /// When set, Biggest Files filters to files under this absolute path prefix.
     @Published var folderFilterPath: String? = nil
+    /// When set, Biggest Files shows one storage category (a StorageClass id);
+    /// Overview's category rows set it (MAC-FIXES-FROM-WINDOWS §4.5).
+    @Published var categoryFilter: String? = nil
     /// Precomputed after scan — Forgotten Files must not re-walk the tree on every click.
     @Published var cachedForgotten: [ForgottenCandidate] = []
     @Published var cachedForgottenSummary: ForgottenSummary = .empty
@@ -277,6 +285,11 @@ final class ScanModel: ObservableObject {
             let base = tree.flatMap { current in
                 treeBaseline.map { IncrementalScan.Base(tree: current, baseline: $0) }
             }
+            // Without an in-memory base the update reads the cache from disk:
+            // let a save still writing it finish first, so it never reads a
+            // new tree with an old baseline (MAC-FIXES-FROM-WINDOWS §1.1).
+            if base == nil { await cacheSave?.value }
+            guard generation == scanGeneration else { return }
             switch await IncrementalScan.update(root: url, cache: scanCache, base: base, sharing: CloneAccounting.mode) {
             case .updated(let update): quickUpdate = update
             case .fullScanNeeded(let reason): fallbackReason = reason
@@ -377,6 +390,7 @@ final class ScanModel: ObservableObject {
         duplicateError = nil
         duplicateDidRun = false
         folderFilterPath = nil
+        categoryFilter = nil
         selectedNode = 0
         currentNode = 0
         clearMultiSelection()   // node ids from the old tree mean nothing now
@@ -850,7 +864,11 @@ final class ScanModel: ObservableObject {
     }
 
     func commitCleanup() async {
-        let report = await cleanupQueue.commitReport()
+        commitProgress = .verifying(done: 0, total: stagedItems.count)
+        defer { commitProgress = nil }
+        let report = await cleanupQueue.commitReport { [weak self] step in
+            Task { @MainActor in if self?.commitProgress != nil { self?.commitProgress = step } }
+        }
         let record = CleanupRecord(report: report)
         if !record.items.isEmpty {
             lastCleanup = record

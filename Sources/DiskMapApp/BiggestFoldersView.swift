@@ -100,6 +100,7 @@ struct BiggestFoldersView: View {
                     message: rawRows.isEmpty ? "Try another folder, or go back up." : "Clear the search or show technical folders."
                 )
             } else {
+                MultiSelectAllBar(model: model, ids: rows.map(\.id))
                 list
             }
             NodeSelectionToolbar(model: model)
@@ -190,6 +191,11 @@ struct BiggestFoldersView: View {
         }
         var subtitle = isDir ? countLabel(fileCount, "file") + " · " + countLabel(folderCount, "folder")
             : FileKind.classify(fileName: name, path: abs).title
+        // Its storage category, with ⚠ where removing it breaks something.
+        let verdict = StorageClassifier.classify(path: abs, isDirectory: isDir)
+        if verdict.storageClass.id != "other" {
+            subtitle += " · " + (verdict.advice.isRisky ? "⚠ " : "") + verdict.storageClass.title
+        }
         if isDir, let shared = model.cloneSharedBytes(of: row.id), i < model.allocatedTotals.count {
             subtitle += " · about \(ByteFormat.string(max(0, model.allocatedTotals[i] - shared))) on disk (shared copies)"
         }

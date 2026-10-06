@@ -132,9 +132,10 @@ public enum ForgottenFiles {
         guard tree.count == totals.count, limit > 0 else { return [] }
         var out: [ForgottenCandidate] = []
         out.reserveCapacity(min(limit, 256))
+        let held = StorageClassifier.systemHoldingFlags(tree: tree, root: root)
         for id in 1..<Int32(tree.count) {
             let index = Int(id)
-            guard !tree.isDirectory[index] else { continue }
+            guard !tree.isDirectory[index], !held[index] else { continue }
             let bytes = totals[index]
             guard bytes >= minBytes else { continue }
             let day = tree.modifiedDay[index]

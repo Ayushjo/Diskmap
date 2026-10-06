@@ -268,6 +268,7 @@ public enum OldDownloadsCatalog {
         let underLibrary = tree.folderChainFlags(rootMatches: root.path.lowercased().contains("/library")) {
             $0.lowercased() == "library"
         }
+        let held = StorageClassifier.systemHoldingFlags(tree: tree, root: root)
         var hits: [OldDownloadsCandidate] = []
         for id in 0..<Int32(tree.count) {
             let i = Int(id)
@@ -279,6 +280,7 @@ public enum OldDownloadsCatalog {
             let inFolder = parentID >= 0 && parentID < underDownloads.count && underDownloads[parentID]
             guard inFolder || name.lowercased().hasPrefix("downloads") else { continue }
             if parentID >= 0, parentID < underLibrary.count, underLibrary[parentID] { continue }
+            if held[i] { continue }
             let abs = tree.path(of: id, root: root).path
             let day = tree.modifiedDay[i]
             let age = day > 0 ? max(0, today - day) : 0

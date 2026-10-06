@@ -304,10 +304,12 @@ public enum DeveloperCatalog {
     ) -> DeveloperCatalogResult {
         guard totals.count == tree.count else { return .empty }
 
+        // Already in the Trash (or another system-held folder): not a finding.
+        let held = StorageClassifier.systemHoldingFlags(tree: tree, root: root)
         var hits: [(id: Int32, rule: Rule, bytes: Int64, path: String, name: String)] = []
         for id in 0..<Int32(tree.count) {
             let i = Int(id)
-            guard tree.isDirectory[i] else { continue }
+            guard tree.isDirectory[i], !held[i] else { continue }
             let name = tree.name(of: id)
             let key = name.lowercased()
             guard let rule = nameToRule[key] else { continue }
@@ -324,23 +326,44 @@ public enum DeveloperCatalog {
             // "reclaimable, safe" (inside app updates staged under
             // ~/Library/Caches) — deleting them corrupts the pending update.
             if isInsideApplicationBundle(path) { continue }
+            // A dependency folder that a tool or app manages for itself — a
+            // package inside Yarn's cache (332 "projects" on a real home),
+            // uv's installed tools, Zed's or Cursor's language servers — is
+            // not a project. Its cache or app folder is the finding, if any.
+            if rule.projectFromParent, isToolManaged(path) { continue }
             hits.append((id, rule, bytes, path, name))
         }
 
-        hits.sort { $0.bytes > $1.bytes }
+        // Largest first; on a tie the outer folder first, so `Android` holding
+        // only `Android/Sdk` keeps `Android` and skips the child. Without the
+        // tie-break both were kept and 19 GB counted twice (Windows, §3.4).
+        func depth(_ id: Int32) -> Int {
+            var d = 0, current = tree.parent[Int(id)]
+            while current >= 0, d < 4096 { d += 1; current = tree.parent[Int(current)] }
+            return d
+        }
+        let depths = Dictionary(uniqueKeysWithValues: hits.map { ($0.id, depth($0.id)) })
+        hits.sort {
+            if $0.bytes != $1.bytes { return $0.bytes > $1.bytes }
+            let (a, b) = (depths[$0.id] ?? 0, depths[$1.id] ?? 0)
+            return a != b ? a < b : $0.id < $1.id
+        }
 
-        // Prefer outer directories: skip if an ancestor was already kept.
+        // Prefer outer directories: skip a hit inside one already kept.
         var kept: [(id: Int32, rule: Rule, bytes: Int64, path: String, name: String)] = []
-        var keptIDs: [Int32] = []
+        var keptIDs = Set<Int32>()
         for hit in hits {
-            let ancestors = Set(tree.ancestorIDs(of: hit.id))
-            if keptIDs.contains(where: { ancestors.contains($0) && $0 != hit.id }) {
-                continue
+            var ancestor = tree.parent[Int(hit.id)]
+            var insideKept = false
+            var steps = 0
+            while ancestor >= 0, steps < 4096 {
+                if keptIDs.contains(ancestor) { insideKept = true; break }
+                ancestor = tree.parent[Int(ancestor)]
+                steps += 1
             }
-            // Also drop if this hit contains an already-kept descendant? Prefer larger outer — already sorted by size so outer often first.
-            // If a smaller nested was somehow kept first, replace: skip adding nested when ancestor kept (done).
+            if insideKept { continue }
             kept.append(hit)
-            keptIDs.append(hit.id)
+            keptIDs.insert(hit.id)
             if kept.count >= limit { break }
         }
 
@@ -452,6 +475,12 @@ public enum DeveloperCatalog {
         path.split(separator: "/").dropLast().contains { $0.lowercased().hasSuffix(".app") }
     }
 
+    static func isToolManaged(_ path: String) -> Bool {
+        let lower = path.lowercased()
+        return lower.contains("/library/caches/") || lower.contains("/library/application support/")
+            || lower.contains("/.local/share/") || lower.contains("/.cache/") || lower.contains("/library/pnpm/")
+    }
+
     private static func isPlausibleHit(name: String, pathHint: String, rule: Rule) -> Bool {
         let lower = pathHint.lowercased()
         switch name {
@@ -472,7 +501,7 @@ public enum DeveloperCatalog {
         // or package that happens to share the name (node_modules/pnpm).
         case "pnpm":
             return lower.hasSuffix("/library/pnpm") || lower.hasSuffix("/.local/share/pnpm")
-        case "uv", "pip", "rattler", "ccache", "go-build", "homebrew":
+        case "uv", "pip", "rattler", "ccache", "go-build", "homebrew", "yarn":
             return lower.hasSuffix("/library/caches/\(name)") || lower.hasSuffix("/.cache/\(name)")
         default:
             return true
@@ -687,5 +716,87 @@ public enum DeveloperCatalog {
             categories: categories,
             ecosystems: ecosystems
         )
+    }
+}
+
+/// Developer storage by folder: every folder that holds some, how much, and
+/// how much of it can go — for "Where it lives" (MAC-FIXES-FROM-WINDOWS §4.3).
+public struct DeveloperFolders: Sendable {
+    public struct Folder: Sendable, Equatable {
+        public var id: Int32
+        /// Developer bytes at or under this folder.
+        public var bytes: Int64
+        public var itemCount: Int
+        /// Bytes of the items here that can go to Cleanup.
+        public var removableBytes: Int64
+        /// The developer item this folder *is*, when it is one.
+        public var itemID: String?
+        /// Folders below that hold developer storage, largest first.
+        public var children: [Int32]
+        /// Ids of every item at or under this folder.
+        public var itemIDs: [String]
+        public var removableItemIDs: [String]
+    }
+
+    public var folders: [Int32: Folder]
+
+    public static let empty = DeveloperFolders(folders: [:])
+
+    /// Where to open: from the scan root, step into the largest folder while
+    /// it holds at least 80% of its parent's developer storage, so the first
+    /// view is a real choice rather than `/ → Users → you`.
+    public func autoStart(from root: Int32 = 0) -> Int32 {
+        var current = root
+        var steps = 0
+        while let folder = folders[current], let top = folder.children.first, let child = folders[top],
+              child.itemID == nil, Double(child.bytes) >= Double(folder.bytes) * 0.8, steps < 64 {
+            current = top
+            steps += 1
+        }
+        return current
+    }
+}
+
+extension DeveloperCatalog {
+    /// Each item's bytes credited to every folder from it up to the scan
+    /// root. Items never nest (outer hits win in `build`), so nothing counts
+    /// twice. `removable` decides what "Clean up" may add.
+    public static func folderRollup(_ result: DeveloperCatalogResult, tree: FileTree,
+                                    removable: (DeveloperItem) -> Bool) -> DeveloperFolders {
+        var folders: [Int32: DeveloperFolders.Folder] = [:]
+        var childSets: [Int32: Set<Int32>] = [:]
+        for item in result.items {
+            let canGo = removable(item)
+            var node = item.nodeID
+            var child: Int32?
+            var steps = 0
+            while node >= 0, Int(node) < tree.count, steps < 4096 {
+                var folder = folders[node] ?? DeveloperFolders.Folder(
+                    id: node, bytes: 0, itemCount: 0, removableBytes: 0, itemID: nil, children: [], itemIDs: [], removableItemIDs: [])
+                folder.bytes += item.bytes
+                folder.itemCount += 1
+                folder.itemIDs.append(item.id)
+                if canGo {
+                    folder.removableBytes += item.bytes
+                    folder.removableItemIDs.append(item.id)
+                }
+                if node == item.nodeID { folder.itemID = item.id }
+                folders[node] = folder
+                if let child { childSets[node, default: []].insert(child) }
+                child = node
+                let up = tree.parent[Int(node)]
+                if up == node { break }
+                node = up
+                steps += 1
+            }
+        }
+        let sizes = folders.mapValues(\.bytes)
+        for (id, children) in childSets {
+            folders[id]?.children = children.sorted {
+                let (a, b) = (sizes[$0] ?? 0, sizes[$1] ?? 0)
+                return a != b ? a > b : $0 < $1
+            }
+        }
+        return DeveloperFolders(folders: folders)
     }
 }

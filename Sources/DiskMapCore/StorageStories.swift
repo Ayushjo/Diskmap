@@ -122,12 +122,15 @@ public enum StorageNarrator {
                 ))
             }
         }
-        if snap.categoryMode != .folder, let dev = snap.categories.first(where: { $0.key == "developer" }), dev.bytes > 8_000_000 {
+        let developerBytes = snap.categories
+            .filter { StorageClassifier.developerClassIDs.contains($0.key) }
+            .reduce(Int64(0)) { $0 + $1.bytes }
+        if snap.categoryMode != .folder, developerBytes > 8_000_000 {
             out.append(StorageStory(
                 id: "developer",
                 title: "Developer tool data is large",
-                detail: "\(format(dev.bytes)) in known developer locations (Xcode, npm, caches, and similar).",
-                bytes: dev.bytes,
+                detail: "\(format(developerBytes)) in code, dependencies, package caches, SDKs, VMs and models.",
+                bytes: developerBytes,
                 kind: .developer
             ))
         }

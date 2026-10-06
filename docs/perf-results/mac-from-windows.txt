@@ -1,0 +1,22 @@
+MAC-FIXES-FROM-WINDOWS — Phase B measurements (2026-10-06, M-series MacBook, release build)
+
+1.2 Quick rescan vs full walk, ~ (2.68 M entries, 304 GB)
+  full walk (diskmap scan ~ --incremental, cold cache)     12.0 s
+  quick update after 200 new files in one folder            3.4 s  (37 folders re-read, 65 spot-checked)
+  ratio                                                      28 %  — target was <= 40 %; the Windows
+  problem (quick rescan slower than a full walk, 11-16 s on 8.4 M items) does not occur here. No rewrite.
+  Note: "items" differs between the two (2,677,743 vs 2,637,904): the walk counts directory
+  entries read (symlinks included), the update counts tree nodes. Sizes match (304.0 GB).
+
+1.1 / cache race
+  The scan cache is saved on a background task (already, before this port). A quick rescan with no
+  in-memory tree now waits for an in-flight save before reading the cache. Tree-then-baseline write
+  order means a racing reader could only pair a newer tree with an older baseline, which replays
+  extra events idempotently — harmless, the wait is belt and braces.
+
+2.1 Move to Trash cost (FileManager.trashItem, then moved back — nothing left in the Trash)
+  200 small files, one call each                           0.116 s  (0.6 ms per file)
+  one folder of 8,000 files                                0.003 s  (a rename)
+  No batching or parallelism needed (Windows: 500 files 11.5 s -> 2.7 s by batching shell calls).
+  Fixed instead: the "already moved with its folder" check was O(items × moved); now a set lookup
+  over the item's ancestors.

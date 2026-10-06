@@ -228,16 +228,14 @@ struct OldDownloadsView: View {
     }
 
     private func stage(_ items: [OldDownloadsCandidate]) async {
-        let result = await model.stageForCleanup(items.map {
+        guard let result = await model.confirmStageMany(items.map {
             CleanupStageRequest(
                 url: URL(fileURLWithPath: $0.absolutePath),
                 size: $0.bytes,
                 reason: "Old Downloads: \($0.name)"
             )
-        })
+        }, title: "Old Downloads") else { return }
         let rejected = Set(result.rejectedURLs.map(\.path))
         checked = Set(items.filter { rejected.contains($0.absolutePath) }.map(\.nodeID))
-        model.showToast(result.added > 0 ? "Added \(countLabel(result.added, "file")) to Cleanup — ⇧⌘⌫ to review"
-                        : result.alreadyPresent > 0 ? "Already in Cleanup" : "Nothing new added")
     }
 }

@@ -125,9 +125,11 @@ struct ForgottenFilesView: View {
             if visible.isEmpty {
                 emptyState
             } else {
+                // Only rows that can be cleaned are offered (as with ⌘A).
+                MultiSelectAllBar(model: model, ids: visible.filter(\.isReviewable).map(\.id))
                 list
             }
-            if model.multiSelection.count > 1 {
+            if !model.multiSelection.isEmpty {
                 SelectionToolbar(
                     selectedCount: checkedReviewable.count,
                     selectedBytes: checkedReviewable.reduce(0) { $0 + $1.bytes },
@@ -228,7 +230,7 @@ struct ForgottenFilesView: View {
             stage: { id in
                 if let candidate = items.first(where: { $0.id == id }) { stageOne(candidate) }
             },
-            selectAll: { model.multiSelection = Set(ids) },
+            selectAll: { model.multiSelection = Set(items.filter(\.isReviewable).map(\.id)) },
             clearSelection: { model.clearMultiSelection() }
         )
         .onChange(of: selectedID) { _, id in if let id { model.selectedNode = id } }
@@ -314,12 +316,10 @@ struct ForgottenFilesView: View {
 
     private func stageSelected() async {
         let items = checkedReviewable
-        let summary = await model.stageForCleanup(items.map {
+        guard let summary = await model.confirmStageMany(items.map {
             CleanupStageRequest(url: URL(fileURLWithPath: $0.absolutePath).standardizedFileURL, size: $0.bytes,
                                 reason: "Forgotten: " + $0.confidence.title)
-        })
-        model.showToast(summary.added > 0 ? "Added \(summary.added) to Cleanup — ⇧⌘⌫ to review"
-                        : summary.alreadyPresent > 0 ? "Already in Cleanup" : "Nothing could be added")
+        }, title: "Forgotten Files") else { return }
         if summary.added > 0 { model.clearMultiSelection() }
     }
 

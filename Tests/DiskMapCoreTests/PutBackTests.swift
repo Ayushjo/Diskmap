@@ -121,6 +121,53 @@ struct PutBackTests {
         #expect(CleanupRecord(report: report).items.isEmpty)
     }
 
+    /// The Trash refusing an item never deletes it another way: it stays
+    /// staged with a reason a person can act on, and the next commit retries.
+    @Test func refusedItemsStayStagedWithAPlainReason() async throws {
+        let f = try Fixture()
+        try f.put("a.bin", 10)
+        let queue = CleanupQueue()
+        #expect(await queue.stage(f.url("a.bin"), size: 1, reason: "test"))
+        let unsupported = NSError(domain: NSCocoaErrorDomain, code: NSFeatureUnsupportedError)
+        _ = await queue.commitReport(movingToTrash: { _ in throw unsupported })
+        let left = await queue.allItems()
+        #expect(left.count == 1)
+        #expect(left.first?.lastFailure?.contains("no Trash") == true)
+        #expect(FileManager.default.fileExists(atPath: f.url("a.bin").path))
+        // A retry that succeeds clears it.
+        var tried: [URL] = []
+        _ = await queue.commitReport(movingToTrash: { tried.append($0); return nil })
+        #expect(tried.count == 1)
+        #expect(await queue.allItems().isEmpty)
+        // Errors read as sentences.
+        #expect(CleanupQueue.plainReason(NSError(domain: NSPOSIXErrorDomain, code: Int(EBUSY))).contains("in use"))
+        #expect(CleanupQueue.plainReason(NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError)).contains("no longer there"))
+    }
+
+    /// Progress only moves forward and ends with every item moved; sizes are
+    /// measured at most eight at a time (MAC-FIXES-FROM-WINDOWS §2.3).
+    @Test func commitReportsProgressAndMeasuringIsBounded() async throws {
+        let f = try Fixture()
+        let queue = CleanupQueue()
+        for k in 0..<20 {
+            try f.put("d\(k)/x.bin", 1_000)
+            #expect(await queue.stage(f.url("d\(k)"), size: 1_000, reason: "test"))
+        }
+        final class Log: @unchecked Sendable {
+            var steps: [CleanupQueue.CommitProgress] = []
+            let lock = NSLock()
+            func add(_ step: CleanupQueue.CommitProgress) { lock.lock(); steps.append(step); lock.unlock() }
+        }
+        let log = Log()
+        _ = await queue.commitReport(movingToTrash: { _ in nil }, progress: { log.add($0) })
+        let moving = log.steps.compactMap { step -> Int? in
+            if case let .moving(done, total) = step { #expect(total == 20); return done } else { return nil }
+        }
+        #expect(moving == Array(1...20))
+        #expect(log.steps.contains(.verifying(done: 20, total: 20)) || log.steps.first.map { if case .moving = $0 { return true } else { return false } } == true)
+        #expect(await queue.peakActiveMeasurements <= CleanupQueue.measurementLimit)
+    }
+
     @Test func theRecordSurvivesARelaunch() throws {
         let f = try Fixture()
         let file = f.base.appendingPathComponent("support/last-cleanup.json")

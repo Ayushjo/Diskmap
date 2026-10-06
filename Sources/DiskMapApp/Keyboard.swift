@@ -52,9 +52,10 @@ extension ScanModel {
     /// ⌘⌫ in a list: stage one row (the queue — never the Trash) and say so.
     func stageRow(path: String, size: Int64, reason: String) {
         Task {
-            let result = await stageForCleanup([CleanupStageRequest(url: URL(fileURLWithPath: path), size: size, reason: reason)])
-            showToast(result.added > 0 ? "Added to Cleanup — ⇧⌘⌫ to review"
-                      : result.alreadyPresent > 0 ? "Already in Cleanup" : "Blocked by safety rules")
+            // Risky items ask first; what macOS manages is refused (StageConfirmation.swift).
+            guard let result = await stageOne(CleanupStageRequest(url: URL(fileURLWithPath: path), size: size, reason: reason)),
+                  !result.wasBusy else { return }
+            showToast(Self.stagedToast(result))
         }
     }
 

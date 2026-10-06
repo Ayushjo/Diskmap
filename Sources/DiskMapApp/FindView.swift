@@ -137,6 +137,7 @@ struct FindView: View {
                 DiskMapEmptyState(symbol: "magnifyingglass", title: "Nothing matches",
                                   message: "Remove a chip or loosen a size or age.")
             } else {
+                MultiSelectAllBar(model: model, ids: rows.map(\.id))
                 list
             }
             NodeSelectionToolbar(model: model)

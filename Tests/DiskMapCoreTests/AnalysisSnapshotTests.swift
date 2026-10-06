@@ -25,8 +25,11 @@ struct AnalysisSnapshotTests {
             quickWins: []
         )
         #expect(!snap.categories.isEmpty)
-        #expect(snap.categories.contains { $0.key == "downloads" && $0.bytes == 200 })
-        #expect(snap.categories.contains { $0.key == "developer" && $0.bytes == 50 })
+        // Storage categories (MAC-FIXES-FROM-WINDOWS §3.1): an installer is an
+        // installer wherever it sits; ~/.npm is a package cache.
+        #expect(snap.categories.contains { $0.key == "installers" && $0.bytes == 200 })
+        #expect(snap.categories.contains { $0.key == "pkgcache" && $0.bytes == 50 })
+        #expect(snap.categories.reduce(0) { $0 + $1.bytes } == both.allocated[0])
         #expect(snap.categories.contains { $0.key == "caches" && $0.bytes == 100 })
         #expect(snap.topFiles.first?.name == "big.mkv")
         #expect(snap.categoryMode == .home)
@@ -84,15 +87,21 @@ struct AnalysisSnapshotTests {
         var tree = FileTree()
         _ = folder(&tree, "Macintosh HD", -1)
         file(&tree, "x", folder(&tree, "System", 0), 400)
-        file(&tree, "y", folder(&tree, "Users", 0), 300)
-        file(&tree, "z", folder(&tree, "Applications", 0), 200)
+        let users = folder(&tree, "Users", 0)
+        let me = folder(&tree, "me", users)
+        file(&tree, "y", folder(&tree, "Documents", me), 300)
+        file(&tree, "code.js", folder(&tree, "node_modules", folder(&tree, "app", me)), 70)
+        file(&tree, "z", folder(&tree, "Z.app", folder(&tree, "Applications", 0)), 200)
         let both = tree.rollUpBoth()
         let snap = AnalysisSnapshot.build(
             tree: tree, root: URL(fileURLWithPath: "/", isDirectory: true),
             allocated: both.allocated, logical: both.logical
         )
         #expect(snap.categoryMode == .wholeDisk)
-        #expect(Set(snap.categories.map(\.key)) == ["system", "documents", "applications"])
+        // Every byte by where it really is — not all of /Users as "Personal".
+        #expect(Set(snap.categories.map(\.key)) == ["system", "documents", "deps", "apps"])
+        #expect(snap.categories.first { $0.key == "deps" }?.bytes == 70)
+        #expect(snap.categories.reduce(0) { $0 + $1.bytes } == both.allocated[0])
         #expect(snap.categories.allSatisfy { $0.fileKind == nil })
     }
 

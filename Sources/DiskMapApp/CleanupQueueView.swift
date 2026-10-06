@@ -17,6 +17,7 @@ struct CleanupQueueView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            commitProgressBar
             Hairline()
             if model.stagedItems.isEmpty, let moved = justMoved, model.lastCleanup == moved {
                 CleanupSuccessView(
@@ -41,23 +42,54 @@ struct CleanupQueueView: View {
         .background(DiskMapTheme.canvas)
         .frame(minWidth: 640, minHeight: 480)
         .task { await model.refreshQueue() }
-        .confirmationDialog(
-            "Move staged items to the Trash?",
-            isPresented: $confirmingTrash,
-            titleVisibility: .visible
-        ) {
-            Button("Move to Trash", role: .destructive) {
-                Task {
-                    await model.commitCleanup()
-                    // Only after the move succeeded: never during the confirmation.
-                    if let record = model.lastCleanup, !record.items.isEmpty, record.date.timeIntervalSinceNow > -30 {
-                        withAnimation(.easeOut(duration: 0.2)) { justMoved = record }
+        // Every item that will move, by full path and size (MAC-FIXES-FROM-WINDOWS §4.2).
+        .sheet(isPresented: $confirmingTrash) {
+            PathListConfirmSheet(
+                title: "Move \(countLabel(model.stagedItems.count, "item")) to the Trash?",
+                message: confirmMessage,
+                footnote: nil,
+                rows: model.stagedItems.map { ConfirmPathRow(path: $0.url.path, bytes: $0.size) },
+                confirmTitle: "Move to Trash",
+                destructive: true,
+                onConfirm: {
+                    confirmingTrash = false
+                    Task {
+                        await model.commitCleanup()
+                        // Only after the move succeeded: never during the confirmation.
+                        if let record = model.lastCleanup, !record.items.isEmpty, record.date.timeIntervalSinceNow > -30 {
+                            withAnimation(.easeOut(duration: 0.2)) { justMoved = record }
+                        }
                     }
+                },
+                onCancel: { confirmingTrash = false }
+            )
+        }
+        .interactiveDismissDisabled(model.commitProgress != nil)
+    }
+
+    /// "Verifying sizes… 3 of 12" then "Moving… 7 of 12" while a commit runs.
+    @ViewBuilder
+    private var commitProgressBar: some View {
+        if let progress = model.commitProgress {
+            let (label, done, total): (String, Int, Int) = {
+                switch progress {
+                case let .verifying(done, total): return ("Verifying sizes…", done, total)
+                case let .moving(done, total): return ("Moving to the Trash…", done, total)
                 }
+            }()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(label).font(DiskMapType.secondary).foregroundStyle(DiskMapTheme.ink2)
+                    Spacer()
+                    Text("\(done) of \(total)").font(DiskMapType.figureSmall).foregroundStyle(DiskMapTheme.ink3)
+                }
+                ProgressView(value: Double(done), total: Double(max(1, total)))
+                    .progressViewStyle(.linear)
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(confirmMessage)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 12)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("cleanup-commit-progress")
         }
     }
 
@@ -83,11 +115,12 @@ struct CleanupQueueView: View {
             Button("Done") { dismiss() }
                 .keyboardShortcut(.cancelAction)
                 .buttonStyle(SecondaryButtonStyle())
-            // Never offer the destructive action on a provisional figure.
+            // Committing finishes any measuring itself, with progress, so the
+            // button never waits on it (MAC-FIXES-FROM-WINDOWS §2.3).
             Button("Move to Trash…") { confirmingTrash = true }
                 .buttonStyle(PrimaryButtonStyle())
-                .disabled(model.stagedItems.isEmpty || model.reclaimEstimate.isCalculating)
-                .help(model.reclaimEstimate.isCalculating ? "Measuring what these items share on disk…" : "Moves everything here to the Trash, after you confirm")
+                .disabled(model.stagedItems.isEmpty || model.commitProgress != nil)
+                .help("Moves everything here to the Trash, after you confirm")
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 18)
@@ -280,6 +313,14 @@ private struct CleanupRow: View {
                         .font(DiskMapType.secondary)
                         .foregroundStyle(DiskMapTheme.danger)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                // The last Move to Trash left it here: say why, in plain words.
+                if let failure = item.lastFailure {
+                    Text("Couldn’t move: \(failure)")
+                        .font(DiskMapType.secondary)
+                        .foregroundStyle(DiskMapTheme.review)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("cleanup-row-failure")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
