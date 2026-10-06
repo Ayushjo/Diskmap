@@ -137,8 +137,12 @@ public enum QuickWins {
         }
 
         var hits: [Hit] = []
+        // The Trash and other system-held folders are never findings.
+        if StorageClassifier.isSystemHolding(root.path) { return [] }
         func walk(_ id: Int32) {
             let index = Int(id)
+            if id != 0, tree.isDirectory[index],
+               StorageClassifier.systemHoldingNames.contains(tree.name(of: id).lowercased()) { return }
             if id != 0, tree.isDirectory[index] {
                 let nameID = tree.nameIndex[index]
                 var match: Int32 = -1

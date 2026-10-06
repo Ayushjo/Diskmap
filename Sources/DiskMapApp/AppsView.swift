@@ -406,21 +406,24 @@ struct AppsView: View {
 
     private func stage(_ app: ApplicationEntry) async {
         guard app.canStageForCleanup else { return }
-        let result = await model.stageForCleanup([
-            CleanupStageRequest(url: URL(fileURLWithPath: app.bundlePath), size: app.bundleBytes, reason: "Application: \(app.name)")
-        ])
+        // This screen removes apps on purpose: an app isn't a surprise here.
+        guard let result = await model.stageOne(
+            CleanupStageRequest(url: URL(fileURLWithPath: app.bundlePath), size: app.bundleBytes, reason: "Application: \(app.name)"),
+            allowing: Self.appCategories) else { return }
         model.showToast(result.added > 0 ? "Added \(app.name) to Cleanup — ⇧⌘⌫ to review"
                         : result.rejected > 0 ? "Blocked by safety rules" : "Already in Cleanup")
     }
 
+    /// Apps (and Xcode, filed under dev tools) are what this screen is for.
+    static let appCategories: Set<String> = ["apps", "devtools"]
+
     private func stageChecked() async {
         let apps = checkedApps
-        let result = await model.stageForCleanup(apps.map {
+        guard let result = await model.confirmStageMany(apps.map {
             CleanupStageRequest(url: URL(fileURLWithPath: $0.bundlePath), size: $0.bundleBytes, reason: "Application: \($0.name)")
-        })
+        }, title: "Applications", allowing: Self.appCategories) else { return }
         let rejected = Set(result.rejectedURLs.map(\.path))
         checked = Set(apps.filter { rejected.contains(URL(fileURLWithPath: $0.bundlePath).standardizedFileURL.path) }.map(\.id))
-        model.showToast(result.added > 0 ? "Added \(countLabel(result.added, "app")) to Cleanup — ⇧⌘⌫ to review" : "Nothing new added")
     }
 
     // MARK: - Formatting

@@ -36,6 +36,39 @@ public actor CleanupQueue {
         /// Where `sharing` came from: the last scan's tree (instant), or a
         /// walk of the path (TASK-082). Nil while measuring.
         public internal(set) var measurementSource: MeasurementSource? = nil
+        /// Why the last Move to Trash left this item here, in plain words.
+        /// Nil until a commit fails on it. The item stays staged — nothing
+        /// is ever deleted permanently instead (AGENTS.md rule 1).
+        public internal(set) var lastFailure: String? = nil
+    }
+
+    /// A move-to-Trash error as one sentence a person can act on.
+    public static func plainReason(_ error: Error) -> String {
+        let ns = error as NSError
+        if ns.domain == NSCocoaErrorDomain {
+            switch ns.code {
+            case NSFileNoSuchFileError, NSFileReadNoSuchFileError:
+                return "It’s no longer there — it was moved or deleted since the scan."
+            case NSFileWriteNoPermissionError, NSFileReadNoPermissionError:
+                return "No permission to move it. Grant Full Disk Access, or check who owns it."
+            case NSFileWriteVolumeReadOnlyError:
+                return "Its volume is read-only."
+            case NSFeatureUnsupportedError:
+                return "This volume has no Trash, so it can’t be moved there. Remove it in Finder if you’re sure."
+            default: break
+            }
+        }
+        if ns.domain == NSPOSIXErrorDomain {
+            switch Int32(ns.code) {
+            case EPERM, EACCES: return "No permission to move it. Grant Full Disk Access, or check who owns it."
+            case EBUSY: return "It’s in use. Quit the app using it and try again."
+            case ENOENT: return "It’s no longer there — it was moved or deleted since the scan."
+            case EROFS: return "Its volume is read-only."
+            default: break
+            }
+        }
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? Error { return plainReason(underlying) }
+        return ns.localizedDescription
     }
 
     public enum MeasurementSource: Sendable, Equatable {
@@ -153,16 +186,47 @@ public actor CleanupQueue {
         let measuredPath = standardized.path
         let context = scanContext
         Task {
+            // At most `measurementLimit` walks at once: each is a thread, and
+            // staging 200 folders used to start 200 (MAC-FIXES-FROM-WINDOWS §2.3).
+            await self.acquireMeasurementSlot()
             // The tree first: exact when it can be, nil otherwise.
             if let context, let seeded = await StorageSharing.seededProfileOffPool(context: context, path: measuredPath) {
                 self.recordMeasurement(seeded, source: .scan(context.capturedAt), for: id)
-                return
+            } else {
+                let sharing = await StorageSharing.profileOffPool(atPath: measuredPath)
+                self.recordMeasurement(sharing, source: .walk, for: id)
             }
-            let sharing = await StorageSharing.profileOffPool(atPath: measuredPath)
-            self.recordMeasurement(sharing, source: .walk, for: id)
+            self.releaseMeasurementSlot()
         }
         return true
     }
+
+    static let measurementLimit = 8
+    private var activeMeasurements = 0
+    private var measurementSlotWaiters: [CheckedContinuation<Void, Never>] = []
+    /// The most measurements that ever ran at once (tests check the limit).
+    private(set) var peakActiveMeasurements = 0
+
+    private func acquireMeasurementSlot() async {
+        if activeMeasurements >= Self.measurementLimit {
+            await withCheckedContinuation { measurementSlotWaiters.append($0) }
+        } else {
+            activeMeasurements += 1
+        }
+        peakActiveMeasurements = max(peakActiveMeasurements, activeMeasurements)
+    }
+
+    private func releaseMeasurementSlot() {
+        if measurementSlotWaiters.isEmpty {
+            activeMeasurements -= 1
+        } else {
+            // Hand the slot straight to the next waiter.
+            measurementSlotWaiters.removeFirst().resume()
+        }
+    }
+
+    /// How many staged items still have their size being measured.
+    public func measuringCount() -> Int { items.filter(\.isMeasuring).count }
 
     private func recordMeasurement(_ sharing: StorageSharing.Profile?, source: MeasurementSource, for id: UUID) {
         if let index = items.firstIndex(where: { $0.id == id }) {
@@ -325,8 +389,15 @@ public actor CleanupQueue {
     /// `commit()` plus what it freed. Folders go first; an item inside a
     /// folder that moved successfully went with it, so it is reported as
     /// moved rather than retried and shown as a failure.
-    public func commitReport() async -> CommitReport {
-        await commitReport(movingToTrash: Self.moveToTrash)
+    public func commitReport(progress: (@Sendable (CommitProgress) -> Void)? = nil) async -> CommitReport {
+        await commitReport(movingToTrash: Self.moveToTrash, progress: progress)
+    }
+
+    /// What a commit is doing, for a progress bar (MAC-FIXES-FROM-WINDOWS §2.3).
+    public enum CommitProgress: Sendable, Equatable {
+        /// Finishing size measurements before anything moves.
+        case verifying(done: Int, total: Int)
+        case moving(done: Int, total: Int)
     }
 
     /// The only function in the app that removes anything from its place on
@@ -341,26 +412,50 @@ public actor CleanupQueue {
     /// filling the developer's real Trash. Production code must go through
     /// `commitReport()`, whose mover is `moveToTrash` — never pass a deleting
     /// function here.
-    func commitReport(movingToTrash move: (URL) throws -> URL?) async -> CommitReport {
+    func commitReport(movingToTrash move: (URL) throws -> URL?,
+                      progress: (@Sendable (CommitProgress) -> Void)? = nil) async -> CommitReport {
         // The receipt must be computed from real measurements, and a moved
-        // item can no longer be measured — so finish measuring first.
+        // item can no longer be measured — so finish measuring first, and
+        // say so while it happens.
+        let total = items.count
+        if let progress {
+            while items.contains(where: \.isMeasuring) {
+                progress(.verifying(done: total - measuringCount(), total: total))
+                try? await Task.sleep(nanoseconds: 150_000_000)
+            }
+            progress(.verifying(done: total, total: total))
+        }
         await waitForMeasurements()
         let ordered = items.sorted {
             $0.url.pathComponents.count == $1.url.pathComponents.count
                 ? $0.url.path < $1.url.path
                 : $0.url.pathComponents.count < $1.url.pathComponents.count
         }
-        var moved: [String] = []
+        // Moving to the Trash is a rename — measured 0.6 ms a file and 3 ms for
+        // an 8k-file folder — so items go one at a time (the Windows build had
+        // to batch its shell calls; MAC-FIXES-FROM-WINDOWS §2.1). What was
+        // slow was this check scanning every moved path per item; a set and
+        // the item's own ancestors make it O(depth).
+        var moved = Set<String>()
+        func insideMovedFolder(_ path: String) -> Bool {
+            var parent = (path as NSString).deletingLastPathComponent
+            while !parent.isEmpty, parent != "/" {
+                if moved.contains(parent) { return true }
+                parent = (parent as NSString).deletingLastPathComponent
+            }
+            return false
+        }
         var outcomes: [(item: StagedItem, error: Error?, withFolder: Bool, trashed: URL?)] = []
         for item in ordered {
+            defer { progress?(.moving(done: outcomes.count, total: ordered.count)) }
             let path = item.url.path
-            if moved.contains(where: { path.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }) {
+            if insideMovedFolder(path) {
                 outcomes.append((item, nil, true, nil))
                 continue
             }
             do {
                 let trashed = try move(item.url)
-                moved.append(path)
+                moved.insert(path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path)
                 outcomes.append((item, nil, false, trashed))
             } catch {
                 outcomes.append((item, error, false, nil))
@@ -381,8 +476,14 @@ public actor CleanupQueue {
 
         // Clear only the items that succeeded, so failures stay staged
         // for the user to retry (e.g. after granting Full Disk Access).
-        let failedIDs = Set(outcomes.filter { $0.error != nil }.map(\.item.id))
-        items = items.filter { failedIDs.contains($0.id) }
+        var failures: [UUID: String] = [:]
+        for outcome in outcomes { if let error = outcome.error { failures[outcome.item.id] = Self.plainReason(error) } }
+        items = items.compactMap { item in
+            guard let reason = failures[item.id] else { return nil }
+            var kept = item
+            kept.lastFailure = reason
+            return kept
+        }
         return CommitReport(entries: entries, freedWhenTrashEmptied: freed.bytes, isLowerBound: freed.isLowerBound)
     }
 }

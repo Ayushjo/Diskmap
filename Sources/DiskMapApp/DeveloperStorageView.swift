@@ -10,7 +10,9 @@ struct DeveloperStorageView: View {
     var pickFolder: () -> Void
 
     @State private var selectedID: String?
-    @State private var tableTab: TableTab = .projects
+    @State private var tableTab: TableTab = .whereItLives
+    /// "Where it lives": the folder being shown; nil = where it opens by itself.
+    @State private var whereFolder: Int32?
     @State private var query = ""
     @State private var categoryFilter: DeveloperCategory?
     @State private var checked: Set<String> = []
@@ -22,10 +24,11 @@ struct DeveloperStorageView: View {
     private let toolCategories = QuickWins.bundledCategories()
 
     enum TableTab: String, CaseIterable, Identifiable {
-        case projects, allItems, opportunities, byTool
+        case whereItLives, projects, allItems, opportunities, byTool
         var id: String { rawValue }
         var title: String {
             switch self {
+            case .whereItLives: return "Where it lives"
             case .projects: return "Projects"
             case .allItems: return "Items"
             case .opportunities: return "Opportunities"
@@ -62,6 +65,7 @@ struct DeveloperStorageView: View {
         }
         .background(DiskMapTheme.canvas)
         .catalogGate(.developer, model: model, title: "Sorting developer storage…")
+        .onChange(of: model.scanID) { _, _ in whereFolder = nil }
         .task(id: tableTab == .byTool ? model.scanID : nil) {
             guard tableTab == .byTool, let tree = model.tree, let root = model.rootURL else { return }
             toolHits = nil
@@ -106,6 +110,7 @@ struct DeveloperStorageView: View {
             .padding(.bottom, 12)
             Hairline()
             switch tableTab {
+            case .whereItLives: whereList
             case .projects: projectsList
             case .allItems: itemsList(filteredItems)
             case .opportunities: itemsList(catalog.opportunities)
@@ -117,6 +122,7 @@ struct DeveloperStorageView: View {
 
     private func tabCount(_ tab: TableTab) -> Int? {
         switch tab {
+        case .whereItLives: return nil
         case .projects: return catalog.projects.count
         case .allItems: return filteredItems.count
         case .opportunities: return catalog.opportunities.count
@@ -220,7 +226,8 @@ struct DeveloperStorageView: View {
                             let itemID = catalog.items.first(where: { proj.nodeIDs.contains($0.nodeID) })?.id ?? proj.id
                             Button { selectedID = itemID } label: {
                                 KitRow(title: proj.name, subtitle: "\(proj.ecosystem.title) · " + (model.rootURL.map { relativeParent(of: proj.absolutePath, root: $0) } ?? proj.displayPath),
-                                       selected: isProjectSelected(proj), path: proj.absolutePath, onStage: nil) {
+                                       selected: isProjectSelected(proj), path: proj.absolutePath,
+                                       onStage: proj.reclaimableBytes > 0 ? { stageProject(proj) } : nil) {
                                     Image(systemName: proj.ecosystem.symbolName)
                                         .font(.system(size: DiskMapType.scaled(13)))
                                         .foregroundStyle(DiskMapTheme.ink2)
@@ -264,10 +271,124 @@ struct DeveloperStorageView: View {
                     ids: projects.compactMap { p in catalog.items.first(where: { p.nodeIDs.contains($0.nodeID) })?.id },
                     selection: $selectedID,
                     path: { id in catalog.items.first { $0.id == id }?.absolutePath },
-                    stage: { id in if let item = catalog.items.first(where: { $0.id == id }) { stage([item]) } }
+                    stage: { id in
+                        if let proj = projects.first(where: { p in catalog.items.contains { $0.id == id && p.nodeIDs.contains($0.nodeID) } }) {
+                            stageProject(proj)
+                        }
+                    }
                 )
             }
         }
+    }
+
+    /// Everything in a project that can go, in one confirmed add.
+    private func stageProject(_ proj: DeveloperProject) {
+        stage(catalog.items.filter { proj.nodeIDs.contains($0.nodeID) && $0.reclaimability != .keep })
+    }
+
+    // MARK: Where it lives (MAC-FIXES-FROM-WINDOWS §4.3)
+
+    private var developerFolders: DeveloperFolders {
+        guard let tree = model.tree else { return .empty }
+        return DeveloperCatalog.folderRollup(catalog, tree: tree) { canStage($0) && $0.reclaimability != .keep }
+    }
+
+    private func stageFolder(_ folder: DeveloperFolders.Folder) {
+        let ids = Set(folder.removableItemIDs)
+        stage(catalog.items.filter { ids.contains($0.id) })
+    }
+
+    @ViewBuilder
+    private var whereList: some View {
+        let folders = developerFolders
+        if let tree = model.tree, let root = model.rootURL, !folders.folders.isEmpty {
+            let start = folders.autoStart()
+            let currentID = whereFolder.flatMap { folders.folders[$0] != nil ? $0 : nil } ?? start
+            if let current = folders.folders[currentID] {
+                let chain = tree.ancestorIDs(of: currentID).filter { folders.folders[$0] != nil }
+                let children = current.children.compactMap { folders.folders[$0] }
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 4) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 4) {
+                                ForEach(Array(chain.enumerated()), id: \.element) { index, id in
+                                    if index > 0 {
+                                        Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(DiskMapTheme.ink3)
+                                    }
+                                    Button(id == 0 ? CanonicalPath.displayPath(absolutePath: root.path) : tree.name(of: id)) { whereFolder = id }
+                                        .buttonStyle(LinkButtonStyle())
+                                        .font(DiskMapType.secondary)
+                                        .foregroundStyle(id == currentID ? DiskMapTheme.ink : DiskMapTheme.accent)
+                                }
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        if current.removableBytes > 0 {
+                            Button("Clean up \(tree.name(of: currentID)) — \(ByteFormat.string(current.removableBytes))") { stageFolder(current) }
+                                .buttonStyle(SecondaryButtonStyle())
+                                .help("Add every removable folder under here to Cleanup — you'll see the list first")
+                        }
+                    }
+                    .padding(.horizontal, 28)
+                    .frame(height: 44)
+                    Hairline()
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(children.prefix(25), id: \.id) { child in
+                                whereRow(child, parentBytes: current.bytes, tree: tree)
+                                RowSeparator(indent: 10 + 24 + 12)
+                            }
+                            if children.count > 25 {
+                                Text("… and \(countLabel(children.count - 25, "smaller folder"))")
+                                    .font(DiskMapType.secondary)
+                                    .foregroundStyle(DiskMapTheme.ink3)
+                                    .padding(.vertical, 10)
+                            }
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        } else {
+            DiskMapEmptyState(symbol: "folder", title: "No developer storage found",
+                              message: "No dependencies, build output or tool caches in this scan.", dusty: .curious)
+        }
+    }
+
+    private func whereRow(_ folder: DeveloperFolders.Folder, parentBytes: Int64, tree: FileTree) -> some View {
+        let isItem = folder.itemID != nil
+        let item = folder.itemID.flatMap { id in catalog.items.first { $0.id == id } }
+        let subtitle = isItem
+            ? (item.map { "\($0.category.title) · \($0.ecosystem.title)" } ?? "")
+            : "\(countLabel(folder.itemCount, "location")) · \(ByteFormat.string(folder.removableBytes)) removable"
+        return Button {
+            if let id = folder.itemID { selectedID = id } else { whereFolder = folder.id }
+        } label: {
+            KitRow(title: tree.name(of: folder.id), subtitle: subtitle,
+                   selected: isItem && selectedID == folder.itemID, path: nil, onStage: nil) {
+                Image(systemName: isItem ? "shippingbox" : "folder")
+                    .font(.system(size: DiskMapType.scaled(13)))
+                    .foregroundStyle(DiskMapTheme.ink2)
+                    .frame(width: 24, height: 24)
+            } trailing: {
+                ProportionBar(fraction: Double(folder.bytes) / Double(max(1, parentBytes)), tint: DiskMapTheme.accent.opacity(0.6))
+                    .frame(width: 90)
+                MonoColumn(text: ByteFormat.string(folder.bytes), width: 74, emphasis: true)
+                if folder.removableBytes > 0 {
+                    Button("Clean") { stageFolder(folder) }
+                        .buttonStyle(QuietButtonStyle())
+                        .help("Add \(ByteFormat.string(folder.removableBytes)) of removable folders here to Cleanup")
+                } else {
+                    Color.clear.frame(width: 44, height: 1)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(isItem ? Color.clear : DiskMapTheme.ink3)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(tree.name(of: folder.id)), \(ByteFormat.string(folder.bytes)), \(ByteFormat.string(folder.removableBytes)) removable")
     }
 
     private func itemsList(_ items: [DeveloperItem]) -> some View {
@@ -349,6 +470,14 @@ struct DeveloperStorageView: View {
                 if hits.isEmpty {
                     DiskMapEmptyState(symbol: "leaf", title: "Nothing regenerable found", message: "No dependency folders, build output or tool caches in this scan.")
                 } else {
+                    let ordered = toolCategories.flatMap { toolGroup($0, hits: hits) }.map(\.id)
+                    SelectAllBar(
+                        shownCount: ordered.count, checkedCount: checkedTools.count,
+                        checkedBytes: checkedTools.reduce(0) { $0 + toolSize($1) },
+                        onSelectAll: { checkedTools = Set(ordered) },
+                        onClear: { checkedTools.removeAll() },
+                        note: "Or add a whole group with Add all"
+                    )
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(toolCategories) { category in
@@ -359,6 +488,13 @@ struct DeveloperStorageView: View {
                         .padding(.horizontal, 18)
                         .padding(.bottom, 8)
                     }
+                    .listKeyboard(
+                        ids: ordered, selection: $selectedTool,
+                        path: { path(of: $0) },
+                        stage: { id in stageTools([id], category: nil) },
+                        selectAll: { checkedTools = Set(ordered) },
+                        clearSelection: { checkedTools.removeAll() }
+                    )
                 }
             } else {
                 DiskMapLoadingState(title: "Grouping by tool", detail: "Matching folders against the known patterns.")
@@ -437,8 +573,7 @@ struct DeveloperStorageView: View {
                     onStage: { stageTools(Array(checkedTools), category: nil) },
                     onClear: { checkedTools.removeAll() },
                     onReveal: { revealNodes(Array(checkedTools)) },
-                    paths: checkedTools.compactMap(path(of:)),
-                    hidesWhenEmpty: false
+                    paths: checkedTools.compactMap(path(of:))
                 )
             }
         } else if tableTab != .projects {
@@ -519,11 +654,9 @@ struct DeveloperStorageView: View {
             return
         }
         Task {
-            let summary = await model.stageForCleanup(allowed.map {
+            guard await model.confirmStageMany(allowed.map {
                 CleanupStageRequest(url: URL(fileURLWithPath: $0.absolutePath), size: $0.bytes, reason: "Developer: \($0.displayName)")
-            })
-            model.showToast(summary.added > 0 ? "Added \(countLabel(summary.added, "item")) to Cleanup — ⇧⌘⌫ to review"
-                            : summary.alreadyPresent > 0 ? "Already in Cleanup" : "Blocked by safety rules")
+            }, title: "Developer Storage") != nil else { return }
             checked.subtract(allowed.map(\.id))
         }
     }
@@ -531,12 +664,11 @@ struct DeveloperStorageView: View {
     private func stageTools(_ ids: [Int32], category: String?) {
         guard let tree = model.tree, let root = model.rootURL else { return }
         Task {
-            let summary = await model.stageForCleanup(ids.map { id in
+            // Same reason prefix as the other tabs, so Cleanup groups them together.
+            guard await model.confirmStageMany(ids.map { id in
                 let cat = category ?? toolHits?.first { $0.id == id }?.categoryID ?? "dev"
-                return CleanupStageRequest(url: tree.path(of: id, root: root), size: toolSize(id), reason: "dev: \(cat)")
-            })
-            model.showToast(summary.added > 0 ? "Added \(countLabel(summary.added, "folder")) to Cleanup — ⇧⌘⌫ to review"
-                            : summary.alreadyPresent > 0 ? "Already in Cleanup" : "Nothing could be added")
+                return CleanupStageRequest(url: tree.path(of: id, root: root), size: toolSize(id), reason: "Developer: \(cat)")
+            }, title: "Developer Storage") != nil else { return }
             checkedTools.subtract(ids)
         }
     }

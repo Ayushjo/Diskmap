@@ -195,6 +195,13 @@ case "scan":
                 }
             }
         }
+        let started = Date()
+        let categories = StorageClassifier.rollup(tree: tree, root: root, totals: totals.allocated)
+        say("\nWhere it's going (\(String(format: "%.2f", Date().timeIntervalSince(started))) s)")
+        for category in categories {
+            let largest = category.largestNode.map { "  e.g. " + display(tree.path(of: $0, root: root).path) } ?? ""
+            say("  \(HumanUnits.format(category.bytes).padding(toLength: 10, withPad: " ", startingAt: 0))  \(category.storageClass.title)\(largest)")
+        }
         say("\nLargest folders")
         for child in children where tree.isDirectory[Int(child.id)] {
             say("  \(HumanUnits.format(child.size).padding(toLength: 10, withPad: " ", startingAt: 0))  \(display(tree.path(of: child.id, root: root).path))")

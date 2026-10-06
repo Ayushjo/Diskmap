@@ -1074,3 +1074,36 @@ explaining why Finder's "available" is higher (purgeable, now shown).
 Matched exactly: folder totals vs du (except tiny decmpfs-inline files, which
 count their logical size), item counts vs find, biggest files, Find queries,
 duplicate contents vs SHA-256, app bundle sizes, volume free vs df.
+
+### Storage categories: one exclusive pass, rules as data (2026-10-06)
+
+Port of the Windows `StorageClassifier` (docs/MAC-FIXES-FROM-WINDOWS.md §3.1).
+Overview bucketed only the scan root's direct children, so a whole-disk scan
+filed all of /Users under "Personal". `StorageClassifier.rollup` walks the
+tree once with a segment stack and credits every byte to one of 18
+categories, so the rows sum to the scan. Rules live in
+`storage-categories.json`: claims take a folder, areas set a default and keep
+descending (node_modules under ~/Documents/code stays Dependencies), file
+rules by name/extension beat areas but never claims; first match wins. Beyond
+Windows: a folder holding a project marker (.git, package.json, Cargo.toml…)
+becomes a Code & projects area wherever it lives ("Other" on a real home fell
+from 21.7 to 3 GB). 0.43 s for 2.68 M items. Each verdict also carries advice
+(fine/review/warn/never), a note and an "instead" — the risk layer below.
+
+### Risk above the excluded-paths list; bulk adds confirm (2026-10-06)
+
+`CleanupQueue.excludedPrefixes` and `CleanupPreflight` still decide what can
+never be staged (unchanged). Above them, the app consults the classifier's
+advice: a single risky add (Docker's disk, VMs, apps, browser profiles, .git,
+Xcode archives) asks with what to do instead; what macOS manages (iCloud
+Drive, system folders) is refused; bulk adds skip risky items and list every
+remaining path and size before staging, Cancel by default. Applications
+passes its own categories as allowed. Items the Trash refuses stay staged
+with a reason — no permanent-delete fallback on macOS (maintainer decision).
+
+### Never a finding: the Trash (2026-10-06)
+
+Finding catalogs skip `.Trash`, `.Trashes`, Spotlight, FSEvents and document-
+version folders via `StorageClassifier.systemHoldingFlags` (one
+`folderChainFlags` pass, no path building). Overview's biggest files and
+folders keep them: a full Trash is real usage worth seeing.

@@ -147,7 +147,7 @@ struct CachesReviewView: View {
             stage: { id in
                 if let target = items.first(where: { $0.id == id }) { Task { await stage([target]) } }
             },
-            selectAll: { checked = Set(items.map(\.id)) },
+            selectAll: { checked = Set(items.filter { !$0.isProtected }.map(\.id)) },
             clearSelection: { checked.removeAll() }
         )
     }

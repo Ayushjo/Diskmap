@@ -14,6 +14,7 @@ struct OverviewView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showWhy = false
+    @State private var showAllCategories = false
 
     var body: some View {
         Group {
@@ -240,12 +241,23 @@ struct OverviewView: View {
             }
             SegmentedStorageBar(segments: categorySegments(total: categorySum))
                 .accessibilityHidden(true)
+            // Up to 18 storage categories: the seven biggest, the rest on request.
+            let shown = showAllCategories ? snap.categories : Array(snap.categories.prefix(7))
             VStack(spacing: 0) {
-                ForEach(snap.categories) { cat in
+                ForEach(shown) { cat in
                     CategoryRow(title: cat.title, bytes: cat.bytes,
                                 fraction: Double(cat.bytes) / Double(categorySum),
                                 tint: color(of: cat), help: openHelp(cat)) { open(cat) }
                 }
+            }
+            if snap.categories.count > 7 {
+                let hidden = snap.categories.dropFirst(7)
+                Button(showAllCategories ? "Show fewer"
+                       : "\(hidden.count) more · \(ByteFormat.string(hidden.reduce(0) { $0 + $1.bytes }))") {
+                    withAnimation(.easeOut(duration: 0.15)) { showAllCategories.toggle() }
+                }
+                .buttonStyle(LinkButtonStyle())
+                .font(DiskMapType.secondary)
             }
         }
     }
@@ -496,10 +508,18 @@ struct OverviewView: View {
 
     /// A file type opens Find on that kind; "Other" opens Biggest Files; a
     /// folder category opens Visualize at its folder.
+    /// Storage categories that are mostly loose files open Biggest Files
+    /// filtered to them; the rest open Visualize at their biggest folder.
+    static let fileListCategories: Set<String> = ["installers", "ai", "media", "vms", "downloads", "documents"]
+
     private func open(_ cat: StorageCategory) {
         if let kind = cat.fileKind {
             model.findQuery = "kind:\(kind)"
             model.destination = .find
+        } else if Self.fileListCategories.contains(cat.key) {
+            model.folderFilterPath = nil
+            model.categoryFilter = cat.key
+            onOpenBiggestFiles()
         } else if let node = cat.nodeID {
             model.currentNode = node
             model.selectedNode = node
@@ -511,11 +531,19 @@ struct OverviewView: View {
 
     private func openHelp(_ cat: StorageCategory) -> String {
         if cat.fileKind != nil { return "List every \(cat.title.lowercased()) file in Find" }
+        if Self.fileListCategories.contains(cat.key) { return "Show the biggest files in \(cat.title)" }
         return cat.nodeID != nil ? "Show this folder in Visualize" : "Show the biggest files"
     }
 
     private func color(of cat: StorageCategory) -> Color {
-        cat.colorHex.map(DiskMapTheme.hex) ?? DiskMapTheme.categoryColor(cat.colorHint)
+        // Storage categories take the palette by rank, so neighbours in the
+        // bar never share a colour; Other stays grey. File types keep theirs.
+        if cat.fileKind == nil, StorageClassifier.storageClass(id: cat.key) != nil {
+            if cat.key == "other" { return DiskMapTheme.ink3.opacity(0.5) }
+            let rank = snap.categories.filter { $0.key != "other" }.firstIndex { $0.key == cat.key } ?? 0
+            return DiskMapTheme.data(rank)
+        }
+        return cat.colorHex.map(DiskMapTheme.hex) ?? DiskMapTheme.categoryColor(cat.colorHint)
     }
 
     private var categorySum: Int64 {
