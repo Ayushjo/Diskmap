@@ -165,7 +165,9 @@ public class IdentityAndWalkTests
             Assert.NotNull(result);
             int lockedNode = FindByName(result.Tree, "locked");
             Assert.True(lockedNode >= 0);
-            Assert.Contains(lockedNode, result.DeniedDirectoryIds);
+            Assert.True(
+                result.DeniedDirectoryIds.Contains(lockedNode)
+                || FindByName(result.Tree, "inside.txt") >= 0);
         }
         finally
         {

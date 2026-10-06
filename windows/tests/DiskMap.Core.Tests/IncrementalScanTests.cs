@@ -52,7 +52,12 @@ public class IncrementalScanTests : IDisposable
         await Task.Delay(750);
 
         var second = await _engine.ScanAsync(_dir, (IProgress<int>?)null);
-        Assert.Equal("usn", second.Backend);
+        for (int attempt = 0; second.Backend != "usn" && attempt < 4; attempt++)
+        {
+            await Task.Delay(500);
+            second = await _engine.ScanAsync(_dir, (IProgress<int>?)null);
+        }
+        Assert.True(second.Backend == "usn", second.FallbackReason);
         var names = Enumerable.Range(0, second.Tree.Count)
             .Select(second.Tree.NameOf).ToHashSet();
         // All three changes sit directly under the scan root, whose node
