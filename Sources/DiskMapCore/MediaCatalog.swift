@@ -442,11 +442,12 @@ public enum MediaCatalog {
         // thousands below the cut was wasted. Ties keep node order, as the
         // original stable sort did.
         var matches: [(id: Int32, bytes: Int64, kind: MediaKind, name: String)] = []
+        let held = StorageClassifier.systemHoldingFlags(tree: tree, root: root)
         for id in 0..<Int32(tree.count) {
             let i = Int(id)
             let isDir = tree.isDirectory[i]
             let bytes = totals[i]
-            guard bytes >= listingFloorBytes else { continue }
+            guard bytes >= listingFloorBytes, !held[i] else { continue }
             let name = tree.name(of: id)
             var classified = classify(fileName: name, isDirectory: isDir)
             if classified == nil, isDir, finalCut[i] { classified = .project }

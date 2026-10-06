@@ -36,6 +36,39 @@ public actor CleanupQueue {
         /// Where `sharing` came from: the last scan's tree (instant), or a
         /// walk of the path (TASK-082). Nil while measuring.
         public internal(set) var measurementSource: MeasurementSource? = nil
+        /// Why the last Move to Trash left this item here, in plain words.
+        /// Nil until a commit fails on it. The item stays staged — nothing
+        /// is ever deleted permanently instead (AGENTS.md rule 1).
+        public internal(set) var lastFailure: String? = nil
+    }
+
+    /// A move-to-Trash error as one sentence a person can act on.
+    public static func plainReason(_ error: Error) -> String {
+        let ns = error as NSError
+        if ns.domain == NSCocoaErrorDomain {
+            switch ns.code {
+            case NSFileNoSuchFileError, NSFileReadNoSuchFileError:
+                return "It’s no longer there — it was moved or deleted since the scan."
+            case NSFileWriteNoPermissionError, NSFileReadNoPermissionError:
+                return "No permission to move it. Grant Full Disk Access, or check who owns it."
+            case NSFileWriteVolumeReadOnlyError:
+                return "Its volume is read-only."
+            case NSFeatureUnsupportedError:
+                return "This volume has no Trash, so it can’t be moved there. Remove it in Finder if you’re sure."
+            default: break
+            }
+        }
+        if ns.domain == NSPOSIXErrorDomain {
+            switch Int32(ns.code) {
+            case EPERM, EACCES: return "No permission to move it. Grant Full Disk Access, or check who owns it."
+            case EBUSY: return "It’s in use. Quit the app using it and try again."
+            case ENOENT: return "It’s no longer there — it was moved or deleted since the scan."
+            case EROFS: return "Its volume is read-only."
+            default: break
+            }
+        }
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? Error { return plainReason(underlying) }
+        return ns.localizedDescription
     }
 
     public enum MeasurementSource: Sendable, Equatable {
@@ -381,8 +414,14 @@ public actor CleanupQueue {
 
         // Clear only the items that succeeded, so failures stay staged
         // for the user to retry (e.g. after granting Full Disk Access).
-        let failedIDs = Set(outcomes.filter { $0.error != nil }.map(\.item.id))
-        items = items.filter { failedIDs.contains($0.id) }
+        var failures: [UUID: String] = [:]
+        for outcome in outcomes { if let error = outcome.error { failures[outcome.item.id] = Self.plainReason(error) } }
+        items = items.compactMap { item in
+            guard let reason = failures[item.id] else { return nil }
+            var kept = item
+            kept.lastFailure = reason
+            return kept
+        }
         return CommitReport(entries: entries, freedWhenTrashEmptied: freed.bytes, isLowerBound: freed.isLowerBound)
     }
 }

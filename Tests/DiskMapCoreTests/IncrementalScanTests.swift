@@ -52,6 +52,38 @@ struct IncrementalScanTests {
         return map
     }
 
+    /// Changes directly in the scan root and nowhere else (the Windows build
+    /// dropped these: its root node had no file id, docs/MAC-FIXES-FROM-WINDOWS.md §1.3).
+    @Test func changesDirectlyInTheRootAreApplied() async throws {
+        let f = try Fixture()
+        _ = try await f.fullScanAndSave()
+
+        try f.put("root-new.bin", 7_777)                                                          // created
+        try Data(repeating: 2, count: 55_555).write(to: f.root.appendingPathComponent("top.txt"))  // modified
+
+        let first = await IncrementalScan.update(root: f.root, cache: f.cache)
+        guard case .updated(let update) = first else {
+            Issue.record("expected an update, got \(first)")
+            return
+        }
+        let full = await ScanEngine().scan(root: f.root)
+        #expect(Self.signature(update.tree, root: f.root) == Self.signature(full.tree, root: f.root))
+        #expect(update.tree.rollUpBoth().allocated[0] == full.tree.rollUpBoth().allocated[0])
+
+        // And a deletion in the root, starting from that update.
+        try IncrementalScan.baselineAfterFullScan(root: f.root, eventIDAtStart: full.eventIDAtStart,
+                                                  deniedPaths: []).map { try f.cache.save(tree: full.tree, baseline: $0) }
+        try FileManager.default.removeItem(at: f.root.appendingPathComponent("root-new.bin"))
+        let second = await IncrementalScan.update(root: f.root, cache: f.cache)
+        guard case .updated(let after) = second else {
+            Issue.record("expected an update, got \(second)")
+            return
+        }
+        let fullAfter = await ScanEngine().scan(root: f.root)
+        #expect(Self.signature(after.tree, root: f.root) == Self.signature(fullAfter.tree, root: f.root))
+        #expect(!Self.signature(after.tree, root: f.root).keys.contains { $0.hasSuffix("/root-new.bin") })
+    }
+
     @Test func updateMatchesAFullWalkAfterEveryKindOfChange() async throws {
         let f = try Fixture()
         _ = try await f.fullScanAndSave()

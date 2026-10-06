@@ -75,6 +75,24 @@ struct DeveloperCatalogTests {
         #expect(!built.projects.contains { $0.name == "numpy-2.0" })
     }
 
+    /// An outer hit that holds nothing but an inner hit is the same size; the
+    /// inner one must not be kept as well (19 GB counted twice on Windows, §3.4).
+    @Test func equalSizedNestedHitsCountOnce() {
+        var tree = FileTree()
+        let root = tree.addNode(name: "Users", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1)
+        let user = tree.addNode(name: "dev", parent: root, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1)
+        let library = tree.addNode(name: "Library", parent: user, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1)
+        let android = tree.addNode(name: "Android", parent: library, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1)
+        let sdk = tree.addNode(name: "sdk", parent: android, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1)
+        _ = tree.addNode(name: "system.img", parent: sdk, isDirectory: false, logicalSize: 19_000_000_000,
+                         allocatedSize: 19_000_000_000, modifiedDaysSinceEpoch: 1)
+        let built = DeveloperCatalog.build(tree: tree, root: URL(fileURLWithPath: "/Users", isDirectory: true),
+                                           totals: tree.rollUpBoth().allocated)
+        #expect(built.items.count == 1)
+        #expect(built.items.first?.nodeID == android)
+        #expect(built.summary.totalBytes == 19_000_000_000)
+    }
+
     @Test func prefersOuterDirectoryOverNestedHit() {
         var tree = FileTree()
         _ = tree.addNode(name: "home", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1)

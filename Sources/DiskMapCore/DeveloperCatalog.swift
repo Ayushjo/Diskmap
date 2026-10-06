@@ -304,10 +304,12 @@ public enum DeveloperCatalog {
     ) -> DeveloperCatalogResult {
         guard totals.count == tree.count else { return .empty }
 
+        // Already in the Trash (or another system-held folder): not a finding.
+        let held = StorageClassifier.systemHoldingFlags(tree: tree, root: root)
         var hits: [(id: Int32, rule: Rule, bytes: Int64, path: String, name: String)] = []
         for id in 0..<Int32(tree.count) {
             let i = Int(id)
-            guard tree.isDirectory[i] else { continue }
+            guard tree.isDirectory[i], !held[i] else { continue }
             let name = tree.name(of: id)
             let key = name.lowercased()
             guard let rule = nameToRule[key] else { continue }
@@ -327,20 +329,36 @@ public enum DeveloperCatalog {
             hits.append((id, rule, bytes, path, name))
         }
 
-        hits.sort { $0.bytes > $1.bytes }
+        // Largest first; on a tie the outer folder first, so `Android` holding
+        // only `Android/Sdk` keeps `Android` and skips the child. Without the
+        // tie-break both were kept and 19 GB counted twice (Windows, §3.4).
+        func depth(_ id: Int32) -> Int {
+            var d = 0, current = tree.parent[Int(id)]
+            while current >= 0, d < 4096 { d += 1; current = tree.parent[Int(current)] }
+            return d
+        }
+        let depths = Dictionary(uniqueKeysWithValues: hits.map { ($0.id, depth($0.id)) })
+        hits.sort {
+            if $0.bytes != $1.bytes { return $0.bytes > $1.bytes }
+            let (a, b) = (depths[$0.id] ?? 0, depths[$1.id] ?? 0)
+            return a != b ? a < b : $0.id < $1.id
+        }
 
-        // Prefer outer directories: skip if an ancestor was already kept.
+        // Prefer outer directories: skip a hit inside one already kept.
         var kept: [(id: Int32, rule: Rule, bytes: Int64, path: String, name: String)] = []
-        var keptIDs: [Int32] = []
+        var keptIDs = Set<Int32>()
         for hit in hits {
-            let ancestors = Set(tree.ancestorIDs(of: hit.id))
-            if keptIDs.contains(where: { ancestors.contains($0) && $0 != hit.id }) {
-                continue
+            var ancestor = tree.parent[Int(hit.id)]
+            var insideKept = false
+            var steps = 0
+            while ancestor >= 0, steps < 4096 {
+                if keptIDs.contains(ancestor) { insideKept = true; break }
+                ancestor = tree.parent[Int(ancestor)]
+                steps += 1
             }
-            // Also drop if this hit contains an already-kept descendant? Prefer larger outer — already sorted by size so outer often first.
-            // If a smaller nested was somehow kept first, replace: skip adding nested when ancestor kept (done).
+            if insideKept { continue }
             kept.append(hit)
-            keptIDs.append(hit.id)
+            keptIDs.insert(hit.id)
             if kept.count >= limit { break }
         }
 

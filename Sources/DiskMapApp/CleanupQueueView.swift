@@ -281,6 +281,14 @@ private struct CleanupRow: View {
                         .foregroundStyle(DiskMapTheme.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                // The last Move to Trash left it here: say why, in plain words.
+                if let failure = item.lastFailure {
+                    Text("Couldn’t move: \(failure)")
+                        .font(DiskMapType.secondary)
+                        .foregroundStyle(DiskMapTheme.review)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("cleanup-row-failure")
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if hovering {
