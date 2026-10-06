@@ -99,3 +99,26 @@ Swift Testing test (`scripts/test.sh`).
 - Custom ScrollBar template was missing `IsDirectionReversed` (thumb ran backwards).
 - Tray flyout styled like the app; the ☰ window menu removed (macOS has the real menu bar).
 - MFT/USN-specific scanning details.
+
+---
+
+## Mac port status (2026-10-06, branch `feat/mac-from-windows`)
+
+| Item | Status on macOS |
+|---|---|
+| 1.1 Save baseline off the critical path | Already so (background, chained saves). A quick rescan with no in-memory tree now waits for an in-flight save before reading the cache. |
+| 1.2 Incremental rescan O(changes) | Measured: quick 3.4 s vs full 12.0 s on 2.68 M items (28%). Not a problem here; no rewrite. `docs/perf-results/mac-from-windows.txt`. |
+| 1.3 Changes directly under the root | Already handled; pinned by `IncrementalScanTests.changesDirectlyInTheRootAreApplied`. |
+| 2.1 Batch/parallel moves | Measured: `trashItem` is a rename (0.6 ms/file, 3 ms for an 8k-file folder) — no batching needed. The moved-with-its-folder check is now a set lookup (was O(n²)). |
+| 2.2 Put Back re-reading the Trash | Not applicable: `trashItem` returns the new URL; the Trash is never listed. |
+| 2.3 Commit progress | Done: "Verifying sizes… / Moving… n of N", button no longer waits on measuring, sheet locked mid-commit, measuring capped at 8 walks. |
+| 2.4 Items the bin refuses | Done: stay staged with a plain reason. **Maintainer decision: no permanent delete on macOS** (AGENTS.md rule 1 unchanged). |
+| 3.1 Storage categories | Done: `StorageClassifier` + `storage-categories.json` (18 categories, claims/areas/file rules, project markers). Overview, Biggest Files/Folders. |
+| 3.2 Risky items warn | Done: verdicts with note + "instead"; single adds ask, bulk adds skip, macOS-managed refused. |
+| 3.3 Never report the Trash | Done for every finding catalog (Overview's biggest files/folders still show a full Trash — real usage). |
+| 3.4 Nested developer hits | Done: depth tie-break, outer first. Also: packages inside tool caches/app support are no longer projects (Yarn's cache made 332). |
+| 4.1 Selection bar everywhere | Done: tri-state Select all on every list, pinned action bar from one selected row, ⌘A matches the box. |
+| 4.2 Bulk adds confirm with paths | Done, as on Windows; Move to Trash lists everything too. |
+| 4.3 Where it lives | Done: first tab of Developer Storage; Projects can add their reclaimable folders. |
+| 4.4 Duplicates checkboxes | Done: extra copies pre-ticked (oldest kept), labels fixed ("newest" was wrong). |
+| 4.5 Category views | Done in Biggest Files (column + pills) and Biggest Folders (label); Overview rows route there. |

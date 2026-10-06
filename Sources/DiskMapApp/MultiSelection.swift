@@ -92,12 +92,35 @@ extension EnvironmentValues {
     }
 }
 
-/// The bar that appears once several nodes are selected.
+/// "Select all" for a ⌘-click list (MAC-FIXES-FROM-WINDOWS §4.1): the same
+/// tri-state box as the checkbox lists, lined up with the rows' marks
+/// (list 18 + row 10 = the mark's x; the box sits 5 into its 24 pt frame).
+struct MultiSelectAllBar: View {
+    @ObservedObject var model: ScanModel
+    /// The rows shown, in order.
+    var ids: [Int32]
+    var note: String? = nil
+
+    var body: some View {
+        let shown = Set(ids)
+        SelectAllBar(
+            shownCount: ids.count,
+            checkedCount: model.multiSelection.intersection(shown).count,
+            checkedBytes: model.multiSelectionBytes,
+            onSelectAll: { model.multiSelection = shown },
+            onClear: { model.clearMultiSelection() },
+            note: note,
+            leadingInset: 18 + 10 - 5
+        )
+    }
+}
+
+/// The bar that appears once anything is selected.
 struct NodeSelectionToolbar: View {
     @ObservedObject var model: ScanModel
 
     var body: some View {
-        if model.multiSelection.count > 1 {
+        if !model.multiSelection.isEmpty {
             SelectionToolbar(
                 selectedCount: model.multiSelectionRoots.count,
                 selectedBytes: model.multiSelectionBytes,

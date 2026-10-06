@@ -23,9 +23,13 @@ struct DuplicatesView: View {
             }
         }
         .background(DiskMapTheme.canvas)
+        // Extra copies start ticked; the oldest copy of each stays
+        // (MAC-FIXES-FROM-WINDOWS §4.4 — the boxes did nothing on their own).
         .onChange(of: model.duplicateGroups.map { $0.fileIDs }) { _, _ in
             checked.removeAll()
+            selectOtherCopies()
         }
+        .onAppear { if checked.isEmpty { selectOtherCopies() } }
     }
 
     private var mainColumn: some View {
@@ -43,7 +47,7 @@ struct DuplicatesView: View {
                         Figure(label: "Groups", value: model.duplicateGroups.count.formatted()),
                         Figure(label: "Copies", value: duplicateFileIDs.count.formatted()),
                         Figure(label: "Extra copies free", value: ByteFormat.string(extraCopiesBytes),
-                               detail: "keeping the newest of each"),
+                               detail: "keeping the oldest of each"),
                     ])
                 }
             }
@@ -135,7 +139,9 @@ struct DuplicatesView: View {
                 }
                 model.stageRow(path: tree.path(of: id, root: rootURL).path, size: tree.allocatedSize[Int(id)],
                                reason: "Duplicate of \(tree.name(of: id))")
-            }
+            },
+            selectAll: { selectOtherCopies() },
+            clearSelection: { checked.removeAll() }
         )
     }
 
@@ -273,7 +279,7 @@ struct DuplicatesView: View {
                         Text("Keeper")
                             .font(DiskMapType.secondary)
                             .foregroundStyle(DiskMapTheme.safe)
-                            .help("Suggested keeper: the most recently modified copy")
+                            .help("Suggested keeper: the oldest copy (earliest modified)")
                     }
                     MonoColumn(text: RelativeAge.short(day: tree.modifiedDay[Int(id)]), width: 74)
                     MonoColumn(text: diskByteString(tree.allocatedSize[Int(id)]), width: 74, emphasis: true)
@@ -327,7 +333,8 @@ struct DuplicatesView: View {
         var next: Set<Int32> = []
         for group in model.duplicateGroups {
             let keeper = group.defaultKeeperID { tree.modifiedDay[Int($0)] }
-            for id in group.fileIDs where id != keeper {
+            // Copies already in Cleanup stay as they are.
+            for id in group.fileIDs where id != keeper && !model.isStaged(tree.path(of: id, root: rootURL)) {
                 next.insert(id)
             }
         }

@@ -93,6 +93,57 @@ struct DeveloperCatalogTests {
         #expect(built.summary.totalBytes == 19_000_000_000)
     }
 
+    /// "Where it lives" (MAC-FIXES-FROM-WINDOWS §4.3): developer bytes by
+    /// folder, summing to the catalog, opening past single-child chains.
+    @Test func whereItLivesRollsUpByFolder() {
+        var tree = FileTree()
+        func dir(_ name: String, _ parent: Int32) -> Int32 {
+            tree.addNode(name: name, parent: parent, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1)
+        }
+        func file(_ parent: Int32, _ bytes: Int64) {
+            _ = tree.addNode(name: "f", parent: parent, isDirectory: false, logicalSize: bytes, allocatedSize: bytes, modifiedDaysSinceEpoch: 1)
+        }
+        let root = dir("Users", -1)
+        let me = dir("me", root)
+        let code = dir("code", me)
+        let a = dir("a", code)
+        file(dir("node_modules", a), 600)
+        let b = dir("b", code)
+        file(dir("node_modules", b), 300)
+        file(dir(".rustup", me), 100)
+        let catalog = DeveloperCatalog.build(tree: tree, root: URL(fileURLWithPath: "/Users"), totals: tree.rollUpBoth().allocated)
+        let folders = DeveloperCatalog.folderRollup(catalog, tree: tree) { $0.reclaimability != .keep }
+        #expect(folders.folders[0]?.bytes == catalog.summary.totalBytes)
+        #expect(folders.folders[0]?.bytes == 1_000)
+        // Users → me is one chain (me holds 100%); me splits 900 / 100, so it opens at code (90%).
+        #expect(folders.autoStart() == code)
+        #expect(folders.folders[code]?.children == [a, b])
+        #expect(folders.folders[code]?.itemCount == 2)
+        // .rustup is kept, so it never counts as removable.
+        #expect(folders.folders[me]?.removableBytes == 900)
+        #expect(folders.folders[a].flatMap { folders.folders[$0.children.first ?? -1]?.itemID } != nil)
+    }
+
+    /// Packages inside a tool's cache are not projects (332 of them inside
+    /// ~/Library/Caches/Yarn on a real home); the cache is one item.
+    @Test func packagesInsideAToolCacheAreNotProjects() {
+        var tree = FileTree()
+        func dir(_ name: String, _ parent: Int32) -> Int32 {
+            tree.addNode(name: name, parent: parent, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1)
+        }
+        let user = dir("me", dir("Users", -1))
+        let v6 = dir("v6", dir("Yarn", dir("Caches", dir("Library", user))))
+        for k in 0..<5 {
+            _ = tree.addNode(name: "f", parent: dir("node_modules", dir("npm-pkg\(k)", v6)), isDirectory: false,
+                             logicalSize: 1_000, allocatedSize: 1_000, modifiedDaysSinceEpoch: 1)
+        }
+        let uvTool = dir("site-packages", dir("lib", dir("tool", dir("tools", dir("uv", dir("share", dir(".local", user)))))))
+        _ = tree.addNode(name: "f", parent: uvTool, isDirectory: false, logicalSize: 500, allocatedSize: 500, modifiedDaysSinceEpoch: 1)
+        let built = DeveloperCatalog.build(tree: tree, root: URL(fileURLWithPath: "/Users"), totals: tree.rollUpBoth().allocated)
+        #expect(built.projects.isEmpty)
+        #expect(built.items.map(\.absolutePath) == ["/Users/me/Library/Caches/Yarn"])
+    }
+
     @Test func prefersOuterDirectoryOverNestedHit() {
         var tree = FileTree()
         _ = tree.addNode(name: "home", parent: -1, isDirectory: true, logicalSize: 0, allocatedSize: 0, modifiedDaysSinceEpoch: 1)

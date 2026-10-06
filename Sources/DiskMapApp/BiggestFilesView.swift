@@ -118,6 +118,8 @@ struct BiggestFilesView: View {
                     message: entries.isEmpty ? "The scan found no files of note." : "Try another type or clear the search."
                 )
             } else {
+                MultiSelectAllBar(model: model, ids: visible.prefix(500).map(\.id),
+                                  note: visible.count > 500 ? "Largest 500 of \(visible.count.formatted()) shown" : nil)
                 columnHeader
                 list(active: active)
             }

@@ -432,6 +432,18 @@
       "projectFromParent": true,
       "whyLarge": "A pixi project's environments (conda packages). Recreated with pixi install.",
       "rebuildCost": "networked"
+    },
+    {
+      "names": [
+        "Yarn"
+      ],
+      "category": "caches",
+      "ecosystem": "node",
+      "reclaimability": "reclaimable",
+      "isToolRoot": true,
+      "projectFromParent": false,
+      "whyLarge": "Yarn 1's package cache (~/Library/Caches/Yarn). Re-downloaded when needed; yarn cache clean empties it.",
+      "rebuildCost": "networked"
     }
   ],
   "_rebuildCost": "free: regenerated automatically and offline the next time the tool runs. cheap: an offline rebuild (CPU time). networked: re-downloaded from a registry or vendor. A dependency folder whose project has no lockfile is reported as networked-unpinned: reinstalling may not reproduce what you have.",

@@ -136,6 +136,7 @@ struct FileBrowserView: View {
             .padding(.horizontal, 28)
             .padding(.top, 18)
             .padding(.bottom, 4)
+            if !rows.isEmpty { MultiSelectAllBar(model: model, ids: rows.map(\.id)) }
             columnHeader
             if rows.isEmpty {
                 DiskMapEmptyState(symbol: "folder",

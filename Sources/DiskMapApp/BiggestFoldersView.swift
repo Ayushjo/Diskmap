@@ -100,6 +100,7 @@ struct BiggestFoldersView: View {
                     message: rawRows.isEmpty ? "Try another folder, or go back up." : "Clear the search or show technical folders."
                 )
             } else {
+                MultiSelectAllBar(model: model, ids: rows.map(\.id))
                 list
             }
             NodeSelectionToolbar(model: model)
