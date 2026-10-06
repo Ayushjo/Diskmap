@@ -1,0 +1,1369 @@
+{
+ "_comment": "Storage categories (MAC-FIXES-FROM-WINDOWS §3.1, port of the Windows StorageClassifier). Patterns are lower-case folder paths: '/x' anchors at the disk root, '~/x' at any home (/Users/<name>), anything else matches the end of a path anywhere. Segments: '?' any one, 'x*' starts with, '*x' ends with, '*x*' contains. First matching rule wins, so specific rules come first. 'claim' takes the whole folder; 'area' sets the default class and keeps looking deeper. Advice: fine, review, warn (ask before adding to Cleanup), never (refuse). File rules (by name or extension) beat areas, never claims. A folder in Other or Documents & Desktop that holds a project marker (projectMarkers: .git, package.json, Cargo.toml…) becomes a Code & projects area.",
+ "classes": [
+  {
+   "id": "projects",
+   "title": "Code & projects",
+   "color": "849BB8",
+   "blurb": "Your source code and repositories."
+  },
+  {
+   "id": "deps",
+   "title": "Dependencies & builds",
+   "color": "7BA89C",
+   "blurb": "node_modules, virtual environments and build output — rebuilt from your projects."
+  },
+  {
+   "id": "devtools",
+   "title": "Dev tools & SDKs",
+   "color": "8FACC0",
+   "blurb": "Compilers, SDKs, runtimes and editors' data."
+  },
+  {
+   "id": "pkgcache",
+   "title": "Package caches",
+   "color": "B9A071",
+   "blurb": "Downloaded packages kept by npm, pnpm, pip, Cargo and friends."
+  },
+  {
+   "id": "vms",
+   "title": "Docker, VMs & emulators",
+   "color": "C78797",
+   "blurb": "Virtual disks of Docker, OrbStack, UTM, Parallels and emulators."
+  },
+  {
+   "id": "ai",
+   "title": "AI models",
+   "color": "A795C7",
+   "blurb": "Downloaded model weights (Ollama, Hugging Face, LM Studio…)."
+  },
+  {
+   "id": "documents",
+   "title": "Documents & Desktop",
+   "color": "849BB8",
+   "blurb": "Your documents and what's on your Desktop."
+  },
+  {
+   "id": "media",
+   "title": "Photos, videos & music",
+   "color": "C78797",
+   "blurb": "Pictures, Movies and Music."
+  },
+  {
+   "id": "downloads",
+   "title": "Downloads",
+   "color": "B9A071",
+   "blurb": "Everything in Downloads."
+  },
+  {
+   "id": "installers",
+   "title": "Installers & disk images",
+   "color": "8FACC0",
+   "blurb": ".dmg, .pkg, .iso and macOS installers."
+  },
+  {
+   "id": "cloud",
+   "title": "iCloud & cloud sync",
+   "color": "7BA89C",
+   "blurb": "iCloud Drive and other synced folders."
+  },
+  {
+   "id": "games",
+   "title": "Games",
+   "color": "A795C7",
+   "blurb": "Game libraries."
+  },
+  {
+   "id": "browsers",
+   "title": "Browser data",
+   "color": "B9A071",
+   "blurb": "Browser profiles: history, caches, extensions."
+  },
+  {
+   "id": "apps",
+   "title": "Installed apps",
+   "color": "849BB8",
+   "blurb": "Applications."
+  },
+  {
+   "id": "appdata",
+   "title": "App data",
+   "color": "A795C7",
+   "blurb": "What apps keep in your Library."
+  },
+  {
+   "id": "caches",
+   "title": "Caches & logs",
+   "color": "7BA89C",
+   "blurb": "Caches and logs apps can recreate."
+  },
+  {
+   "id": "system",
+   "title": "macOS & system",
+   "color": "A2A4AC",
+   "blurb": "macOS itself and system data."
+  },
+  {
+   "id": "other",
+   "title": "Other",
+   "color": "A2A4AC",
+   "blurb": "Everything else."
+  }
+ ],
+ "notes": {
+  "docker": {
+   "note": "This is Docker's whole virtual disk: every image, container and volume lives inside it. Moving it to the Trash breaks Docker until it rebuilds an empty one.",
+   "instead": "Run `docker system prune -a` (and `docker volume prune`), or Docker Desktop → Troubleshoot → Clean / Purge data."
+  },
+  "orbstack": {
+   "note": "OrbStack's machines and containers live here. Moving it to the Trash deletes them.",
+   "instead": "Delete machines with `orb delete <machine>`, or prune images in OrbStack's settings."
+  },
+  "vm": {
+   "note": "This is a virtual machine's disk. Moving it to the Trash deletes the whole machine and everything inside it.",
+   "instead": "Delete the virtual machine from the app that runs it (UTM, Parallels, VMware, VirtualBox)."
+  },
+  "avd": {
+   "note": "Android emulator images. Moving them deletes the emulators.",
+   "instead": "Delete emulators in Android Studio → Device Manager."
+  },
+  "archives": {
+   "note": "Xcode archives hold your shipped builds and their debug symbols (dSYMs). Without them you can't symbolicate crash reports or re-upload those builds.",
+   "instead": "Delete old archives in Xcode → Window → Organizer."
+  },
+  "app": {
+   "note": "This is an installed app. Moving it to the Trash uninstalls it; its settings and data stay behind in your Library.",
+   "instead": "Use Applications in freedisk.space, which also finds the app's related data, or drag it to the Trash in Finder."
+  },
+  "browser": {
+   "note": "This is a browser profile: history, saved logins, bookmarks and extensions. Moving it to the Trash signs you out and loses them.",
+   "instead": "Clear cached data in the browser's own settings (Settings → Privacy → Clear browsing data)."
+  },
+  "git": {
+   "note": "This is a repository's history. Anything not pushed is lost with it.",
+   "instead": "Run `git gc --aggressive --prune=now` to shrink it, or remove the whole project if you no longer need it."
+  },
+  "icloud": {
+   "note": "This is iCloud Drive. Moving files from here to the Trash deletes them from iCloud on every device.",
+   "instead": "Remove files in Finder → iCloud Drive, or turn on Optimize Mac Storage in System Settings → Apple Account → iCloud."
+  },
+  "system": {
+   "note": "macOS manages this. Removing it can break the system or simply comes back.",
+   "instead": "Use System Settings → General → Storage to review what macOS can remove."
+  },
+  "game": {
+   "note": "Installed games. Moving them to the Trash breaks the launcher's library.",
+   "instead": "Uninstall from the game launcher (Steam → Manage → Uninstall)."
+  },
+  "redownload": {
+   "note": "Model files are large downloads; removing them means downloading them again.",
+   "instead": null
+  },
+  "ollama": {
+   "note": "Ollama's downloaded models. Removing them means downloading them again.",
+   "instead": "Run `ollama list`, then `ollama rm <model>` for the ones you don't use."
+  },
+  "huggingface": {
+   "note": "Hugging Face's model cache. Removing it means downloading models again.",
+   "instead": "Run `huggingface-cli delete-cache` to pick which models to remove."
+  }
+ },
+ "rules": [
+  {
+   "pattern": "/system",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/private/var/vm",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/private/var/db",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/library/apple",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/usr",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/bin",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/sbin",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/cores",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/.spotlight-v100",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/.fseventsd",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/.trashes",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/private/var/folders",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "/system/volumes",
+   "class": "system",
+   "kind": "claim",
+   "advice": "never",
+   "note": "system"
+  },
+  {
+   "pattern": "~/library/application support/claude/vm_bundles",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "vm"
+  },
+  {
+   "pattern": "~/library/containers/com.docker.docker",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "docker"
+  },
+  {
+   "pattern": "~/library/group containers/*.dev.orbstack",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "orbstack"
+  },
+  {
+   "pattern": "~/.orbstack",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "orbstack"
+  },
+  {
+   "pattern": "~/library/containers/com.utmapp.utm",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "vm"
+  },
+  {
+   "pattern": "~/parallels",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "vm"
+  },
+  {
+   "pattern": "~/virtualbox vms",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "vm"
+  },
+  {
+   "pattern": "~/virtual machines.localized",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "vm"
+  },
+  {
+   "pattern": "*.utm",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "vm"
+  },
+  {
+   "pattern": "*.pvm",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "vm"
+  },
+  {
+   "pattern": "*.vmwarevm",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "vm"
+  },
+  {
+   "pattern": "~/.android/avd",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "avd"
+  },
+  {
+   "pattern": "~/library/developer/coresimulator",
+   "class": "vms",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/library/developer/xcode/archives",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "archives"
+  },
+  {
+   "pattern": "~/library/developer/xcode/ios devicesupport",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/library/developer/xcode/watchos devicesupport",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "deriveddata",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "/applications/xcode*.app",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "app"
+  },
+  {
+   "pattern": "/applications/*.app",
+   "class": "apps",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "app"
+  },
+  {
+   "pattern": "~/applications/*.app",
+   "class": "apps",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "app"
+  },
+  {
+   "pattern": "/applications",
+   "class": "apps",
+   "kind": "area",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/library/application support/steam/steamapps",
+   "class": "games",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "game"
+  },
+  {
+   "pattern": "~/library/application support/google/chrome",
+   "class": "browsers",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "browser"
+  },
+  {
+   "pattern": "~/library/application support/bravesoftware",
+   "class": "browsers",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "browser"
+  },
+  {
+   "pattern": "~/library/application support/microsoft edge",
+   "class": "browsers",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "browser"
+  },
+  {
+   "pattern": "~/library/application support/arc",
+   "class": "browsers",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "browser"
+  },
+  {
+   "pattern": "~/library/application support/firefox/profiles",
+   "class": "browsers",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "browser"
+  },
+  {
+   "pattern": "~/library/application support/vivaldi",
+   "class": "browsers",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "browser"
+  },
+  {
+   "pattern": "~/library/application support/com.operasoftware.opera",
+   "class": "browsers",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "browser"
+  },
+  {
+   "pattern": "~/library/safari",
+   "class": "browsers",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "browser"
+  },
+  {
+   "pattern": "~/library/mobile documents",
+   "class": "cloud",
+   "kind": "claim",
+   "advice": "never",
+   "note": "icloud"
+  },
+  {
+   "pattern": "~/library/cloudstorage",
+   "class": "cloud",
+   "kind": "area",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.ollama",
+   "class": "ai",
+   "kind": "claim",
+   "advice": "review",
+   "note": "ollama"
+  },
+  {
+   "pattern": "~/.cache/huggingface",
+   "class": "ai",
+   "kind": "claim",
+   "advice": "review",
+   "note": "huggingface"
+  },
+  {
+   "pattern": "~/.cache/lm-studio",
+   "class": "ai",
+   "kind": "claim",
+   "advice": "review",
+   "note": "redownload"
+  },
+  {
+   "pattern": "~/.lmstudio",
+   "class": "ai",
+   "kind": "claim",
+   "advice": "review",
+   "note": "redownload"
+  },
+  {
+   "pattern": "~/.cache/torch",
+   "class": "ai",
+   "kind": "claim",
+   "advice": "review",
+   "note": "redownload"
+  },
+  {
+   "pattern": "~/.cache/whisper",
+   "class": "ai",
+   "kind": "claim",
+   "advice": "review",
+   "note": "redownload"
+  },
+  {
+   "pattern": "~/.keras",
+   "class": "ai",
+   "kind": "claim",
+   "advice": "review",
+   "note": "redownload"
+  },
+  {
+   "pattern": "~/library/application support/draw things",
+   "class": "ai",
+   "kind": "claim",
+   "advice": "review",
+   "note": "redownload"
+  },
+  {
+   "pattern": "~/library/application support/diffusionbee",
+   "class": "ai",
+   "kind": "claim",
+   "advice": "review",
+   "note": "redownload"
+  },
+  {
+   "pattern": "node_modules",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "bower_components",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".next",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".nuxt",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".turbo",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".parcel-cache",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".angular",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".svelte-kit",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".expo",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "__pycache__",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".pytest_cache",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".mypy_cache",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".ruff_cache",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".tox",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".venv",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "venv",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".pixi",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".dart_tool",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".terraform",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "pods",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".build",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".gradle",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "target",
+   "class": "deps",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".git",
+   "class": "projects",
+   "kind": "claim",
+   "advice": "warn",
+   "note": "git"
+  },
+  {
+   "pattern": "~/.npm",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/pnpm",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": ".pnpm-store",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.yarn",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.cargo/registry",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.m2",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.gradle",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.nuget",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.pub-cache",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.cocoapods",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/rattler",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/pip",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/uv",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/go-build",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/homebrew",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/cocoapods",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/ms-playwright",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/cypress",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/node-gyp",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/electron*",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/yarn",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/pnpm",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/caches/ccache",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.cache/pip",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.cache/uv",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.cache/pnpm",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.cache/yarn",
+   "class": "pkgcache",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.cache",
+   "class": "pkgcache",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/.rustup",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.cargo",
+   "class": "devtools",
+   "kind": "area",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.bun",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.deno",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.nvm",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.volta",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.fnm",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.pyenv",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.conda",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/miniconda3",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/anaconda3",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.sdkman",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.dotnet",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/library/android/sdk",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.android",
+   "class": "devtools",
+   "kind": "area",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.vscode",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.cursor",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.codex",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.docker",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/go",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.local/share/uv",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.platformio",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.espressif",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/.arduino15",
+   "class": "devtools",
+   "kind": "claim",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/library/developer",
+   "class": "devtools",
+   "kind": "area",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/library/caches",
+   "class": "caches",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/library/logs",
+   "class": "caches",
+   "kind": "claim",
+   "advice": "fine"
+  },
+  {
+   "pattern": "/library/caches",
+   "class": "caches",
+   "kind": "area",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/library/containers",
+   "class": "appdata",
+   "kind": "area",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/library/group containers",
+   "class": "appdata",
+   "kind": "area",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/library/application support",
+   "class": "appdata",
+   "kind": "area",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/library",
+   "class": "appdata",
+   "kind": "area",
+   "advice": "review"
+  },
+  {
+   "pattern": "/library",
+   "class": "system",
+   "kind": "area",
+   "advice": "review"
+  },
+  {
+   "pattern": "~/developer",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/dev",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/code",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/code*",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/src",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/repos",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/projects",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/workspace*",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/github",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/git",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/source",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents/developer",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents/dev",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents/code",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents/code*",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents/src",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents/repos",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents/projects",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents/workspace*",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents/github",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents/git",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents/source",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop/developer",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop/dev",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop/code",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop/code*",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop/src",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop/repos",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop/projects",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop/workspace*",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop/github",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop/git",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop/source",
+   "class": "projects",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/documents",
+   "class": "documents",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/desktop",
+   "class": "documents",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/downloads",
+   "class": "downloads",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/pictures",
+   "class": "media",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/movies",
+   "class": "media",
+   "kind": "area",
+   "advice": "fine"
+  },
+  {
+   "pattern": "~/music",
+   "class": "media",
+   "kind": "area",
+   "advice": "fine"
+  }
+ ],
+ "fileRules": [
+  {
+   "extensions": [
+    "dmg",
+    "pkg",
+    "iso",
+    "ipsw",
+    "xip",
+    "mpkg"
+   ],
+   "class": "installers",
+   "advice": "fine"
+  },
+  {
+   "extensions": [
+    "vmdk",
+    "vdi",
+    "qcow2",
+    "vhd",
+    "vhdx",
+    "hdd"
+   ],
+   "class": "vms",
+   "advice": "warn",
+   "note": "vm"
+  },
+  {
+   "names": [
+    "docker.raw"
+   ],
+   "class": "vms",
+   "advice": "warn",
+   "note": "docker"
+  },
+  {
+   "extensions": [
+    "safetensors",
+    "gguf",
+    "ggml",
+    "ckpt",
+    "pth",
+    "onnx",
+    "mlmodel",
+    "tflite"
+   ],
+   "class": "ai",
+   "advice": "review",
+   "note": "redownload"
+  },
+  {
+   "names": [
+    "sleepimage",
+    "swapfile0",
+    "swapfile1"
+   ],
+   "class": "system",
+   "advice": "never",
+   "note": "system"
+  }
+ ],
+ "projectMarkers": [
+  ".git",
+  "package.json",
+  "cargo.toml",
+  "pyproject.toml",
+  "go.mod",
+  "package.swift",
+  "pom.xml",
+  "build.gradle",
+  "gemfile",
+  "composer.json",
+  "pubspec.yaml",
+  "makefile",
+  "cmakelists.txt",
+  "setup.py",
+  "requirements.txt",
+  "pixi.toml",
+  "xcodeproj"
+ ]
+}
