@@ -1,10 +1,37 @@
 import AppKit
 import Foundation
 
+/// Finds DiskMapBrand's bundled SVG — the same fix as `DiskMapResources` in
+/// DiskMapCore (TASK-063).
+///
+/// SwiftPM's generated `Bundle.module` looks only at
+/// `<main bundle>/DiskMap_DiskMapBrand.bundle` and then at the absolute build
+/// path on the machine that compiled it, and traps when neither exists. In a
+/// `.app` the resource bundle lives in `Contents/Resources`, so a packaged
+/// app found the logo only on the Mac that built it and crashed everywhere
+/// else the first time SwiftUI laid out the sidebar wordmark (a resize,
+/// maximize or sidebar toggle). Look in the packaged places first;
+/// `Bundle.module` stays the last resort for `swift run` and tests.
+enum DiskMapBrandResources {
+    static let bundleName = "DiskMap_DiskMapBrand.bundle"
+
+    /// The packaged locations, in order: `Contents/Resources` in an app, then
+    /// beside the executable (`swift run`).
+    static func packagedBundle(resourceURL: URL?, bundleURL: URL) -> Bundle? {
+        let candidates = [resourceURL?.appendingPathComponent(bundleName), bundleURL.appendingPathComponent(bundleName)]
+        for case let url? in candidates {
+            if let bundle = Bundle(url: url) { return bundle }
+        }
+        return nil
+    }
+
+    static let bundle: Bundle = packagedBundle(resourceURL: Bundle.main.resourceURL, bundleURL: Bundle.main.bundleURL) ?? Bundle.module
+}
+
 /// The selected Dusty logo mark. The app and icon renderer load one vector asset.
 public enum DiskMapBrand {
     public static let peekMark: NSImage? = {
-        guard let url = Bundle.module.url(forResource: "dusty-peek-mark", withExtension: "svg") else {
+        guard let url = DiskMapBrandResources.bundle.url(forResource: "dusty-peek-mark", withExtension: "svg") else {
             return nil
         }
         return NSImage(contentsOf: url)
