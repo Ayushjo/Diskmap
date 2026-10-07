@@ -30,7 +30,7 @@ let package = Package(
         .testTarget(name: "DiskMapCoreTests", dependencies: ["DiskMapCore"]),
         // App-layer tests (ScanModel caches and state). Added with TASK-041;
         // the app target had no coverage before.
-        .testTarget(name: "DiskMapAppTests", dependencies: ["DiskMapApp", "DiskMapCore"]),
+        .testTarget(name: "DiskMapAppTests", dependencies: ["DiskMapApp", "DiskMapCore", "DiskMapBrand"]),
         .executableTarget(name: "DiskMapScanBench", dependencies: ["DiskMapCore"]),
         .executableTarget(name: "AttrProbe"),
         .executableTarget(name: "SharingProbe"),
